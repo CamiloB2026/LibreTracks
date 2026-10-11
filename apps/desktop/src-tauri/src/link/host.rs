@@ -367,7 +367,7 @@ async fn forward_session(app: AppHandle, handle: HostHandle) {
         }
         if frame.song_seq != song_seq {
             song_seq = frame.song_seq;
-            if let Some(song) = &frame.song {
+            if let Some(song_json) = &frame.song_json {
                 // Tagged with the revision it was read at (same tick as the
                 // snapshot), so a mirror-mode guest can answer its own
                 // `get_song_view` with it only when it matches the revision
@@ -376,7 +376,8 @@ async fn forward_session(app: AppHandle, handle: HostHandle) {
                     .snapshot
                     .as_ref()
                     .map(|snapshot| (snapshot.project_revision, snapshot.mix_revision));
-                handle.publish_song(&super::guest::tag_song(song.as_ref(), revision));
+                // The feed's own text: no to_value + to_string per revision.
+                handle.publish_song_json(&super::guest::tag_song_json(song_json, revision));
             }
         }
         if frame.snapshot_seq != snapshot_seq {

@@ -320,6 +320,15 @@ impl HostHandle {
         }
     }
 
+    /// Same as [`publish_song`](Self::publish_song) for a view the caller
+    /// already serialized (the session feed serializes it once per revision
+    /// to detect changes). `song_json` must be one valid JSON value; it goes
+    /// out as is, without parsing it again.
+    pub fn publish_song_json(&self, song_json: &str) {
+        let text = format!(r#"{{"type":"song","song":{song_json}}}"#);
+        self.shared.song_tx.send_replace(Some(Arc::from(text)));
+    }
+
     pub fn publish_live_settings<T: Serialize>(&self, settings: &T) {
         #[derive(Serialize)]
         struct Out<'a, T> {

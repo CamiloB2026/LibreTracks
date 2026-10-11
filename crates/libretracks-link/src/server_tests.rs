@@ -281,6 +281,18 @@ async fn revoking_a_connected_device_drops_it_to_viewer() {
 }
 
 #[tokio::test]
+async fn a_pre_serialized_song_reaches_the_guest_like_a_serialized_one() {
+    let runtime = host().await;
+    let song = json!({ "regions": ["a"], "title": "Song" });
+    runtime
+        .handle
+        .publish_song_json(&serde_json::to_string(&song).unwrap());
+    let (mut guest, _) = Guest::join(runtime.handle.port(), "pre", None).await;
+    let message = guest.next_of("song").await.unwrap();
+    assert_eq!(message, json!({ "type": "song", "song": song }));
+}
+
+#[tokio::test]
 async fn late_guest_gets_the_latest_song_and_transport() {
     let runtime = host().await;
     runtime.handle.publish_song(&json!({ "regions": ["old"] }));

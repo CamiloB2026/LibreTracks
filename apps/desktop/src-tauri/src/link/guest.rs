@@ -557,6 +557,9 @@ pub async fn proxy_invoke(app: &AppHandle, command: String, args: Value) -> Resu
 }
 
 /// Host side: the song view as pushed, with the revision it was read at.
+/// The host sends [`tag_song_json`]; this is the reference it is tested
+/// against.
+#[cfg(test)]
 pub fn tag_song<T: Serialize>(song: &T, revision: Option<(u64, u64)>) -> Value {
     let mut value = serde_json::to_value(song).unwrap_or(Value::Null);
     if let (Value::Object(map), Some((project, mix))) = (&mut value, revision) {
@@ -566,6 +569,25 @@ pub fn tag_song<T: Serialize>(song: &T, revision: Option<(u64, u64)>) -> Value {
         );
     }
     value
+}
+
+/// [`tag_song`] over a view already serialized by the session feed, without
+/// parsing it: the revision goes in as the object's first field. Anything
+/// that is not an object (`null`: no song loaded) goes out untouched, as
+/// `tag_song` does.
+pub fn tag_song_json(song_json: &str, revision: Option<(u64, u64)>) -> String {
+    let Some((project, mix)) = revision else {
+        return song_json.to_string();
+    };
+    let Some(body) = song_json.trim_start().strip_prefix('{') else {
+        return song_json.to_string();
+    };
+    let tag = format!(r#"{{"{SONG_REVISION_FIELD}":[{project},{mix}]"#);
+    if body.trim_start().starts_with('}') {
+        format!("{tag}{body}")
+    } else {
+        format!("{tag},{body}")
+    }
 }
 
 /// Guest side: the song view as the UI expects it, and its revision when the
@@ -742,6 +764,22 @@ mod tests {
             emitted_at_unix_ms: 0,
         };
         assert_eq!(local_snapshot(&transport, 99_000)["positionSeconds"], 42.0);
+    }
+
+    #[test]
+    fn tagging_the_serialized_song_matches_tagging_the_value() {
+        let revision = Some((12, 3));
+        for song in [
+            json!({ "title": "Song", "tracks": [{ "id": "t1" }] }),
+            json!({}),
+            Value::Null,
+        ] {
+            let text = serde_json::to_string(&song).unwrap();
+            let tagged: Value = serde_json::from_str(&tag_song_json(&text, revision)).unwrap();
+            assert_eq!(tagged, tag_song(&song, revision));
+            let untagged: Value = serde_json::from_str(&tag_song_json(&text, None)).unwrap();
+            assert_eq!(untagged, tag_song(&song, None));
+        }
     }
 
     #[test]

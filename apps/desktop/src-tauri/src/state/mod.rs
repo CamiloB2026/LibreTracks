@@ -1710,19 +1710,27 @@ impl DesktopSession {
         let build_micros = started_at.elapsed().as_micros();
         let build_ms = build_micros / 1000;
         let serialize_started = Instant::now();
-        let bytes = song_view
-            .as_ref()
-            .map(|view| to_vec(view).map(|bytes| bytes.len()))
-            .transpose()
-            .map_err(|error| DesktopError::AudioCommand(error.to_string()))?
-            .unwrap_or(0);
+        // Serializing only to count bytes is a full extra pass over the view
+        // (and over ~27 MB of peaks when the UI asks with waveforms), and the
+        // caller serializes it again anyway. Only the debug log reads it.
+        let debug_log = jump_debug_logging_enabled();
+        let bytes = if debug_log {
+            song_view
+                .as_ref()
+                .map(|view| to_vec(view).map(|bytes| bytes.len()))
+                .transpose()
+                .map_err(|error| DesktopError::AudioCommand(error.to_string()))?
+                .unwrap_or(0)
+        } else {
+            0
+        };
         let count_micros = serialize_started.elapsed().as_micros();
         let serialize_ms = count_micros / 1000;
         self.perf_metrics.song_view_build_micros = build_micros;
         self.perf_metrics.song_view_count_micros = count_micros;
         self.perf_metrics.song_view_build_millis = build_ms;
         self.perf_metrics.song_view_bytes = bytes;
-        if jump_debug_logging_enabled() {
+        if debug_log {
             eprintln!(
                 "[SONG_VIEW_PERF] build_ms={} serialize_ms={} bytes={} include_wfs={} clips={} tracks={} regions={}",
                 build_ms,
@@ -3306,9 +3314,14 @@ impl DesktopSession {
                 .map(|vamp| (vamp.start_seconds, vamp.end_seconds)),
         );
         self.perf_metrics.transport_snapshot_build_millis = started_at.elapsed().as_millis();
-        self.perf_metrics.transport_snapshot_bytes = to_vec(&snapshot)
-            .map(|bytes| bytes.len())
-            .unwrap_or_default();
+        // Same as the song view: a serialization only to count bytes, under
+        // the session lock and on every poll. Nobody reads it outside the
+        // debug log, so it is only paid there.
+        if jump_debug_logging_enabled() {
+            self.perf_metrics.transport_snapshot_bytes = to_vec(&snapshot)
+                .map(|bytes| bytes.len())
+                .unwrap_or_default();
+        }
         snapshot
     }
 

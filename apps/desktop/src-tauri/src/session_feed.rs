@@ -41,7 +41,8 @@ pub struct FeedTickPerf {
     pub lock_wait: u128,
     pub snapshot: u128,
     pub song_build: u128,
-    /// The extra serialization `song_view_with_options` does to count bytes.
+    /// The serialization `song_view_with_options` does to count bytes. Only
+    /// with `LIBRETRACKS_JUMP_DEBUG` since song-patches/02; 0 otherwise.
     pub song_count: u128,
     /// The tracker serializing the view to compare it with the last one.
     pub compare: u128,
@@ -77,6 +78,9 @@ pub struct FeedFrame<A, S, V> {
     pub snapshot: Option<Arc<S>>,
     pub snapshot_seq: u64,
     pub song: Option<Arc<V>>,
+    /// `song` serialized: the same text the tracker compared, so a consumer
+    /// that sends JSON (the network host) does not serialize it again.
+    pub song_json: Option<Arc<str>>,
     pub song_seq: u64,
 }
 
@@ -88,6 +92,7 @@ impl<A, S, V> Default for FeedFrame<A, S, V> {
             snapshot: None,
             snapshot_seq: 0,
             song: None,
+            song_json: None,
             song_seq: 0,
         }
     }
@@ -101,6 +106,7 @@ impl<A, S, V> Clone for FeedFrame<A, S, V> {
             snapshot: self.snapshot.clone(),
             snapshot_seq: self.snapshot_seq,
             song: self.song.clone(),
+            song_json: self.song_json.clone(),
             song_seq: self.song_seq,
         }
     }
@@ -121,7 +127,6 @@ pub struct FeedTracker<A, S, V> {
     last_settings_json: String,
     last_snapshot_json: String,
     last_revision: Option<(u64, u64)>,
-    last_song_json: String,
 }
 
 impl<A: Serialize, S: Serialize, V: Serialize> Default for FeedTracker<A, S, V> {
@@ -131,7 +136,6 @@ impl<A: Serialize, S: Serialize, V: Serialize> Default for FeedTracker<A, S, V> 
             last_settings_json: String::new(),
             last_snapshot_json: String::new(),
             last_revision: None,
-            last_song_json: String::new(),
         }
     }
 }
@@ -176,9 +180,11 @@ impl<A: Serialize, S: Serialize, V: Serialize> FeedTracker<A, S, V> {
         }
 
         if let Some(song) = read.song {
+            // Serialized once per revision: this text is what gets compared
+            // and what the network host sends (`FeedFrame::song_json`).
             if let Ok(json) = serde_json::to_string(&song) {
-                if json != self.last_song_json {
-                    self.last_song_json = json;
+                if self.frame.song_json.as_deref() != Some(json.as_str()) {
+                    self.frame.song_json = Some(Arc::from(json));
                     self.frame.song = Some(Arc::new(song));
                     self.frame.song_seq += 1;
                     changed = true;
@@ -266,10 +272,9 @@ async fn run_session_feed(app: AppHandle, tx: watch::Sender<Arc<SessionFeedFrame
             perf.compare = read_done.elapsed().as_micros();
             perf.song_bytes = tracker
                 .frame()
-                .song
+                .song_json
                 .as_ref()
-                .and_then(|song| serde_json::to_vec(song.as_ref()).ok())
-                .map(|bytes| bytes.len())
+                .map(|json| json.len())
                 .unwrap_or(0);
             record_feed_perf(perf);
         }
@@ -298,6 +303,38 @@ mod tests {
             revision,
             song,
         })
+    }
+
+    #[test]
+    fn the_published_song_text_is_the_compared_one() {
+        let mut tracker = Tracker::default();
+        let song = json!({ "title": "Song", "tracks": [{ "id": "t1", "volume": 0.5 }] });
+        tracker.tick(None, |_| read(json!(0), (1, 0), Some(song.clone())));
+        let frame = tracker.frame();
+        let text = frame.song_json.as_deref().unwrap();
+        assert_eq!(text, serde_json::to_string(&song).unwrap());
+        assert_eq!(
+            text,
+            serde_json::to_string(frame.song.as_deref().unwrap()).unwrap()
+        );
+
+        // Same content at a new revision: no republish, same text.
+        let before = frame.song_json.clone().unwrap();
+        let changed = tracker.tick(None, |_| read(json!(0), (2, 0), Some(song.clone())));
+        assert!(!changed);
+        assert!(Arc::ptr_eq(
+            &before,
+            tracker.frame().song_json.as_ref().unwrap()
+        ));
+
+        // Different content: new text, and it is the new song.
+        let edited = json!({ "title": "Song", "tracks": [{ "id": "t1", "volume": 0.8 }] });
+        tracker.tick(None, |_| read(json!(0), (3, 0), Some(edited.clone())));
+        assert_eq!(
+            tracker.frame().song_json.as_deref().unwrap(),
+            serde_json::to_string(&edited).unwrap()
+        );
+        assert_eq!(tracker.frame().song_seq, 2);
     }
 
     #[test]
