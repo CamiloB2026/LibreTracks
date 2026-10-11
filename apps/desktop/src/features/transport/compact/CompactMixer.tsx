@@ -768,7 +768,26 @@ function CompactMixerStripComponent({
   );
 }
 
-const CompactMixerStrip = memo(CompactMixerStripComponent);
+// `parentInfo` se construye de nuevo en cada render del mezclador; se compara
+// por contenido para que una tira dentro de una carpeta no repinte cada vez que
+// cambia otra pista. El resto de props, por referencia como `memo` a secas.
+function areCompactMixerStripPropsEqual(
+  previous: CompactMixerStripProps,
+  next: CompactMixerStripProps,
+): boolean {
+  for (const key of Object.keys(next) as Array<keyof CompactMixerStripProps>) {
+    if (key === "parentInfo") continue;
+    if (previous[key] !== next[key]) return false;
+  }
+  const a = previous.parentInfo;
+  const b = next.parentInfo;
+  return a === b || (a !== null && b !== null && a.color === b.color && a.name === b.name);
+}
+
+const CompactMixerStrip = memo(
+  CompactMixerStripComponent,
+  areCompactMixerStripPropsEqual,
+);
 
 /**
  * Vertical fader rendered as a custom <div> + pointer events so we can

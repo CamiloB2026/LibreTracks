@@ -2,6 +2,8 @@ import { useEffect } from "react";
 
 import type { SongView } from "@libretracks/shared/models";
 
+import { mergeSongView } from "../songs/mergeSongView";
+
 type SongViewLoaderDeps = {
   /** Revision counter published by the backend; each bump refetches. */
   playbackProjectRevision: number;
@@ -102,9 +104,16 @@ export function useSongViewLoader({
       }
 
       if (!needsWaveforms && !songChanged && resolvedSong) {
-        // Preserve previously hydrated waveforms.
+        // Preserve previously hydrated waveforms, and every track / clip /
+        // marker the edit did not touch keeps its object identity, so memos
+        // keyed on them (and memoized rows) skip the work.
         const previous = songRef.current;
-        setSong({ ...resolvedSong, waveforms: previous?.waveforms ?? [] });
+        setSong(
+          mergeSongView(previous, {
+            ...resolvedSong,
+            waveforms: previous?.waveforms ?? [],
+          }),
+        );
       } else {
         hydrateWaveformCacheFromSong(resolvedSong);
         setSong(resolvedSong);
