@@ -17,11 +17,15 @@ async fn main() {
     let seconds: u64 = args.next().and_then(|s| s.parse().ok()).unwrap_or(120);
 
     let mut runtime = join(GuestConfig {
-        device_name: "link-watch".into(),
-        platform: "windows".into(),
+        // LINK_NAME / LINK_PLATFORM: show up as another device (screenshots).
+        device_name: std::env::var("LINK_NAME").unwrap_or_else(|_| "link-watch".into()),
+        platform: std::env::var("LINK_PLATFORM").unwrap_or_else(|_| "windows".into()),
         app_version: "probe".into(),
         pin,
-        ..GuestConfig::new(format!("ws://{address}"), "link-watch")
+        ..GuestConfig::new(
+            format!("ws://{address}"),
+            std::env::var("LINK_NAME").unwrap_or_else(|_| "link-watch".into()),
+        )
     })
     .expect("runtime");
 
