@@ -10,6 +10,10 @@ asks to "create a new version" or "tag vX.Y.Z".
 - Scope of changes (use `git log <prev-tag>..HEAD` — do NOT trust memory).
 - Whether to push and create the remote tag (releases pipeline triggers on tag push), or stop at local commits.
 - Whether to bundle pending uncommitted work into a feature commit first.
+- Which announcement piece this release gets (step 11): a **feature video**
+  if it ships a new feature or another relevant user-visible change, a
+  **poster** if it is fixes and polish only. Decide it from the release notes,
+  and tell the user which one you picked.
 
 ## 1. Inspect what's actually changing
 
@@ -248,19 +252,57 @@ the full universal build, run `cargo test -p libretracks-video` with
 `THIRD-PARTY-NOTICES.md`. On an mpv bump, check that the script's Swift-less
 patch still applies (it fails loudly if not).
 
-## 5. Update web docs (only if user-visible behavior changed)
+## 5. Update the user guide (mandatory when the UI changed)
 
-Files: `apps/website/src/content/docs/docs/index.md` and
-`apps/website/src/content/docs/es/docs/index.md`.
-
-Add or refine 1–2 lines about anything in the release that affects how
-users perceive the app (new always-visible features, important behavior
-changes). Skip pure refactors, internal perf, or features that aren't
-user-discoverable yet.
+The guide lives in `apps/website/src/content/docs/es/docs/` (Spanish) and
+`apps/website/src/content/docs/docs/` (English, mirrored page for page). It is
+a visual guide, button by button: every control is explained next to an
+annotated screenshot of the real app, and gestures that are hard to describe
+get a short clip. **A release that adds or changes something the user sees —
+a new button, menu entry, panel, dialog, gesture, or a control that moved —
+updates the guide in that same style.** A release whose new UI is not in the
+guide is not finished.
 
 Go through the release's user-facing commits one by one — it is easy to
-document the headline feature and miss the four smaller ones. Both language
-files must stay mirrored.
+document the headline feature and miss the four smaller ones. For each one:
+
+1. **Find its page.** Toolbar, timeline, side nav/library, settings and the
+   main screen live under `interface/`; workflows under `tasks/` and
+   `start/`; features with their own page (pitch & warp, pads, voice guide,
+   automation, remote, Live view, mobile) at the top level. A whole new
+   feature gets its own page, linked from the sidebar and from `index.mdx`.
+2. **Write the explanation** in the voice of the existing pages: what the
+   control does, where it is, and the exact gesture for every platform it
+   exists on (desktop click / right-click, mobile tap / long-press).
+3. **Add annotated screenshots.** New captures go in the guide harnesses,
+   never by hand, so the next re-shoot regenerates them:
+   - Desktop: a step in `tests/e2e/specs/guide-shots.e2e.ts` (`shot()` with
+     numbered boxes or a spotlight from `tests/e2e/utils/annotate.ts`,
+     anchored on `data-lt-tour` targets from
+     `features/tutorial/tourTargets.ts` — add a target if the new control has
+     none). Output: `apps/website/public/guide/desktop/` and `desktop-en/`.
+   - Mobile: a step in `tests/android/guide-shots/shots.ts`, on the Android
+     emulator (AVD `LT_Midi_Test`, debug APK — see the header of that file).
+     Output: `apps/website/public/guide/mobile/` and `mobile-en/`.
+   - Crop to the area being explained: the guide column is ~720-900 px wide
+     and a full window does not read there.
+4. **Add a short clip (5–15 s, no narration) when a still cannot show it:**
+   drags, gestures, anything that animates, a sequence of 2-3 clicks. Desktop
+   clips with `Recorder` (`tests/e2e/utils/record.ts`, see `metronome-settings`
+   or `marker-create` in guide-shots); mobile clips with the `screenrecord`
+   helper in `shots.ts` (see `track-select-mix`). Embed them like the existing
+   ones (`<video src="/guide/desktop/<name>.mp4" ...>`).
+5. **Re-shoot what the change made stale.** A control that moved or was
+   restyled leaves old images showing the old UI — grep the guide for the
+   image names of the area you touched and re-run those steps too.
+6. **Run both languages** (`LT_GUIDESHOTS_LANG=en` for the English set) and
+   regenerate the Guides page cards with `node scripts/guide-cards.mjs` if a
+   desktop image that has a card changed.
+
+Name images and clips after the FEATURE, not the release, so a re-shoot
+overwrites the same file and every page that references it stays current.
+Both language trees must stay mirrored. Skip pure refactors, internal perf,
+and features hidden behind a flag (step 1).
 
 ### Screenshots
 
@@ -641,12 +683,104 @@ graphify update .
 (AST-only, no API cost. Per the project CLAUDE.md, run this after touching
 code so future sessions stay in sync.)
 
-## 11. Make the release posters (mandatory, Spanish and English per release)
+## 11. Make the announcement piece: feature video OR poster (mandatory)
 
-Every release gets two matching square announcement images, generated with the
-poster tool: the Spanish one goes with the Facebook draft (step 12), and the
-English one goes with the default Reddit draft (step 13). They share the same
-theme, screenshot and layout; only the visible copy changes.
+Every release gets ONE announcement piece, chosen in step 0:
+
+- **New feature or relevant user-visible change → a feature video** (11a),
+  Spanish only for now. No poster for that release.
+- **Fixes, performance and polish only → the posters** (11b), as before.
+
+When in doubt, it is a video: a feature announced only with a picture gets
+answered with "¿cómo se usa?".
+
+### 11a. Feature video (Spanish)
+
+A short narrated video that shows the new feature working in the real app
+and explains how to use it: where it is, what to press, what happens. It is
+the release's announcement, not a full tutorial — aim for 1–2 minutes, one
+release headline (or two or three closely related ones), and nothing else.
+
+**Which platforms it shows** follows where the feature exists — check the
+platform tags of its bullets in `docs/releases/v<NEW>.md` and the code:
+
+- Desktop and mobile → the **desktop part first, then the mobile part**,
+  with a title card in between ("Y en el móvil").
+- Only desktop → only desktop. Only mobile → only mobile.
+
+Structure: intro card (feature name + one line of what it is for) → the
+scenes, one action per scene, each with its sentence of narration → end card
+(`libretracks.com` + where to download). The narration explains the HOW with
+the same gestures as the release notes; on mobile it says tap / long-press,
+not click.
+
+It is built with the same pipeline as the "Primeros pasos" tutorial
+(`scripts/tutorial-video/`, recorded scenes + edge-tts narration + burnt-in
+subtitles), so it looks and sounds like the tutorials already on the site:
+
+```bash
+# 1. The script: one scene per action, ids in playback order (desktop scenes
+#    first, then mobile). Voice es-ES-AlvaroNeural, like primeros-pasos.es.json.
+#    Versioned next to the tutorial scripts:
+#    scripts/tutorial-video/novedades-<NEW>.es.json
+# 2. Narration (writes narration/<id>.mp3 + durations.json, which the
+#    recorders read so each scene lasts at least as long as its sentence):
+node scripts/tutorial-video/tts.mjs scripts/tutorial-video/novedades-<NEW>.es.json \
+  marketing/video-<NEW>/narration
+# 3a. Desktop scenes, from the compiled app (npm run build:desktop:native first):
+LT_RELEASEVIDEO=1 LT_TUTORIAL_DIR=marketing/video-<NEW> LT_SHOTS_SESSION=<COPY of a real session> \
+  npx wdio run tests/e2e/wdio.conf.ts --spec tests/e2e/specs/release-video.e2e.ts \
+  --mochaOpts.timeout 1800000
+# 3b. Mobile scenes, on the Android emulator (same AVD and debug APK as the
+#     mobile tutorial and the guide shots):
+LT_TUTORIAL_DIR=marketing/video-<NEW> node tests/android/release-video/record.ts
+# 4. Join scenes + voice + app audio + subtitles:
+node scripts/tutorial-video/compose.mjs scripts/tutorial-video/novedades-<NEW>.es.json \
+  marketing/video-<NEW> marketing/video-<NEW>/novedades-<NEW>.mp4
+```
+
+Both recorders write into the same `marketing/video-<NEW>/scenes/`, so one
+script and one `compose.mjs` run produce the whole video in order.
+
+The two recorders are **rewritten every release** for that release's feature
+(git history keeps the previous ones). Build them from the tutorial
+recorders, which already solve every hard part: `scene()`, `titleCard()` and
+`listen()` (app audio through `loopback.py`) in
+`tests/e2e/specs/tutorial-video.e2e.ts` and
+`tests/android/tutorial-video/record.ts`; visible touches
+(`setTouchRipple`) and the rest of the device handling in
+`tests/android/lib/device.ts`. Keep their partial runs (`LT_TUTORIAL_SCENES`
+on desktop; `--dry` and scene ids on mobile): get each scene right with them
+before recording the lot.
+
+Mobile traps already paid for (details in the headers of those files):
+
+- The app runs **landscape** on the phone; record it that way.
+- The emulator's own audio is unusable. If a mobile scene plays music, give
+  it the desktop twin's recording with `scripts/tutorial-video/borrow-audio.mjs`
+  (its `TWINS` table maps phone scene → desktop clip).
+- `screenrecord` must be stopped on the device before the local adb, or the
+  MP4 has no index.
+- The app language is set with `cmd locale set-app-locales`, not through
+  the settings.
+
+The output stays in `marketing/video-<NEW>/` (gitignored). Same rules as the
+poster: **watch the whole video before handing it back** (a scene that
+recorded an empty app or a wrong state only shows up there), use a real
+session — never fabricated content — and check no frame shows personal data
+(paths with the account name, file dialogs).
+
+Hand back the MP4 together with the Facebook draft (step 12). The video is
+16:9; if a vertical cut for Reels is wanted, it is laid out with the 9:16
+templates of the tutorial kit (`scripts/tutorial-kit/`).
+
+### 11b. Posters (fixes-only releases, Spanish and English)
+
+A release without a feature video gets two matching square announcement
+images, generated with the poster tool: the Spanish one goes with the Facebook
+draft (step 12), and the English one goes with the default Reddit draft (step
+13). They share the same theme, screenshot and layout; only the visible copy
+changes.
 
 The layout is 1080x1080 but the capture runs at 2x, so the PNG lands at
 2160x2160 (~1.2 MB). That density is for the SCREENSHOTS, not the type: an app
@@ -772,8 +906,9 @@ End-user audience, natural language, minimal emojis, no version-bump
 jargon. Lead with the most relatable improvement (loading speed, new
 in-app behavior), not internals. Spanish by default unless told otherwise.
 Do NOT post it anywhere; just hand back the text. Hand it back together
-with the poster from step 11 — the post and the image go out as one piece,
-so the poster's headline and the post's first bullet should agree.
+with the piece from step 11 (the feature video or the Spanish poster) — the
+post and the piece go out together, so the video's headline feature (or the
+poster's headline) and the post's first bullet should agree.
 
 Use this exact template (matches the channel's voice):
 
@@ -848,7 +983,7 @@ exist because of a specific failure, not as a style preference:
   Facebook whatever the clipboard happens to hold, which depends on the app it
   was copied from; attaching hands it the PNG. Step 11 renders at 2x precisely
   so the app's UI text stays legible, and that is what an extra re-encode
-  costs.
+  costs. A feature video is uploaded the same way: attach the MP4 file.
 
 Order: attach the PNG → paste the body → publish. Nothing should need fixing
 by hand afterwards.
@@ -869,7 +1004,11 @@ node scripts/announce/reddit-post.mjs --version <NEW> --lang es
 node scripts/announce/reddit-post.mjs --version <NEW> --plain    # rich text editor
 ```
 
-It prints the title, the poster to attach and the body. It has no network code
+It prints the title, the poster to attach and the body. In a release that
+got a feature video instead of posters (step 11a) there is no English poster
+and the video is in Spanish: post the English draft as a text post with the
+links and no media; attach the video only to a Spanish-language post
+(`--lang es`). It has no network code
 and no credentials: the post goes up by hand.
 
 The generator itself is not in the repo — `scripts/announce/` is gitignored,
@@ -942,6 +1081,10 @@ the preview before submitting, either way.
 - Shipping a poster that repeats the previous release's look — the whole
   point of the theme rotation is that each announcement looks new. If the
   themes start feeling used up, add one (step 11).
+- Announcing a new feature with a poster. A feature release gets a video
+  (step 11a), shown on every platform the feature exists on, desktop first.
+- Shipping new UI with the guide still showing the old one. A new or moved
+  control means new annotated screenshots and, if it moves, a clip (step 5).
 - Publishing a poster without opening the PNG. Overlapping text, a cropped
   app window and a wrapped feature column all render fine and only show up
   when you look.
