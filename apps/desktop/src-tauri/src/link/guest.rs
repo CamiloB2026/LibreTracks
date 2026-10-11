@@ -369,6 +369,16 @@ async fn relay(
                 host_monotonic_ms,
             } => {
                 let transport = with_guest(&app, |guest| {
+                    if cfg!(debug_assertions) {
+                        let cached = guest
+                            .transport
+                            .as_ref()
+                            .and_then(|t| snapshot_revision(&t.snapshot));
+                        let pushed = snapshot_revision(&snapshot);
+                        if cached.is_some() && pushed < cached {
+                            eprintln!("[libretracks-link] pushed transport {pushed:?} older than cached {cached:?}");
+                        }
+                    }
                     let position = host_position_now(
                         &snapshot,
                         host_monotonic_ms,
@@ -490,6 +500,12 @@ pub async fn proxy_invoke(app: &AppHandle, command: String, args: Value) -> Resu
                 .transport
                 .as_ref()
                 .and_then(|t| snapshot_revision(&t.snapshot));
+            if cfg!(debug_assertions) && wanted != guest.song_revision {
+                eprintln!(
+                    "[libretracks-link] song view: ui wants {wanted:?}, pushed {:?} -> host",
+                    guest.song_revision
+                );
+            }
             (wanted.is_some() && wanted == guest.song_revision)
                 .then(|| guest.song.clone())
                 .flatten()
@@ -511,8 +527,11 @@ pub async fn proxy_invoke(app: &AppHandle, command: String, args: Value) -> Resu
         })?;
     // Diagnosis of slow round trips on real devices (adb logcat / Console).
     let elapsed = started.elapsed().as_millis();
-    if elapsed >= 300 {
-        eprintln!("[libretracks-link] {logged_command} took {elapsed} ms on the host");
+    if elapsed >= 300 || cfg!(debug_assertions) {
+        eprintln!(
+            "[libretracks-link] {logged_command} took {elapsed} ms on the host ({} KB)",
+            value.to_string().len() / 1024
+        );
     }
 
     // Most session commands answer with the transport snapshot they left

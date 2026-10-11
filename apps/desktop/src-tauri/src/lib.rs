@@ -238,6 +238,15 @@ pub fn run() {
             // take effect for the very first decode.
             infra::settings::apply_decoding_cache_env(&app.handle(), &runtime_settings);
 
+            // Before the audio device opens: on mobile that runs inline below
+            // and takes seconds, while the WebView is already up and asking.
+            // A mirror-mode guest calls `link_guest_snapshot` as it boots, and
+            // with the state not managed yet that was a panic across the JNI
+            // bridge (abort, emulator 2026-10-11). Both only read a config
+            // file here. The feed goes first: the remote subscribes to it.
+            session_feed::initialize_session_feed(app);
+            link::initialize_link(app);
+
             let state = app.state::<DesktopState>();
             state.audio.attach_app_handle(app.handle().clone());
             video_setup::start(app.handle(), &state);
@@ -267,10 +276,6 @@ pub fn run() {
             #[cfg(any(target_os = "android", target_os = "ios"))]
             start_audio_and_midi(app.handle(), runtime_settings)
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
-            // Before the remote: it subscribes to the feed. Idle (no session
-            // lock) until someone subscribes, so on mobile it costs nothing.
-            session_feed::initialize_session_feed(app);
-            link::initialize_link(app);
             remote::initialize_remote(app)
                 .map_err(|error| std::io::Error::other(error.to_string()))?;
 
