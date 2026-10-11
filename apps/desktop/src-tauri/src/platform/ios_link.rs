@@ -20,6 +20,22 @@ extern "C" {
     fn lt_link_bonjour_stop_advertise();
     fn lt_link_bonjour_browse(service_type: *const c_char);
     fn lt_link_bonjour_stop_browse();
+    fn lt_device_name() -> *mut c_char;
+}
+
+/// `UIDevice.name`: "iPhone" / "iPad", or the user's own name once the app
+/// holds Apple's user-assigned-device-name entitlement.
+pub fn device_name() -> Option<String> {
+    let pointer = unsafe { lt_device_name() };
+    if pointer.is_null() {
+        return None;
+    }
+    let name = unsafe { CStr::from_ptr(pointer) }
+        .to_string_lossy()
+        .trim()
+        .to_string();
+    unsafe { libc::free(pointer.cast()) };
+    (!name.is_empty()).then_some(name)
 }
 
 fn c(text: &str) -> CString {

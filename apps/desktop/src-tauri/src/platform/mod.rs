@@ -66,6 +66,8 @@ pub mod android_library_tree;
 #[cfg(target_os = "android")]
 pub mod android_memory;
 #[cfg(target_os = "android")]
+pub mod android_device_name;
+#[cfg(target_os = "android")]
 pub mod android_multicast;
 #[cfg(target_os = "android")]
 pub mod android_wifi_latency;

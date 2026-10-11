@@ -40,7 +40,15 @@ impl NetworkSessionConfig {
         if self.device_id.trim().is_empty() {
             self.device_id = new_id();
         }
-        if self.device_name.trim().is_empty() {
+        // Also the placeholders older versions saved on phones and tablets,
+        // and iOS's generic "iPhone"/"iPad": the device's real name replaces
+        // them (and, on iOS, the user's own name once the app holds Apple's
+        // user-assigned-device-name entitlement). A name typed by the user is
+        // kept.
+        let current = self.device_name.trim();
+        if current.is_empty()
+            || (GENERIC_NAMES.contains(&current) && current != machine_name.trim())
+        {
             self.device_name = machine_name.to_string();
         }
         self
@@ -52,7 +60,18 @@ impl NetworkSessionConfig {
     }
 }
 
+/// Names that only say what kind of device this is.
+const GENERIC_NAMES: [&str; 4] = ["Android", "iPhone / iPad", "iPhone", "iPad"];
+
 pub fn machine_name() -> String {
+    #[cfg(target_os = "android")]
+    if let Some(name) = crate::platform::android_device_name::device_name() {
+        return name;
+    }
+    #[cfg(target_os = "ios")]
+    if let Some(name) = crate::platform::ios_link::device_name() {
+        return name;
+    }
     let raw = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
         .unwrap_or_default();
@@ -128,6 +147,42 @@ mod tests {
         .normalized(|| unreachable!(), "PC");
         assert_eq!(config.device_id, "keep");
         assert_eq!(config.device_name, "iPad de Ana");
+    }
+
+    #[test]
+    fn a_generic_name_gives_way_to_the_real_one() {
+        let named = |name: &str| NetworkSessionConfig {
+            device_id: "keep".into(),
+            device_name: name.into(),
+            ..Default::default()
+        };
+        // What older versions saved on a tablet.
+        assert_eq!(
+            named("Android")
+                .normalized(|| unreachable!(), "Galaxy Tab S9")
+                .device_name,
+            "Galaxy Tab S9"
+        );
+        assert_eq!(
+            named("iPhone / iPad")
+                .normalized(|| unreachable!(), "iPhone")
+                .device_name,
+            "iPhone"
+        );
+        // iOS's generic name, once the real one is available.
+        assert_eq!(
+            named("iPhone")
+                .normalized(|| unreachable!(), "iPhone de Ana")
+                .device_name,
+            "iPhone de Ana"
+        );
+        // Typed by the user: kept.
+        assert_eq!(
+            named("iPhone-Oto")
+                .normalized(|| unreachable!(), "iPhone")
+                .device_name,
+            "iPhone-Oto"
+        );
     }
 
     #[test]

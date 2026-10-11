@@ -179,3 +179,16 @@ public func ltLinkBonjourBrowse(_ type: UnsafePointer<CChar>?) {
 public func ltLinkBonjourStopBrowse() {
   DispatchQueue.main.async { LinkBonjour.shared.stopBrowsing() }
 }
+
+/// The device's name for network sessions. Since iOS 16 `UIDevice.name` is
+/// the generic "iPhone" / "iPad" unless the app holds Apple's
+/// `com.apple.developer.device-information.user-assigned-device-name`
+/// entitlement; with it, the user's own name ("iPhone de Ana"). Rust frees
+/// the copy with `free`. Read on the main thread, as UIKit wants.
+@_cdecl("lt_device_name")
+public func ltDeviceName() -> UnsafeMutablePointer<CChar>? {
+  let name = Thread.isMainThread
+    ? UIDevice.current.name
+    : DispatchQueue.main.sync { UIDevice.current.name }
+  return strdup(name)
+}
