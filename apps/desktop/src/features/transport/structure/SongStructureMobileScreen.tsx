@@ -28,7 +28,7 @@ import "./structure.css";
 /** How long "Removed «Verse» · Undo" stays on screen. */
 export const UNDO_TOAST_MS = 4000;
 
-/** Landscape tablet: palette on the left, list on the right, no sheet. */
+/** Landscape tablet: room for the blocks as a vertical list, one row each. */
 const WIDE_QUERY = "(min-width: 900px) and (orientation: landscape)";
 
 function useWideLayout(): boolean {
@@ -174,8 +174,10 @@ function SheetItem({
 
 /**
  * Arrangement editor on phones and tablets: a full screen with the blocks as
- * a vertical list. Drag by the handle to reorder, swipe left to remove (with
- * undo), long-press for Duplicate/Remove, "Add section" for the palette.
+ * a row of cards that scrolls sideways (phones are always landscape here; a
+ * landscape tablet has room for a vertical list instead). Drag by the
+ * handle to reorder, swipe up to remove (with undo), long-press for
+ * Duplicate/Remove, the "+" lines between cards to insert there.
  * Android's back button closes the topmost thing, and closing with unapplied
  * changes asks. Applying closes the screen so the result shows on the
  * timeline.
@@ -305,7 +307,7 @@ export function SongStructureMobileScreen({
 
   return (
     <div
-      className={`lt-structure-mobile ${wide ? "is-wide" : ""}`}
+      className={`lt-structure-mobile ${wide ? "is-wide" : "is-row"}`}
       role="dialog"
       aria-label={t("transport.structure.panelTitle", { song: region.name })}
     >
@@ -361,33 +363,41 @@ export function SongStructureMobileScreen({
               ) : null}
             </div>
             <div className="lt-structure-mobile-split">
-              {wide ? <TapPalette sections={structure.sections} t={t} /> : null}
               <div className="lt-structure-mobile-list">
                 <SongStructureEditor
                   sections={structure.sections}
                   draft={draft}
                   selectedBlockId={selectedBlockId}
-                  layout="vertical"
+                  layout={wide ? "vertical" : "row"}
                   showPalette={false}
                   handleOnly
-                  renderGap={
-                    wide
-                      ? undefined
-                      : (index) => (
-                          <button
-                            type="button"
-                            className="lt-structure-gap"
-                            aria-label={t("transport.structure.insertHere")}
-                            onClick={() => openInsert(index)}
-                          >
-                            <span className="material-symbols-outlined" aria-hidden="true">
-                              add
-                            </span>
-                          </button>
-                        )
-                  }
+                  renderGap={(index) => (
+                    <button
+                      type="button"
+                      className="lt-structure-gap"
+                      aria-label={t("transport.structure.insertHere")}
+                      onClick={() => openInsert(index)}
+                    >
+                      <span className="material-symbols-outlined" aria-hidden="true">
+                        add
+                      </span>
+                    </button>
+                  )}
+                  renderEnd={() => (
+                    <button
+                      type="button"
+                      className="lt-structure-add-row"
+                      onClick={() => openInsert(draft.blocks.length)}
+                    >
+                      <span className="material-symbols-outlined" aria-hidden="true">
+                        add
+                      </span>
+                      {t("transport.structure.addSection")}
+                    </button>
+                  )}
                   wrapBlock={(block, row) => (
                     <SwipeableRow
+                      axis={wide ? "x" : "y"}
                       onRemove={() => removeWithUndo(block.id)}
                       onLongPress={() => setMenuBlockId(block.id)}
                     >
@@ -395,20 +405,6 @@ export function SongStructureMobileScreen({
                     </SwipeableRow>
                   )}
                 />
-                {!wide ? (
-                  // In the flow, after the last block: a floating button sat on
-                  // top of the last block's drag handle.
-                  <button
-                    type="button"
-                    className="lt-structure-add-row"
-                    onClick={() => openInsert(draft.blocks.length)}
-                  >
-                    <span className="material-symbols-outlined" aria-hidden="true">
-                      add
-                    </span>
-                    {t("transport.structure.addSection")}
-                  </button>
-                ) : null}
               </div>
             </div>
           </>

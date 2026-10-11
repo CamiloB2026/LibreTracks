@@ -1,0 +1,33 @@
+[package]
+name = "libretracks-link"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Network sessions between LibreTracks apps (docs/plans/network-sessions).
+# Not the remote: that is crates/libretracks-remote and stays independent.
+# No Tauri, no audio engine, no platform cfg: it builds and tests everywhere.
+
+[dependencies]
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+getrandom = "0.2"
+libretracks-core = { path = "../libretracks-core" }
+mdns-sd = { version = "0.21", optional = true, default-features = false }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+tokio = { version = "1", features = ["macros", "net", "rt", "sync", "time"] }
+tokio-tungstenite = "0.24"
+
+[features]
+# DNS-SD through the mdns-sd daemon: desktop and Android. iOS uses the
+# system Bonjour from Swift instead (raw multicast needs an entitlement).
+mdns = ["dep:mdns-sd"]
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "sync", "time"] }
+
+
+[[example]]
+name = "mdns_probe"
+required-features = ["mdns"]

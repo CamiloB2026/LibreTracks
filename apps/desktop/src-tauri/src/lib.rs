@@ -9,8 +9,10 @@ mod audio;
 mod commands;
 mod external_project;
 mod infra;
+mod link;
 mod models;
 mod platform;
+mod session_feed;
 mod state;
 mod video;
 
@@ -236,6 +238,15 @@ pub fn run() {
             // take effect for the very first decode.
             infra::settings::apply_decoding_cache_env(&app.handle(), &runtime_settings);
 
+            // Before the audio device opens: on mobile that runs inline below
+            // and takes seconds, while the WebView is already up and asking.
+            // A mirror-mode guest calls `link_guest_snapshot` as it boots, and
+            // with the state not managed yet that was a panic across the JNI
+            // bridge (abort, emulator 2026-10-11). Both only read a config
+            // file here. The feed goes first: the remote subscribes to it.
+            session_feed::initialize_session_feed(app);
+            link::initialize_link(app);
+
             let state = app.state::<DesktopState>();
             state.audio.attach_app_handle(app.handle().clone());
             video_setup::start(app.handle(), &state);
@@ -283,6 +294,21 @@ pub fn run() {
             commands::app_close::exit_app,
             commands::app_close::cancel_app_close,
             commands::system::get_telemetry_platform,
+            link::commands::link_get_settings,
+            link::commands::link_save_settings,
+            link::commands::link_start_hosting,
+            link::commands::link_stop_hosting,
+            link::commands::link_host_status,
+            link::commands::link_set_guest_role,
+            link::commands::link_kick_guest,
+            link::commands::link_revoke_trusted,
+            link::commands::link_join,
+            link::commands::link_leave,
+            link::commands::link_guest_snapshot,
+            link::commands::link_guest_command,
+            link::commands::link_proxy_invoke,
+            link::commands::link_start_discovery,
+            link::commands::link_stop_discovery,
             commands::system::get_remote_server_info,
             commands::system::get_remote_firewall_status,
             commands::system::allow_remote_through_firewall,
@@ -506,6 +532,7 @@ pub fn run() {
             commands::timeline::update_song_tempo,
             commands::timeline::update_song_region_key,
             commands::timeline::set_song_region_compact_width,
+            commands::charts::set_song_region_chart,
             commands::timeline::upsert_song_tempo_marker,
             commands::timeline::delete_song_tempo_marker,
             commands::timeline::update_song_time_signature,

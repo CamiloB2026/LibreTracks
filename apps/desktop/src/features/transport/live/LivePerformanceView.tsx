@@ -1,5 +1,6 @@
 import {
   memo,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,7 @@ import {
   type ActiveVampSummary,
   type AppSettings,
   type SectionMarkerSummary,
+  type SongChart,
   type SongRegionSummary,
   type SongView,
 } from "@libretracks/shared/models";
@@ -32,6 +34,8 @@ import {
   calculateLiveProgress,
   useLiveProgressBars,
 } from "./useLiveProgressBars";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
+import { LiveChartPanel } from "../charts/LiveChartPanel";
 import { SongReorderHandle } from "../songs/SongReorderHandle";
 import {
   SONG_REORDER_ID_ATTRIBUTE,
@@ -39,21 +43,48 @@ import {
 } from "../songs/useSongReorder";
 import type { ViewMode } from "../uiStore";
 import { ViewModeSwitcher } from "../timeline/ViewModeSwitcher";
+import type { AccidentalPreference } from "@libretracks/shared/charts/personalChords";
 import "./LivePerformanceView.css";
+
+/** The settings the live view reads: the jump modes. A network-session guest
+ * only has the host's copy of these, not a whole `AppSettings`. */
+export type LiveViewSettings = Pick<
+  AppSettings,
+  | "globalJumpMode"
+  | "globalJumpBars"
+  | "songJumpTrigger"
+  | "songJumpBars"
+  | "songTransitionMode"
+  | "vampMode"
+  | "vampBars"
+>;
 
 type LivePerformanceViewProps = {
   song: SongView;
   positionSecondsRef: { readonly current: number };
-  settings: AppSettings;
+  settings: LiveViewSettings;
   pendingMarkerId: string | null;
   pendingMarkerName: string | null;
   activeVamp: ActiveVampSummary | null;
-  onViewModeChange: (mode: ViewMode) => void;
+  /** Absent when the view is not part of the editor (network-session guest
+   * screen): then `headerStart` takes the view switcher's place. */
+  onViewModeChange?: (mode: ViewMode) => void;
+  headerStart?: ReactNode;
+  /** False: read only. No jump settings, no song or marker actions, no vamp
+   * and no cancel (a network-session viewer). Default true. */
+  canControl?: boolean;
+  /** False hides the lyrics editing tools. Default true. */
+  canEditChart?: boolean;
+  /** This device's own chord shift and spelling (network-session guests). */
+  chartExtraSemitones?: number;
+  chartAccidentals?: AccidentalPreference;
   onMarkerAction: (marker: SectionMarkerSummary) => void;
   onSongAction: (region: SongRegionSummary) => void;
   /** Drag a setlist song to another position; `targetIndex` is its final
    * position in start order (0 = first). */
   onReorderSong?: (regionId: string, targetIndex: number) => void;
+  /** Replace a song's lyrics and chords (`null` removes them). */
+  onChartChange: (regionId: string, chart: SongChart | null) => Promise<void>;
   onToggleVamp: () => void;
   onCancelPendingJump: () => void;
   onGlobalJumpModeChange: (mode: AppSettings["globalJumpMode"]) => void;
@@ -64,6 +95,26 @@ type LivePerformanceViewProps = {
   onVampModeChange: (mode: AppSettings["vampMode"]) => void;
   onVampBarsChange: (bars: number) => void;
 };
+
+const CHART_OPEN_KEY = "lt.liveView.chartOpen";
+
+/** Whether the lyrics panel is shown. A per-viewer convenience, so browser
+ * storage; open by default so the feature is found. */
+function readChartOpen(): boolean {
+  try {
+    return window.localStorage.getItem(CHART_OPEN_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
+
+function writeChartOpen(open: boolean) {
+  try {
+    window.localStorage.setItem(CHART_OPEN_KEY, String(open));
+  } catch {
+    // Blocked storage: the panel just opens again next time.
+  }
+}
 
 type SettingCardProps = {
   label: string;
@@ -129,9 +180,15 @@ function LivePerformanceViewComponent({
   pendingMarkerName,
   activeVamp,
   onViewModeChange,
+  headerStart,
+  canControl = true,
+  canEditChart = true,
+  chartExtraSemitones = 0,
+  chartAccidentals = "auto",
   onMarkerAction,
   onSongAction,
   onReorderSong,
+  onChartChange,
   onToggleVamp,
   onCancelPendingJump,
   onGlobalJumpModeChange,
@@ -164,7 +221,8 @@ function LivePerformanceViewComponent({
     positionSecondsRef,
   );
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({});
-  const setlistRef = useRef<HTMLDivElement | null>(null);
+  const songChipRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const setlistRef = useRef<HTMLElement | null>(null);
   const sortedRegionIds = useMemo(
     () => sortedRegions.map((region) => region.id),
     [sortedRegions],
@@ -174,6 +232,19 @@ function LivePerformanceViewComponent({
     containerRef: setlistRef,
     onReorder: onReorderSong,
   });
+  // Lyrics ship behind a flag (see featureFlags): off, the live view is the
+  // markers alone, as before the feature existed.
+  const [chartOpenSetting, setChartOpen] = useState(() => readChartOpen());
+  const chartOpen = FEATURE_FLAGS.lyrics && chartOpenSetting;
+  const [chartExpanded, setChartExpanded] = useState(false);
+  const toggleChartOpen = () => {
+    setChartOpen((current) => {
+      writeChartOpen(!current);
+      return !current;
+    });
+    setChartExpanded(false);
+  };
+  const toggleChartExpanded = useCallback(() => setChartExpanded((current) => !current), []);
   const markerProgressFillRef = useRef<HTMLSpanElement | null>(null);
   const songProgressFillRef = useRef<HTMLSpanElement | null>(null);
   const lastPlaybackRegionIdRef = useRef<string | null>(null);
@@ -248,6 +319,12 @@ function LivePerformanceViewComponent({
     }
   }, [playback.currentRegionId]);
 
+  // The song playing stays visible in the header strip.
+  useEffect(() => {
+    const chip = currentRegion ? songChipRefs.current[currentRegion.id] : null;
+    chip?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [currentRegion?.id]);
+
   useEffect(() => {
     if (!selectedPlayback.activeGroupId) return;
     const row = rowRefs.current[selectedPlayback.activeGroupId];
@@ -281,20 +358,106 @@ function LivePerformanceViewComponent({
   ];
 
   return (
-    <main className="lt-live-view" aria-label={t("liveView.title")}>
+    <main
+      className={`lt-live-view${chartOpen ? " has-chart" : ""}${chartOpen && chartExpanded ? " is-chart-expanded" : ""}`}
+      aria-label={t("liveView.title")}
+    >
       <header className="lt-live-header">
-        <ViewModeSwitcher value="live" onChange={onViewModeChange} />
+        {headerStart ?? (onViewModeChange ? (
+          <ViewModeSwitcher value="live" onChange={onViewModeChange} />
+        ) : null)}
         <div className="lt-live-heading">
           <span className="material-symbols-outlined" aria-hidden="true">stadium</span>
           <div><small>{t("liveView.title")}</small><strong>{currentRegion?.name ?? song.title}</strong></div>
         </div>
         <div className="lt-live-song-metrics">
-          <span>{formatLiveClock(currentRegionElapsed)}</span>
           <span>{currentRegion ? `${getEffectiveBpmAt(song, currentRegion.startSeconds).toFixed(0)} BPM` : `${song.bpm.toFixed(0)} BPM`}</span>
           <span>{regionEffectiveKey(currentRegion) ?? "—"}</span>
         </div>
+        <div className="lt-live-song-progress">
+          <span className="lt-live-song-progress-times">
+            {formatLiveClock(currentRegionElapsed)} / {formatLiveClock(currentRegionDuration)}
+          </span>
+          <span
+            className="lt-live-song-progress-track"
+            role="progressbar"
+            aria-label={t("liveView.songProgress")}
+            aria-valuenow={Math.round(currentRegionProgress * 100)}
+          >
+            <span ref={songProgressFillRef} />
+          </span>
+          <small className="lt-live-song-remaining">
+            {t("liveView.remaining", {
+              time: formatLiveClock(currentRegionDuration - currentRegionElapsed),
+            })}
+          </small>
+        </div>
+        <nav
+          className="lt-live-region-buttons"
+          aria-label={t("liveView.setlist")}
+          ref={(node) => { setlistRef.current = node; }}
+        >
+          {sortedRegions.map((region, index) => (
+            <div
+              className={`lt-live-region-row${region.id === selectedRegion?.id ? " is-selected" : ""}${region.id === currentRegion?.id ? " is-playing" : ""}${region.id === pendingMarkerId ? " is-queued" : ""}${songReorder.enabled ? " has-reorder" : ""}`}
+              key={region.id}
+              ref={(node) => { songChipRefs.current[region.id] = node; }}
+              {...{ [SONG_REORDER_ID_ATTRIBUTE]: region.id }}
+            >
+              {songReorder.enabled ? (
+                <SongReorderHandle
+                  name={region.name}
+                  handleProps={songReorder.handleProps(region.id)}
+                />
+              ) : null}
+              <button
+                type="button"
+                className="lt-live-region-select"
+                aria-label={t("liveView.selectSong", { name: region.name })}
+                onClick={() => setSelectedRegionId(region.id)}
+                {...songReorder.surfaceProps(region.id)}
+              >
+                <span>{index + 1}</span>{region.name}
+                {appliedArrangementName(region) ? (
+                  <em className="lt-live-region-arrangement">
+                    {t("transport.structure.live.badge", { name: appliedArrangementName(region) })}
+                  </em>
+                ) : null}
+                {region.id === pendingMarkerId ? (
+                  <em className="lt-live-region-queued">{t("liveView.queued")}</em>
+                ) : null}
+              </button>
+              {canControl ? (
+              <button
+                type="button"
+                className="lt-live-region-play"
+                aria-label={t("liveView.playSong", { name: region.name })}
+                onClick={() => onSongAction(region)}
+              >
+                <span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>
+              </button>
+              ) : null}
+            </div>
+          ))}
+        </nav>
+        {FEATURE_FLAGS.lyrics ? (
+        <div className="lt-live-header-tools lt-bottom-controls">
+          <button
+            type="button"
+            className={`lt-live-chart-toggle${chartOpen ? " is-active" : ""}`}
+            aria-pressed={chartOpen}
+            aria-label={t("liveChart.toggle")}
+            title={t("liveChart.toggle")}
+            onClick={toggleChartOpen}
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">lyrics</span>
+            <span>{t("liveChart.toggleLabel")}</span>
+          </button>
+        </div>
+        ) : null}
       </header>
 
+      {canControl ? (
       <section className="lt-live-settings" aria-label={t("liveView.performanceSettings")}>
         <SettingCard
           label={t("liveView.markerJump")}
@@ -351,6 +514,7 @@ function LivePerformanceViewComponent({
           )}
         />
       </section>
+      ) : null}
 
       <section className="lt-live-cue-panel" aria-labelledby="lt-live-cue-title">
         <div className="lt-live-section-title">
@@ -364,6 +528,7 @@ function LivePerformanceViewComponent({
               {" · "}
               {groups.length} {t("liveView.markers")}
             </span>
+            {canControl ? (
             <button
               type="button"
               className="lt-live-cancel"
@@ -374,6 +539,7 @@ function LivePerformanceViewComponent({
               <span className="material-symbols-outlined" aria-hidden="true">cancel_schedule_send</span>
               <span>{t("liveView.cancelJump")}</span>
             </button>
+            ) : null}
           </div>
         </div>
         <div className="lt-live-cue-grid">
@@ -390,9 +556,10 @@ function LivePerformanceViewComponent({
                 type="button"
                 key={group.id}
                 ref={(node) => { rowRefs.current[group.id] = node; }}
-                className={`lt-live-cue-row${isActive ? " is-active" : ""}${isNext ? " is-next" : ""}${isPending ? " is-pending" : ""}${isPast ? " is-past" : ""}${isVampAnchor ? " is-vamp" : ""}${group.category === "cue" ? " is-cue" : ""}`}
+                aria-disabled={canControl ? undefined : true}
+                className={`lt-live-cue-row${canControl ? "" : " is-readonly"}${isActive ? " is-active" : ""}${isNext ? " is-next" : ""}${isPending ? " is-pending" : ""}${isPast ? " is-past" : ""}${isVampAnchor ? " is-vamp" : ""}${group.category === "cue" ? " is-cue" : ""}`}
                 style={{ "--lt-live-marker-color": markerColor(group.primary) } as CSSProperties}
-                onClick={() => onMarkerAction(group.primary)}
+                onClick={canControl ? () => onMarkerAction(group.primary) : undefined}
               >
                 <span className="lt-live-cue-index">{String(index + 1).padStart(2, "0")}</span>
                 <span className="lt-live-cue-copy">
@@ -411,7 +578,13 @@ function LivePerformanceViewComponent({
                         vistazo junto al nombre, que es como se usa en directo. */}
                     {isNext && selectedPlayback.secondsToNextGroup !== null ? (
                       <em className="is-countdown">
-                        {t("liveView.nextIn", { time: formatLiveClock(selectedPlayback.secondsToNextGroup) })}
+                        <span className="lt-live-countdown-long">
+                          {t("liveView.nextIn", { time: formatLiveClock(selectedPlayback.secondsToNextGroup) })}
+                        </span>
+                        <span className="lt-live-countdown-short" aria-hidden="true">
+                          <span className="material-symbols-outlined">timer</span>
+                          {formatLiveClock(selectedPlayback.secondsToNextGroup)}
+                        </span>
                       </em>
                     ) : null}
                     {isVampAnchor ? (
@@ -450,71 +623,21 @@ function LivePerformanceViewComponent({
         </div>
       </section>
 
-      <section className="lt-live-setlist" aria-label={t("liveView.setlist")}>
-        <div className="lt-live-song-progress">
-          <span className="lt-live-region-summary">
-            <small>{t("liveView.currentSong")}</small>
-            <strong>{currentRegion?.name ?? "—"}</strong>
-          </span>
-          <span className="lt-live-song-progress-times">
-            {formatLiveClock(currentRegionElapsed)} / {formatLiveClock(currentRegionDuration)}
-          </span>
-          <span
-            className="lt-live-song-progress-track"
-            role="progressbar"
-            aria-label={t("liveView.songProgress")}
-            aria-valuenow={Math.round(currentRegionProgress * 100)}
-          >
-            <span ref={songProgressFillRef} />
-          </span>
-          <small className="lt-live-song-remaining">
-            {t("liveView.remaining", {
-              time: formatLiveClock(currentRegionDuration - currentRegionElapsed),
-            })}
-          </small>
-        </div>
-        <div className="lt-live-region-buttons" ref={setlistRef}>
-          {sortedRegions.map((region, index) => (
-            <div
-              className={`lt-live-region-row${region.id === selectedRegion?.id ? " is-selected" : ""}${region.id === currentRegion?.id ? " is-playing" : ""}${region.id === pendingMarkerId ? " is-queued" : ""}${songReorder.enabled ? " has-reorder" : ""}`}
-              key={region.id}
-              {...{ [SONG_REORDER_ID_ATTRIBUTE]: region.id }}
-            >
-              {songReorder.enabled ? (
-                <SongReorderHandle
-                  name={region.name}
-                  handleProps={songReorder.handleProps(region.id)}
-                />
-              ) : null}
-              <button
-                type="button"
-                className="lt-live-region-select"
-                aria-label={t("liveView.selectSong", { name: region.name })}
-                onClick={() => setSelectedRegionId(region.id)}
-                {...songReorder.surfaceProps(region.id)}
-              >
-                <span>{index + 1}</span>{region.name}
-                {appliedArrangementName(region) ? (
-                  <em className="lt-live-region-arrangement">
-                    {t("transport.structure.live.badge", { name: appliedArrangementName(region) })}
-                  </em>
-                ) : null}
-                {region.id === pendingMarkerId ? (
-                  <em className="lt-live-region-queued">{t("liveView.queued")}</em>
-                ) : null}
-              </button>
-              <button
-                type="button"
-                className="lt-live-region-play"
-                aria-label={t("liveView.playSong", { name: region.name })}
-                onClick={() => onSongAction(region)}
-              >
-                <span className="material-symbols-outlined" aria-hidden="true">play_arrow</span>
-              </button>
-            </div>
-          ))}
-        </div>
-      </section>
+      {chartOpen ? (
+        <LiveChartPanel
+          song={song}
+          region={selectedRegion}
+          positionSecondsRef={positionSecondsRef}
+          pendingMarkerId={pendingMarkerId}
+          expanded={chartExpanded}
+          onToggleExpanded={toggleChartExpanded}
+          onClose={toggleChartOpen}
+          onChartChange={onChartChange}
+          canEdit={canEditChart}
+          extraSemitones={chartExtraSemitones}
+          accidentals={chartAccidentals}
+        />
+      ) : null}
 
     </main>
   );

@@ -6,8 +6,8 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
-  grid-template-areas: "header" "settings" "cues" "setlist";
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-areas: "header" "settings" "cues";
   gap: clamp(0.45rem, 0.8vw, 0.75rem);
   padding: 0 var(--lt-live-page-padding) var(--lt-live-page-padding);
   overflow: hidden;
@@ -19,20 +19,39 @@
 
 .lt-live-header,
 .lt-live-settings,
-.lt-live-cue-panel,
-.lt-live-setlist {
+.lt-live-cue-panel {
   border: 1px solid var(--lt-live-border);
   border-radius: 0.55rem;
   background: linear-gradient(145deg, rgb(255 255 255 / 0.025), transparent), var(--lt-live-surface);
 }
 
+.lt-live-view.has-chart {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-areas:
+    "header header"
+    "settings settings"
+    "cues chart";
+}
+
+/* Lyrics only: the singer's view on a phone. */
+.lt-live-view.is-chart-expanded {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-areas: "header" "chart";
+}
+
+.lt-live-view.is-chart-expanded .lt-live-settings,
+.lt-live-view.is-chart-expanded .lt-live-cue-panel {
+  display: none;
+}
+
 .lt-live-header {
   grid-area: header;
   min-width: 0;
-  min-height: 2.95rem;
+  min-height: 3.1rem;
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 0.85rem;
   margin-inline: calc(-1 * var(--lt-live-page-padding));
   padding: 0.35rem 0.85rem;
   border-inline: 0;
@@ -249,10 +268,12 @@
 .lt-live-cue-grid {
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(3, minmax(13rem, 1fr));
+  /* As many columns as fit in the markers column: one beside the lyrics on a
+     narrow screen, two or three with the lyrics hidden or on a wide one. */
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 13rem), 1fr));
   /* Keep the matrix geometry stable when AVISO/AHORA/countdown lines change.
      Compact layouts restore automatic rows below so content can still grow. */
-  grid-auto-rows: 3.8rem;
+  grid-auto-rows: minmax(3.8rem, auto);
   align-content: start;
   gap: 0.42rem;
   padding: 0.3rem 0.55rem 0.55rem;
@@ -355,12 +376,21 @@
 
 .lt-live-cue-name-line {
   min-width: 0;
+  /* Tall enough for a badge, with or without one: a row whose marker is
+     playing (AHORA) or next (countdown) must not be taller than the rest, or
+     the whole grid row it sits in grows with it. */
+  min-height: 1.15rem;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.3rem;
 }
 
+/* The name comes first: in a narrow column the badges (now, next in…,
+   queued) drop under it instead of squeezing it to "V…". */
 .lt-live-cue-name-line strong {
+  flex: 0 1 auto;
+  min-width: min(100%, 6rem);
   overflow: hidden;
   font: 720 0.76rem/1.1 Inter, sans-serif;
   text-overflow: ellipsis;
@@ -414,6 +444,16 @@
    nombre (ver el comentario en LivePerformanceView.tsx sobre por que no va al
    final de la fila). Hereda tamano y caja de `.lt-live-cue-name-line em`; aqui
    solo cambia el color, porque no es un aviso sino un reloj. */
+.lt-live-countdown-short {
+  display: none;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.lt-live-countdown-short .material-symbols-outlined {
+  font-size: 11px;
+}
+
 .lt-live-cue-name-line em.is-countdown {
   border-style: solid;
   border-color: rgb(217 186 95 / 0.5);
@@ -482,26 +522,29 @@
   text-align: center;
 }
 
-.lt-live-setlist {
-  grid-area: setlist;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: minmax(13rem, 17rem) minmax(0, 1fr);
-  align-items: center;
-  gap: 1rem;
-  padding: 0.48rem 0.6rem;
-}
 
 .lt-live-region-summary {
   min-width: 0;
 }
 
 .lt-live-song-progress {
+  flex: 0 0 11rem;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas:
+    "times remaining"
+    "track track";
   align-items: end;
   gap: 0.3rem 0.55rem;
+}
+
+.lt-live-song-remaining {
+  grid-area: remaining;
+}
+
+.lt-live-song-progress-times {
+  grid-area: times;
 }
 
 .lt-live-song-progress-times,
@@ -512,6 +555,7 @@
 }
 
 .lt-live-song-progress-track {
+  grid-area: track;
   height: 5px;
   overflow: hidden;
   border-radius: 999px;
@@ -539,11 +583,27 @@
 }
 
 .lt-live-region-buttons {
+  flex: 1 1 auto;
   min-width: 0;
   display: flex;
   gap: 0.35rem;
   overflow-x: auto;
   scrollbar-width: none;
+}
+
+.lt-live-header-tools {
+  flex: 0 0 auto;
+}
+
+.lt-live-header-tools .lt-live-chart-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2rem;
+}
+
+.lt-live-header-tools .lt-live-chart-toggle .material-symbols-outlined {
+  font-size: 17px;
 }
 
 .lt-live-region-buttons::-webkit-scrollbar {
@@ -659,34 +719,6 @@
   cursor: default;
 }
 
-@media (min-width: 1180px) {
-  .lt-live-view {
-    grid-template-columns: minmax(0, 1fr) 17rem;
-    grid-template-rows: auto auto minmax(0, 1fr);
-    grid-template-areas:
-      "header header"
-      "settings settings"
-      "cues setlist";
-  }
-
-  .lt-live-setlist {
-    align-content: start;
-    grid-template-columns: minmax(0, 1fr);
-    grid-auto-rows: auto;
-    overflow: hidden;
-  }
-
-  .lt-live-region-buttons {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-
-  .lt-live-region-row {
-    width: 100%;
-    max-width: none;
-  }
-}
-
 @media (max-width: 820px), (max-height: 500px) {
   .lt-live-view {
     --lt-live-page-padding: 0.22rem;
@@ -700,22 +732,21 @@
   }
 
   .lt-live-header {
-    min-height: 2.1rem;
+    min-height: 2.6rem;
     gap: 0.45rem;
-    padding: 0.16rem 0.4rem;
+    padding: 0.2rem 0.4rem;
   }
 
-  .lt-live-header .lt-view-mode-switcher {
-    gap: 0.12rem;
+  .lt-live-song-progress {
+    flex-basis: 6.5rem;
   }
 
-  .lt-live-header .lt-view-mode-switcher .lt-icon-button {
-    width: 1.65rem;
-    height: 1.65rem;
+  .lt-live-song-remaining {
+    display: none;
   }
 
-  .lt-live-header .lt-view-mode-switcher .material-symbols-outlined {
-    font-size: 16px;
+  .lt-live-view.has-chart {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .lt-live-heading > .material-symbols-outlined,
@@ -770,8 +801,28 @@
     font-size: 7px;
   }
 
+  /* On a phone the countdown is a clock and the time, so the name fits. */
+  .lt-live-countdown-long {
+    display: none;
+  }
+
+  /* Name and badge on one line: a badge dropping below made the rows of the
+     playing and next markers taller than the others. */
+  .lt-live-cue-name-line {
+    flex-wrap: nowrap;
+  }
+
+  .lt-live-cue-name-line strong {
+    flex: 0 1 auto;
+    min-width: 2.5rem;
+  }
+
+  .lt-live-countdown-short {
+    display: inline-flex;
+  }
+
   .lt-live-cue-grid {
-    grid-template-columns: repeat(2, minmax(11rem, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 10.5rem), 1fr));
     grid-auto-rows: auto;
     gap: 0.22rem;
     padding: 0.12rem 0.25rem 0.25rem;
@@ -787,16 +838,7 @@
     padding: 0.28rem 0.35rem 0.18rem;
   }
 
-  .lt-live-setlist {
-    grid-template-columns: minmax(10rem, 15rem) minmax(0, 1fr);
-    gap: 0.3rem;
-    padding: 0.2rem 0.3rem;
-  }
 
-  .lt-live-region-buttons {
-    display: flex;
-    grid-column: auto;
-  }
 
   .lt-live-song-progress {
     gap: 0.2rem 0.4rem;
@@ -821,23 +863,14 @@
 }
 
 @media (orientation: portrait) and (max-width: 700px) {
-  .lt-live-view {
-    grid-template-rows: auto auto minmax(14rem, 1fr) auto;
+  .lt-live-view,
+  .lt-live-view.has-chart {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto minmax(10rem, 1fr) minmax(14rem, 1.4fr);
+    grid-template-areas: "header" "settings" "cues" "chart";
   }
 
   .lt-live-settings {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lt-live-setlist {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .lt-live-region-buttons {
-    grid-column: 1 / -1;
-  }
-
-  .lt-live-cue-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
@@ -852,14 +885,8 @@
   color: rgb(87 241 219 / 0.85);
 }
 
-/* iPhone: la barra de canciones va abajo, y en la franja del indicador de
-   inicio un deslizamiento es el gesto del sistema para cambiar de app. Pegada
-   al borde, reordenar canciones peleaba con ese gesto. El margen seguro la
-   saca de esa franja (el agarre con el dedo, además, pide mantener: ver
-   useSongReorder). */
-.lt-ios .lt-live-view {
-  padding-bottom: max(
-    var(--lt-live-page-padding),
-    calc(var(--lt-safe-area-bottom) + 0.5rem)
-  );
+
+/* Network-session viewer: the cue rows only show where the song is. */
+.lt-live-cue-row.is-readonly {
+  cursor: default;
 }

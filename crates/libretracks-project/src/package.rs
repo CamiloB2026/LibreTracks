@@ -164,6 +164,10 @@ struct SongPackageManifest {
     /// without one and in packages made before arrangements existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     structure: Option<libretracks_core::SongStructure>,
+    /// The song's lyrics and chords (ChordPro) and their links to its markers,
+    /// which keep their ids on import. Additive: an older reader ignores it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    region_chart: Option<libretracks_core::SongChart>,
 }
 
 #[derive(Debug, Clone)]
@@ -517,6 +521,7 @@ pub fn export_region_as_package_with_progress(
         video_library_meta: video_library_meta.clone(),
         bundled_video,
         structure,
+        region_chart: region.chart.clone(),
     };
 
     let file = File::create(output_path)?;
@@ -1195,6 +1200,7 @@ pub fn merge_extracted_song_package(
         warp_source_bpm: None,
         master: libretracks_core::SongMaster::default(),
         compact_column_width_rem: None,
+        chart: manifest.region_chart.clone(),
         structure: manifest
             .structure
             .clone()
@@ -1403,6 +1409,7 @@ mod tests {
             warp_source_bpm: None,
             master: SongMaster::default(),
             compact_column_width_rem: None,
+            chart: None,
             structure: None,
         }
     }
@@ -1844,6 +1851,43 @@ mod tests {
         )
         .expect("import light");
         assert!(result.bundled_audio.is_empty());
+    }
+
+    #[test]
+    fn a_song_chart_travels_in_the_package_with_its_links() {
+        let dir = tempdir().expect("tempdir");
+        let song_dir = dir.path();
+        let mut source = song();
+        let chart = libretracks_core::SongChart {
+            text: "{section: Verso 1}
+[C]Letra".into(),
+            links: vec![libretracks_core::ChartLink {
+                marker_id: "m1".into(),
+                section: 0,
+                line_beats: vec![0.0, 8.0],
+            }],
+        };
+        source.regions[0].chart = Some(chart.clone());
+        let package_path = song_dir.join("verse.ltpkg");
+        export_region_as_package(song_dir, song_dir, &source, "r1", &package_path, false)
+            .expect("export light");
+
+        let empty = Song {
+            tracks: vec![],
+            clips: vec![],
+            regions: vec![],
+            section_markers: vec![],
+            ..song()
+        };
+        let result = import_song_package(
+            song_dir,
+            &empty,
+            &package_path,
+            0.0,
+            SongImportTrackMode::default(),
+        )
+        .expect("import");
+        assert_eq!(result.song.regions[0].chart.as_ref(), Some(&chart));
     }
 
     #[test]

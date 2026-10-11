@@ -124,6 +124,7 @@ import {
   setMetronomeVolumeRealtime,
   setMetronomeSoundRealtime,
   setVoiceGuideVolumeRealtime,
+  isGuestMirrorMode,
   setVoiceGuideConfigRealtime,
   setPadVolumeRealtime,
   setPadConfigRealtime,
@@ -144,6 +145,7 @@ import {
   updateLiveRegionMasterGain,
   moveSongRegion,
   reorderSongRegion,
+  setSongRegionChart,
   updateSongRegion,
   updateSongRegionMasterGain,
   updateSongRegionTranspose,
@@ -279,6 +281,7 @@ import { useVideoFeature } from "./video/useVideoFeature";
 import { VideoSetupLayer } from "./video/VideoSetupLayer";
 import { MixSceneModal } from "./panels/MixSceneModal";
 import { RemotePanel } from "./panels/RemotePanel";
+import { NetworkSessionRoot } from "../network/NetworkSessionRoot";
 import { MobileLanding } from "./compact/MobileLanding";
 import { TOUR_TARGETS } from "../tutorial/tourTargets";
 import {
@@ -3205,7 +3208,10 @@ export function TransportPanelContent() {
         // If the voice guide was left enabled in a previous session, push the
         // config + load the clip bank now so it works without re-opening the
         // settings panel. set_voice_guide_config_realtime loads the bank.
-        if (active && settings?.voiceGuideEnabled) {
+        // Not as a network guest: these are the host's settings, and pushing
+        // them back made the host reload its bank and rewrite its settings
+        // file on every join (~700 ms, and racing its own changes).
+        if (active && settings?.voiceGuideEnabled && !isGuestMirrorMode()) {
           void setVoiceGuideConfigRealtime(settings).catch(() => {});
         }
       })
@@ -4250,7 +4256,7 @@ export function TransportPanelContent() {
 
   // Waveforms for the song's clips (batched + polling).
   // See ./hooks/useSongWaveforms.
-  useSongWaveforms({ song, setWaveformCache });
+  useSongWaveforms({ song, projectKey: playbackSongDir, setWaveformCache });
   useWaveformProgress({ playbackSongDir, setWaveformCache });
 
   // Clear the meters when playback stops so they don't freeze mid-level.
@@ -8020,6 +8026,7 @@ export function TransportPanelContent() {
                       onMarkerAction={(marker) => void runAction(() => handleMarkerPrimaryAction(marker))}
                       onSongAction={(region) => handleCompactPlaySong(region.id, region.name)}
                       onReorderSong={(id, index) => runAction(async () => applyPlaybackSnapshot(await reorderSongRegion(id, index)))}
+                      onChartChange={(regionId, chart) => runAction(async () => applyPlaybackSnapshot(await setSongRegionChart(regionId, chart)))}
                       onToggleVamp={() => void runAction(async () => {
                         await toggleTimelineVamp();
                       })}
@@ -8125,6 +8132,7 @@ export function TransportPanelContent() {
               onClose={() => setIsRemoteModalOpen(false)}
               remoteServerInfo={remoteServerInfo}
             />
+            <NetworkSessionRoot />
 
             {isMobileSessionsModalOpen ? (
               <div

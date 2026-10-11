@@ -493,6 +493,61 @@ std::shared_ptr<BungeePitchVoice> build_voice_for_spec(
     return voice;
 }
 
+// Construye las voces de `specs` en paralelo; `out[i]` es la de `specs[i]`
+// (nula si falló). Cada BungeePitchVoice es independiente y SourceManager
+// admite lecturas concurrentes, igual que en build_seek_voice_map.
+//
+// Lo usa el enrolado de retime_existing_for_session: cambiar la nota de una
+// región con warp a ratio 1.0 enrola una voz por clip de golpe, y en serie
+// eran ~1,8 ms por voz en el PC (50 ms con 28 pistas; ~180 ms en el emulador)
+// con el cerrojo de sesión de Rust cogido (song-patches/state/09.md).
+//
+// Pool acotado en vez de un hilo por voz, y la hebra que llama trabaja
+// también: si no se puede crear ningún hilo, sale en serie como antes. Los
+// trabajadores bajan su prioridad para no robar CPU al hilo de audio; la hebra
+// que llama conserva la suya (es la de control y la prioridad no se restaura).
+std::vector<std::shared_ptr<BungeePitchVoice>> build_voices_parallel(
+        const std::vector<const VoiceSpec*>& specs,
+        const SourceManager& sources,
+        int sample_rate, int channel_count, int max_in_frames) {
+    std::vector<std::shared_ptr<BungeePitchVoice>> out(specs.size());
+    if (specs.empty()) return out;
+    std::atomic<std::size_t> next{0};
+    auto drain = [&] {
+        for (std::size_t i = next.fetch_add(1); i < specs.size();
+             i = next.fetch_add(1)) {
+            out[i] = build_voice_for_spec(*specs[i], sources, sample_rate,
+                                          channel_count, max_in_frames);
+        }
+    };
+
+    const std::size_t hw = std::max(1u, std::thread::hardware_concurrency());
+    const std::size_t helpers =
+        std::min<std::size_t>(specs.size(), std::min<std::size_t>(hw, 8)) - 1;
+    std::vector<std::thread> workers;
+    workers.reserve(helpers);
+    for (std::size_t w = 0; w < helpers; ++w) {
+        try {
+            workers.emplace_back([&] {
+#ifdef _WIN32
+                SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
+#elif defined(__APPLE__)
+                pthread_set_qos_class_self_np(QOS_CLASS_UTILITY, 0);
+#elif defined(__linux__)
+                setpriority(PRIO_PROCESS, 0, 10);
+#endif
+                drain();
+            });
+        } catch (...) {
+            break;  // sin más hilos: lo que quede lo hace la hebra que llama
+        }
+    }
+    drain();
+    for (auto& worker : workers)
+        worker.join();
+    return out;
+}
+
 #endif // LT_ENGINE_HAVE_BUNGEE
 
 } // namespace
@@ -667,13 +722,13 @@ void BungeeVoiceManager::retime_existing_for_session(
     if (!to_enroll.empty()) try {
         std::lock_guard build_lock(impl_->build_mutex);
         auto next = std::make_shared<VoiceMap>(*current);
-        for (const VoiceSpec* spec : to_enroll) {
-            auto voice = build_voice_for_spec(*spec, sources,
-                                              impl_->sample_rate,
-                                              impl_->channel_count,
-                                              impl_->max_in_frames);
-            if (!voice) continue;
-            (*next)[spec->clip_id] = std::move(voice);
+        auto voices = build_voices_parallel(to_enroll, sources,
+                                            impl_->sample_rate,
+                                            impl_->channel_count,
+                                            impl_->max_in_frames);
+        for (std::size_t i = 0; i < to_enroll.size(); ++i) {
+            if (!voices[i]) continue;
+            (*next)[to_enroll[i]->clip_id] = std::move(voices[i]);
             ++enrolled;
             impl_->voices_built_total.fetch_add(1, std::memory_order_relaxed);
         }

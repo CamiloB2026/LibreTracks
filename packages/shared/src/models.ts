@@ -281,10 +281,32 @@ export type SongRegionSummary = {
    * use the view's default. Pure view state persisted with the project so a
    * layout the user arranged survives reopening the session. */
   compactColumnWidthRem: number | null;
+  /** Lyrics and chords of the song, synced to its markers. Absent or `null` =
+   * none. */
+  chart?: SongChart | null;
   /** Original captured and arrangements of the song (reorder, repeat and drop
    * sections). Absent when no original has been captured. Mirrors Rust
    * `SongStructureSummary`; the original snapshot itself never reaches the UI. */
   structure?: SongStructureSummary;
+};
+
+/** Which section of the chart plays from a marker. Anchored to the ORIGINAL
+ * marker id: a repeat `"{id}~{n}"` created by an arrangement uses the link of
+ * `id`. Mirrors Rust `ChartLink`. */
+export type ChartLink = {
+  markerId: string;
+  /** Index of the section in the chart text, from 0. */
+  section: number;
+  /** When each line starts, in beats from the marker. Absent or empty = the
+   * lines are spread evenly until the next marker. */
+  lineBeats?: number[];
+};
+
+/** A song's lyrics and chords (ChordPro text) and how they follow its markers.
+ * Mirrors Rust `SongChart`. */
+export type SongChart = {
+  text: string;
+  links: ChartLink[];
 };
 
 /** One section of a song's captured original, as the arrangement editor

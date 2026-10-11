@@ -32,7 +32,6 @@ reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"
 rayon = "1.10"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 tauri = { version = "2", features = [] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "fs"] }
@@ -47,11 +46,25 @@ tauri-plugin-fs = "2.5.1"
 [dependencies.libretracks-core]
 path = "../../../crates/libretracks-core"
 
+# Network sessions between LibreTracks apps (every platform; not the remote).
+[dependencies.libretracks-link]
+path = "../../../crates/libretracks-link"
+
 # Desktop-only dependencies. Mobile builds exclude:
 # - libretracks-remote: the app IS the device on mobile; no remote-control server.
 # - rfd: desktop-style native file dialogs don't exist on Android/iOS (see
 #   src/file_dialog.rs for the stub; mobile flows will use tauri-plugin-dialog).
 # - tauri-plugin-single-instance: no hay segundo proceso que reenviar en movil.
+# Network-session discovery: mDNS through the mdns-sd daemon everywhere but
+# iOS, which uses the system's Bonjour (raw multicast needs an entitlement).
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+libretracks-link = { path = "../../../crates/libretracks-link", features = ["mdns"] }
+# Not on iOS: sysinfo reaches `libc::mach_task_self`/`mach_host_self`, which
+# libc >= 0.2.189 only declares for macOS, so it stops compiling for iOS as
+# soon as any dependency pulls a newer libc (mdns-sd did, 2026-10-10). On iOS
+# the resource meter reads the few numbers it shows with its own calls.
+sysinfo = { version = "0.33", default-features = false, features = ["system"] }
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 libretracks-remote = { path = "../../../crates/libretracks-remote" }
 rfd = "0.15"

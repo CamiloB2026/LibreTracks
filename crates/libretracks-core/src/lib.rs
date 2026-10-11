@@ -3,6 +3,7 @@ pub mod midi_port_names;
 pub mod midi_schedule;
 pub mod midi_wire;
 pub mod model;
+pub mod net_clock;
 pub mod song_structure;
 pub mod validation;
 pub mod video_schedule;
@@ -14,7 +15,7 @@ pub use automation::{
 };
 pub use model::{
     default_audio_to, implicit_start_section_id, Arrangement, ArrangementBlock, OriginalSection,
-    OriginalSnapshot, SongStructure, parse_audio_output_route, Clip, Marker, MarkerCategory, MarkerKind, MidiClip,
+    OriginalSnapshot, SongStructure, SongChart, ChartLink, chart_link_marker_id, parse_audio_output_route, Clip, Marker, MarkerCategory, MarkerKind, MidiClip,
     MidiEvent, MidiEventKind, Project, Song, SongMaster, SongRegion, TempoMarker, TempoMetadata,
     is_video_file_path, TempoSource, TimeSignatureMarker, Track, TrackKind, VideoAssetInfo, VideoClip,
     VideoFit, MAX_MIDI_CHANNEL, MAX_MIDI_DATA_VALUE, MIN_MIDI_CHANNEL,
@@ -60,6 +61,7 @@ mod tests {
                 key: None,
                 master: SongMaster::default(),
                 compact_column_width_rem: None,
+                chart: None,
                 structure: None,
             }],
             tracks: vec![
@@ -151,6 +153,7 @@ mod tests {
             key: None,
             master: SongMaster::default(),
             compact_column_width_rem: None,
+            chart: None,
             structure: None,
         });
 
@@ -206,6 +209,7 @@ mod tests {
             key: None,
             master: SongMaster::default(),
             compact_column_width_rem: None,
+            chart: None,
             structure: None,
         });
         // Clip starts inside region_intro [0, 240) but extends past 240.
@@ -234,6 +238,7 @@ mod tests {
             key: None,
             master: SongMaster::default(),
             compact_column_width_rem: None,
+            chart: None,
             structure: None,
         });
         song.clips[0].timeline_start_seconds = 0.0;
@@ -519,3 +524,7 @@ mod tests {
 #[cfg(test)]
 #[path = "structure_model_tests.rs"]
 mod structure_model_tests;
+
+#[cfg(test)]
+#[path = "chart_tests.rs"]
+mod chart_tests;

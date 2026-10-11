@@ -452,3 +452,55 @@ TEST_CASE("region transpose enrolls voices for clips that had none") {
     CHECK(warm->fed_through() == fed_before);
 #endif
 }
+
+// Cambiar la nota de una región con warp a ratio 1.0 enrola de golpe una voz
+// por clip (todos dejan de ser warp neutro). Ese comando corre con el cerrojo
+// de sesión cogido en el lado Rust: medido en el emulador, ~180 ms con 28
+// pistas mientras el feed y las órdenes de los invitados esperaban detrás
+// (docs/plans/song-patches/state/09.md). Las voces son independientes, así que
+// se construyen en paralelo como en build_seek_voice_map. El test exige el
+// resultado (todas enroladas, ancladas) e imprime el tiempo para el banco.
+TEST_CASE("region transpose enrolls many voices and reports the time") {
+    BungeeVoiceManager mgr;
+    if (!mgr.prepare(kSR, kChannels, kBlock)) return;
+
+    constexpr int kTracks = 28;
+    SourceManager sm;
+    auto session = make_one_transposed_clip_session(/*semitones=*/0);
+    session.songs[0].regions[0].warp_source_bpm = session.songs[0].bpm;
+    session.songs[0].tracks.clear();
+    session.sources.clear();
+    for (int i = 0; i < kTracks; ++i) {
+        const Id src_id = "src" + std::to_string(i);
+        Source src;
+        src.id = src_id;
+        session.sources.push_back(src);
+        REQUIRE(register_loaded_source(sm, src_id, kSR * 4));
+        Track track;
+        track.id   = "trk" + std::to_string(i);
+        track.kind = TrackKind::Audio;
+        track.transpose_behavior = TransposeBehavior::FollowsSongOrRegion;
+        track.clips.push_back(
+            Clip{"clip" + std::to_string(i), src_id, /*tl*/0, /*src*/0, kSR * 4});
+        session.songs[0].tracks.push_back(track);
+    }
+
+    mgr.rebuild_for_session(session, sm, /*playhead=*/0);
+#if LT_ENGINE_HAVE_BUNGEE
+    CHECK(mgr.diagnostics().active_voice_count == 0);  // todos warp neutro
+
+    session.songs[0].regions[0].transpose_semitones = +1;
+    const auto start = std::chrono::steady_clock::now();
+    mgr.retime_existing_for_session(session, sm, /*playhead=*/0, /*live=*/false);
+    const auto elapsed_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - start).count();
+    MESSAGE("enrolled " << kTracks << " voices in " << elapsed_ms << " ms");
+
+    for (int i = 0; i < kTracks; ++i) {
+        BungeePitchVoice* voice = mgr.voice_for("clip" + std::to_string(i));
+        REQUIRE(voice != nullptr);
+        CHECK(voice->is_ready());
+        CHECK(voice->mapped_timeline_start() == 0);
+    }
+#endif
+}

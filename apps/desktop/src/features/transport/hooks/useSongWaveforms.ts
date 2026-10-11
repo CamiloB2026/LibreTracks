@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 import type { SongView } from "@libretracks/shared/models";
 
@@ -44,6 +44,12 @@ function pollDelayMs(consecutiveEmptyPolls: number) {
 
 export type UseSongWaveformsOptions = {
   song: SongView | null;
+  /**
+   * The session the song belongs to (its folder). With the song id it says
+   * whether the waveforms fetched so far still apply; the page clears its
+   * cache exactly when one of the two changes.
+   */
+  projectKey?: string | null;
   setWaveformCache: (
     update: (
       current: Record<string, WaveformSummaryDto>,
@@ -65,12 +71,31 @@ export type UseSongWaveformsOptions = {
  */
 export function useSongWaveforms({
   song,
+  projectKey = null,
   setWaveformCache,
 }: UseSongWaveformsOptions) {
+  // Keys already delivered to the cache for this session and song. Every edit
+  // (a warp or key change, a mute…) hands this effect a new `song` object;
+  // without this memory each run requested every waveform again. Locally that
+  // was cheap, but a network guest asks the host for them (~35 MB for a real
+  // session, measured 2026-10-11) and a run cancelled by the next edit started
+  // over, so with edits arriving faster than the download the waveforms never
+  // showed at all.
+  const delivered = useRef<{ identity: string | null; keys: Set<string> }>({
+    identity: null,
+    keys: new Set(),
+  });
+
   useEffect(() => {
     if (!song) {
+      delivered.current = { identity: null, keys: new Set() };
       return () => {};
     }
+    const identity = `${projectKey ?? ""}|${song.id}`;
+    if (delivered.current.identity !== identity) {
+      delivered.current = { identity, keys: new Set() };
+    }
+    const deliveredKeys = delivered.current.keys;
 
     let active = true;
 
@@ -81,9 +106,10 @@ export function useSongWaveforms({
 
     // Seed with waveforms the song already carries (embedded summaries from the
     // snapshot) so we don't re-request those.
-    const resolved = new Set<string>(
-      (song.waveforms ?? []).map((summary) => summary.waveformKey),
-    );
+    const resolved = new Set<string>([
+      ...(song.waveforms ?? []).map((summary) => summary.waveformKey),
+      ...deliveredKeys,
+    ]);
     let pollAttempts = 0;
 
     async function drainWaveforms() {
@@ -108,6 +134,7 @@ export function useSongWaveforms({
             progressed = true;
             for (const summary of summaries) {
               resolved.add(summary.waveformKey);
+              deliveredKeys.add(summary.waveformKey);
             }
             setWaveformCache((current) => ({
               ...current,
@@ -146,5 +173,5 @@ export function useSongWaveforms({
     };
     // Cache is intentionally absent from the deps — see the note above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [song]);
+  }, [song, projectKey]);
 }

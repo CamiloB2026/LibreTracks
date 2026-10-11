@@ -81,6 +81,133 @@ input[type="range"] {
   -webkit-touch-callout: none;
 }
 
+/* ── Base de los campos de formulario ──────────────────────────────────
+   Muchos campos (números de automatización, MIDI, render, vídeo, nombres,
+   PIN, letra…) no tenían regla propia y salían con el aspecto del sistema:
+   fondo blanco o gris claro, esquinas redondeadas y otra tipografía, que
+   desentonaba con todo lo demás. Esta es la base, con el mismo lenguaje que
+   el select de ajustes (borde turquesa tenue, fondo casi negro, Space
+   Grotesk, 2px).
+
+   Todo va dentro de :where(), que tiene especificidad CERO: cualquier campo
+   que ya tenga su estilo (el BPM, los escalones del toolbar, los compases del
+   Live, el buscador de la biblioteca…) gana siempre y no cambia. Solo se
+   visten los que no tenían nada. No hay apariencia personalizada en los
+   select (la flecha es la del sistema, ya oscura por color-scheme): quitarla
+   aquí dejaría sin flecha a los select que pintan su propio fondo. */
+:where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select
+  ) {
+  box-sizing: border-box;
+  max-width: 100%;
+  border: 1px solid rgb(87 241 219 / 0.18);
+  border-radius: 2px;
+  background: rgb(28 31 32 / 0.98);
+  color: #f3f0ef;
+  padding: 0.55rem 0.7rem;
+  font: 600 0.9rem/1.25 "Space Grotesk", sans-serif;
+  outline: none;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+:where(textarea) {
+  font: 500 0.9rem/1.45 "Space Grotesk", sans-serif;
+  resize: vertical;
+}
+
+:where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select
+  ):hover:not(:disabled) {
+  border-color: rgb(87 241 219 / 0.32);
+}
+
+:where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select
+  ):focus-visible {
+  border-color: rgb(87 241 219 / 0.62);
+  box-shadow: 0 0 0 2px rgb(87 241 219 / 0.14);
+}
+
+:where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="url"],
+    input[type="email"],
+    input[type="tel"],
+    textarea,
+    select
+  ):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+:where(input, textarea)::placeholder {
+  color: rgb(186 202 197 / 0.42);
+}
+
+/* Las opciones del desplegable heredan el fondo oscuro donde el sistema lo
+   permite (Windows/Linux; en Android e iOS manda el selector nativo). */
+:where(select) option {
+  background: #1c1f20;
+  color: #f3f0ef;
+}
+
+/* En los formularios de ajustes, los campos miden lo mismo que sus select
+   (`.lt-settings-field select`), para que un texto al lado de un desplegable
+   quede a la misma altura. */
+:where(.lt-settings-field)
+  :where(
+    input:not([type]),
+    input[type="text"],
+    input[type="number"],
+    input[type="password"],
+    input[type="search"],
+    input[type="url"],
+    textarea
+  ) {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  font-size: 0.92rem;
+}
+
+/* Casillas, radios y faders sin estilo propio: el acento de la app en vez
+   del azul del sistema. */
+:where(input[type="checkbox"], input[type="radio"], input[type="range"]) {
+  accent-color: #57f1db;
+}
+
 .lt-app-shell {
   width: 100vw;
   height: 100vh;
@@ -5267,10 +5394,24 @@ html.lt-ios body {
   z-index: 2;
 }
 
-.lt-region-hotspot.is-selected,
-.lt-region-hotspot:hover {
+.lt-region-hotspot.is-selected {
   background: rgb(255 226 171 / 0.16);
   box-shadow: inset 0 0 0 1px rgb(255 226 171 / 0.36);
+}
+
+/* Hover only with a pointer that hovers. On touch, iOS spends the first tap
+   on :hover when it reveals something inside (the resize and fade handles),
+   and selecting a song took two taps. Same fix as the bottom controls. */
+@media (hover: hover) {
+  .lt-region-hotspot:hover {
+    background: rgb(255 226 171 / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(255 226 171 / 0.36);
+  }
+
+  .lt-region-hotspot:hover .lt-region-resize-handle {
+    opacity: 1;
+    background: rgb(255 226 171 / 0.55);
+  }
 }
 
 .lt-region-hotspot:focus-visible {
@@ -5310,11 +5451,36 @@ html.lt-ios body {
 .lt-region-resize-handle.is-start { left: -3px; }
 .lt-region-resize-handle.is-end   { right: -3px; }
 
-.lt-region-hotspot:hover .lt-region-resize-handle,
 .lt-region-hotspot.is-selected .lt-region-resize-handle,
 .lt-region-resize-handle.is-active {
   opacity: 1;
   background: rgb(255 226 171 / 0.55);
+}
+
+/* Phone/tablet: the band is 18px tall and the resize strip and the fade
+   corner sat on the same few pixels, so a finger hit whichever it liked.
+   Two steps instead: the handles of a song only answer once it is selected
+   (a tap on an unselected song selects it), and they get separate zones: the
+   resize strip reaches OUT past the edge, the fade corner sits IN from it
+   (songFades.css). */
+.lt-mobile .lt-region-hotspot:not(.is-selected) .lt-region-resize-handle {
+  pointer-events: none;
+}
+
+.lt-mobile .lt-region-resize-handle {
+  width: 18px;
+  /* Only the 4px inside the band are painted; the rest is reach. */
+  background-clip: content-box;
+}
+
+.lt-mobile .lt-region-resize-handle.is-start {
+  left: -14px;
+  padding-left: 14px;
+}
+
+.lt-mobile .lt-region-resize-handle.is-end {
+  right: -14px;
+  padding-right: 14px;
 }
 
 .lt-marker-hotspot:focus-visible {
@@ -11162,6 +11328,26 @@ html.lt-ios body {
   position: relative;
   display: flex;
   flex-direction: column;
+}
+
+/* En móvil/tablet los botones del rail crecen para repartirse el alto
+   (`.lt-mobile .lt-side-nav button { flex: 1 1 auto }`), pero el de GUÍA no
+   es hijo directo del rail: va dentro de este envoltorio, que no crecía, y
+   quedaba con otro espaciado que los demás. El envoltorio ocupa su parte del
+   rail y el botón llena el envoltorio. */
+.lt-mobile .lt-tour-launcher {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.lt-mobile .lt-tour-launcher > button {
+  flex: 1 1 auto;
+}
+
+@media (orientation: portrait) {
+  .lt-mobile .lt-tour-launcher {
+    flex: 1 0 3rem;
+  }
 }
 
 .lt-tour-menu {
