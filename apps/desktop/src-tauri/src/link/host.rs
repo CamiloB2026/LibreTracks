@@ -452,6 +452,14 @@ async fn apply_commands(
                 tauri::async_runtime::spawn(async move {
                     let started = std::time::Instant::now();
                     let result = super::proxy::handle_invoke(&app, grants, &command, args).await;
+                    // Anything but a read may have changed the session: the
+                    // guests get it now, not at the next feed tick.
+                    if !matches!(
+                        super::proxy_dispatch::access(&command),
+                        Some(super::proxy_dispatch::ProxyAccess::View) | None
+                    ) {
+                        app.state::<SessionFeed>().wake();
+                    }
                     if command != "get_link_perf" {
                         record_invoke_perf(&command, started.elapsed().as_micros());
                     }
@@ -462,6 +470,7 @@ async fn apply_commands(
                 let result = apply(&app, &incoming)
                     .map(|_| serde_json::Value::Null)
                     .map_err(Into::into);
+                app.state::<SessionFeed>().wake();
                 let _ = incoming.reply.send(result);
             }
         }

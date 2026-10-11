@@ -5,6 +5,10 @@
          host by mDNS needs a Wi-Fi MulticastLock, or Android drops the
          multicast answers. Normal permission, granted at install. -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- Network sessions: a low-latency WifiLock while hosting or joined
+         (platform/android_wifi_latency.rs). Wi-Fi power save added a mean
+         67 ms to every round trip with a tablet. Normal permission. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- MIDI (MidiBridge.kt). required="false" so Play still lists the app on
          devices without android.media.midi; MidiBridge.isAvailable checks. -->
     <uses-feature android:name="android.software.midi" android:required="false" />

@@ -48,6 +48,11 @@ async fn main() {
                 GuestEvent::Song(song) => {
                     let _ = song_tx.send((Instant::now(), song.to_string().len()));
                 }
+                GuestEvent::Event { name, payload, .. } => {
+                    if let Ok(mut log) = EVENT_LOG.lock() {
+                        log.push((Instant::now(), name, payload.to_string().len()));
+                    }
+                }
                 _ => {}
             }
         }
@@ -215,6 +220,30 @@ async fn restore(
     }
 }
 
+/// Relayed app events as they arrive: when, which, bytes.
+static EVENT_LOG: std::sync::Mutex<Vec<(Instant, String, usize)>> =
+    std::sync::Mutex::new(Vec::new());
+
+/// What reached this guest while a command was in flight, by event name.
+fn events_between(from: Instant, to: Instant) -> String {
+    let Ok(log) = EVENT_LOG.lock() else {
+        return String::new();
+    };
+    let mut by_name: std::collections::BTreeMap<&str, (usize, usize)> = Default::default();
+    for (at, name, bytes) in log.iter() {
+        if *at >= from && *at <= to {
+            let entry = by_name.entry(name.as_str()).or_default();
+            entry.0 += 1;
+            entry.1 += bytes;
+        }
+    }
+    by_name
+        .iter()
+        .map(|(name, (count, bytes))| format!("{name}x{count}={}KB", bytes / 1024))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// One edit: the command's round trip, then the wait for the host's next
 /// song view (the feed reads it within ~90 ms of the edit).
 async fn edit(
@@ -225,6 +254,9 @@ async fn edit(
     let started = Instant::now();
     let result = command.await;
     let command_ms = started.elapsed().as_secs_f64() * 1000.0;
+    if std::env::var("LINK_BENCH_EVENTS").is_ok() {
+        println!("  {command_ms:6.1} ms  in flight: {}", events_between(started, Instant::now()));
+    }
     if let Err(error) = result {
         println!("command failed: {error:?}");
     }

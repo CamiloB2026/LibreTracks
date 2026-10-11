@@ -202,11 +202,21 @@ pub type SessionFeedFrame = FeedFrame<AppSettings, TransportSnapshot, Option<Son
 /// Managed state: subscribe to follow the session.
 pub struct SessionFeed {
     tx: watch::Sender<Arc<SessionFeedFrame>>,
+    wake: Arc<tokio::sync::Notify>,
 }
 
 impl SessionFeed {
     pub fn subscribe(&self) -> watch::Receiver<Arc<SessionFeedFrame>> {
         self.tx.subscribe()
+    }
+
+    /// Read the session now instead of at the next tick. After an edit the
+    /// subscribers waited up to 90 ms for the new song (median 76 ms from a
+    /// guest's edit to the new song, tablet host, 2026-10-11), and a network
+    /// guest that asked for it meanwhile went to the host for it. A wake
+    /// while a tick is running is kept and served right after it.
+    pub fn wake(&self) {
+        self.wake.notify_one();
     }
 }
 
@@ -220,17 +230,32 @@ pub fn initialize_session_feed(app: &App) {
     // Without this drop the feed would count one subscriber forever and
     // never go idle.
     drop(initial_rx);
-    app.manage(SessionFeed { tx: tx.clone() });
-    tauri::async_runtime::spawn(run_session_feed(app.handle().clone(), tx));
+    let wake = Arc::new(tokio::sync::Notify::new());
+    app.manage(SessionFeed {
+        tx: tx.clone(),
+        wake: wake.clone(),
+    });
+    tauri::async_runtime::spawn(run_session_feed(app.handle().clone(), tx, wake));
 }
 
-async fn run_session_feed(app: AppHandle, tx: watch::Sender<Arc<SessionFeedFrame>>) {
+async fn run_session_feed(
+    app: AppHandle,
+    tx: watch::Sender<Arc<SessionFeedFrame>>,
+    wake: Arc<tokio::sync::Notify>,
+) {
     let mut interval = tokio::time::interval(FEED_INTERVAL);
     let mut tracker: FeedTracker<AppSettings, TransportSnapshot, Option<SongView>> =
         FeedTracker::default();
 
     loop {
-        interval.tick().await;
+        tokio::select! {
+            _ = interval.tick() => {}
+            _ = wake.notified() => {
+                // The regular cadence restarts from here: no second read
+                // a few ms after this one.
+                interval.reset();
+            }
+        }
         if !should_poll(tx.receiver_count()) {
             continue;
         }

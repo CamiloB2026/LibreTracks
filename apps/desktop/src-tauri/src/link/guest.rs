@@ -5,6 +5,7 @@
 //! reads or writes `DesktopState`. The guest UI mounts a separate screen fed
 //! only by these events.
 
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use libretracks_core::net_clock::extrapolate_position;
@@ -34,6 +35,8 @@ pub struct ActiveGuest {
     /// Last song view the host pushed, without the revision tag.
     song: Option<Value>,
     song_revision: Option<(u64, u64)>,
+    /// Woken on every pushed song, for `get_song_view` waiting on one.
+    song_arrived: Arc<tokio::sync::Notify>,
     transport: Option<GuestTransport>,
     live_settings: Option<Value>,
 }
@@ -222,6 +225,7 @@ pub fn join_host(
         status: status.clone(),
         song: None,
         song_revision: None,
+        song_arrived: Arc::new(tokio::sync::Notify::new()),
         transport: None,
         live_settings: None,
     });
@@ -363,6 +367,7 @@ async fn relay(
                 with_guest(&app, |guest| {
                     guest.song = Some(song.clone());
                     guest.song_revision = revision;
+                    guest.song_arrived.notify_waiters();
                 });
                 let _ = app.emit(GUEST_SONG_EVENT, song);
             }
@@ -496,25 +501,43 @@ pub async fn proxy_invoke(app: &AppHandle, command: String, args: Value) -> Resu
 
     // Same for the song view the UI refetches after every revision bump (and
     // twice after a warp or key change): the host already pushed it, tagged
-    // with its revision. Only used when that is the revision the UI saw;
-    // otherwise (the push is still on its way) ask the host as before.
+    // with its revision. Served when it is the revision the UI saw. Right
+    // after this guest's own edit the push is usually a few ms behind the
+    // answer (the host wakes its feed as the edit ends): wait for it rather
+    // than ask the host for the same song again.
     if command == "get_song_view" && args["includeWaveforms"] != Value::Bool(true) {
-        if let Some(Some(song)) = with_guest(app, |guest| {
-            let wanted = guest
-                .transport
-                .as_ref()
-                .and_then(|t| snapshot_revision(&t.snapshot));
-            if cfg!(debug_assertions) && wanted != guest.song_revision {
-                eprintln!(
-                    "[libretracks-link] song view: ui wants {wanted:?}, pushed {:?} -> host",
-                    guest.song_revision
-                );
+        let deadline = tokio::time::Instant::now() + SONG_PUSH_WAIT;
+        while let Some(arrived) = with_guest(app, |guest| guest.song_arrived.clone()) {
+            // Registered before looking, so a push landing in between wakes it.
+            let notified = arrived.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            let Some((answer, song)) = with_guest(app, |guest| {
+                let wanted = guest
+                    .transport
+                    .as_ref()
+                    .and_then(|t| snapshot_revision(&t.snapshot));
+                (song_answer(wanted, guest.song_revision), guest.song.clone())
+            }) else {
+                break;
+            };
+            match answer {
+                SongAnswer::Serve => {
+                    if let Some(song) = song {
+                        return Ok(song);
+                    }
+                    break;
+                }
+                SongAnswer::Wait => {
+                    if tokio::time::timeout_at(deadline, notified).await.is_err() {
+                        if cfg!(debug_assertions) {
+                            eprintln!("[libretracks-link] song view: no push in time -> host");
+                        }
+                        break;
+                    }
+                }
+                SongAnswer::AskHost => break,
             }
-            (wanted.is_some() && wanted == guest.song_revision)
-                .then(|| guest.song.clone())
-                .flatten()
-        }) {
-            return Ok(song);
         }
     }
 
@@ -598,6 +621,29 @@ pub fn untag_song(mut song: Value) -> (Value, Option<(u64, u64)>) {
         .and_then(|map| map.remove(SONG_REVISION_FIELD))
         .and_then(|tag| Some((tag[0].as_u64()?, tag[1].as_u64()?)));
     (song, revision)
+}
+
+/// How long a guest's `get_song_view` waits for a push it knows is coming
+/// before asking the host for the song instead.
+const SONG_PUSH_WAIT: std::time::Duration = std::time::Duration::from_millis(200);
+
+#[derive(Debug, PartialEq, Eq)]
+enum SongAnswer {
+    /// The pushed song is the revision the UI saw.
+    Serve,
+    /// The pushed song is older: the new one is on its way.
+    Wait,
+    /// Nothing to go on (an older host does not tag its songs, or no
+    /// transport yet): ask the host.
+    AskHost,
+}
+
+fn song_answer(wanted: Option<(u64, u64)>, pushed: Option<(u64, u64)>) -> SongAnswer {
+    match (wanted, pushed) {
+        (Some(wanted), Some(pushed)) if wanted == pushed => SongAnswer::Serve,
+        (Some(wanted), Some(pushed)) if pushed < wanted => SongAnswer::Wait,
+        _ => SongAnswer::AskHost,
+    }
 }
 
 fn snapshot_revision(snapshot: &Value) -> Option<(u64, u64)> {
@@ -800,6 +846,18 @@ mod tests {
             snapshot_revision(&json!({ "projectRevision": 12, "mixRevision": 3 })),
             Some((12, 3))
         );
+    }
+
+    #[test]
+    fn a_song_view_is_served_waited_for_or_asked_for() {
+        assert_eq!(song_answer(Some((3, 0)), Some((3, 0))), SongAnswer::Serve);
+        assert_eq!(song_answer(Some((3, 0)), Some((2, 0))), SongAnswer::Wait);
+        assert_eq!(song_answer(Some((3, 1)), Some((3, 0))), SongAnswer::Wait);
+        // Pushed ahead of what the UI saw: not the song it asked about.
+        assert_eq!(song_answer(Some((2, 0)), Some((3, 0))), SongAnswer::AskHost);
+        // An older host does not tag its songs.
+        assert_eq!(song_answer(Some((3, 0)), None), SongAnswer::AskHost);
+        assert_eq!(song_answer(None, Some((3, 0))), SongAnswer::AskHost);
     }
 
     #[test]

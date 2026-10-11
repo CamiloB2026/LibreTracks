@@ -32,11 +32,15 @@ pub struct LinkState {
 
 /// Keep the screen from auto-locking while hosting or following a host
 /// (paso 03). Android already keeps it on for the whole app (MainActivity)
-/// and desktop does not auto-lock under a running app, so only iOS acts.
+/// and desktop does not auto-lock under a running app, so only iOS acts on
+/// the screen. Android keeps the Wi-Fi radio out of power save instead
+/// (`android_wifi_latency`): it was most of a guest's latency to a tablet.
 pub fn keep_awake(reason: &str, on: bool) {
     #[cfg(target_os = "ios")]
     crate::platform::ios_link::keep_awake(reason, on);
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    crate::platform::android_wifi_latency::set_low_latency(reason, on);
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let _ = (reason, on);
 }
 
