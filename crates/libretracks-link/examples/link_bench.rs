@@ -94,6 +94,18 @@ async fn main() {
         song["tracks"].as_array().map_or(0, Vec::len),
         song["clips"].as_array().map_or(0, Vec::len)
     );
+    if rounds == 0 {
+        // `... 0 off 0`: only set the first song to the given warp/key.
+        let warp: bool = std::env::args().nth(4).as_deref() == Some("on");
+        let key: i64 = std::env::args().nth(5).and_then(|k| k.parse().ok()).unwrap_or(0);
+        restore(&handle, &region_id, warp, key, source_bpm).await;
+        let song = invoke("get_song_view", json!({ "includeWaveforms": false })).await.expect("song");
+        println!(
+            "now: warp={} transpose={}",
+            song["regions"][0]["warpEnabled"], song["regions"][0]["transposeSemitones"]
+        );
+        return;
+    }
     tokio::time::sleep(Duration::from_millis(500)).await;
     while songs.try_recv().is_ok() {}
 
@@ -123,17 +135,10 @@ async fn main() {
             .await,
         );
     }
-    // As found.
-    let _ = invoke(
-        "update_song_region_warp",
-        json!({ "regionId": region_id, "warpEnabled": warp_was, "warpSourceBpm": source_bpm }),
-    )
-    .await;
-    let _ = invoke(
-        "update_song_region_transpose",
-        json!({ "regionId": region_id, "transposeSemitones": transpose_was }),
-    )
-    .await;
+    // As found. The key goes back with warp ON: with warp off a key change
+    // also changes the song's length, and the host refuses it when that would
+    // overlap the next song (it did, and the bench left the song at +1).
+    restore(&handle, &region_id, warp_was, transpose_was, source_bpm).await;
 
     println!("\nfrom this guest (ms)       command  ->song   song KB");
     report("warp toggle", &warp);
@@ -171,6 +176,42 @@ async fn main() {
             .map(|micros| micros / 1000.0)
             .collect();
         println!("  {name:<32} {}", stats(&values));
+    }
+}
+
+async fn restore(
+    handle: &libretracks_link::GuestHandle,
+    region_id: &str,
+    warp: bool,
+    transpose: i64,
+    source_bpm: f64,
+) {
+    for (command, args) in [
+        (
+            "update_song_region_warp",
+            json!({ "regionId": region_id, "warpEnabled": true, "warpSourceBpm": source_bpm }),
+        ),
+        (
+            "update_song_region_transpose",
+            json!({ "regionId": region_id, "transposeSemitones": transpose }),
+        ),
+        (
+            "update_song_region_warp",
+            json!({ "regionId": region_id, "warpEnabled": warp, "warpSourceBpm": source_bpm }),
+        ),
+    ] {
+        let result = handle
+            .send_command(
+                LinkCommand::Invoke {
+                    command: command.into(),
+                    args,
+                },
+                None,
+            )
+            .await;
+        if let Err(error) = result {
+            println!("restore {command} failed: {error:?}");
+        }
     }
 }
 
