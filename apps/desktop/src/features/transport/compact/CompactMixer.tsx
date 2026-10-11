@@ -663,8 +663,8 @@ function CompactMixerStripComponent({
           90° (writing-mode + appearance:slider-vertical) all force
           trade-offs: either the thumb travels horizontally, or
           appearance:slider-vertical wins but discards our custom
-          thumb colour. The custom path lets us reuse the exact same
-          teal-on-black look the DAW track-volume slider uses, and
+          thumb styling. The custom path lets us draw the same console
+          fader cap the horizontal faders use (shared/faders.css), and
           travel bottom→top reliably. The meter is a div whose height
           tracks the same `meters[trackId]` dictionary the DAW track
           headers already populate. */}
@@ -714,18 +714,12 @@ function CompactMixerStripComponent({
         <div className="lt-compact-mixer-pan-track">
           <input
             type="range"
-            className="lt-compact-mixer-pan"
+            className="lt-compact-mixer-pan lt-fader is-pan"
             min={-1}
             max={1}
             step={0.01}
             value={pan}
             aria-label={`Pan ${track.name}`}
-            // Two-tone azul→negro gradient — identical to the DAW
-            // track-pan slider (TrackHeaderItem.tsx). `panFill` maps
-            // pan ∈ [-1,1] to a 0..100% position on the horizontal axis.
-            style={{
-              background: `linear-gradient(to right, #4d79d8 0%, #74b8ff ${(((pan + 1) * 0.5) * 100).toFixed(2)}%, #0e0e0e ${(((pan + 1) * 0.5) * 100).toFixed(2)}%, #0e0e0e 100%)`,
-            }}
             onChange={handlePanInput}
             onDoubleClick={handlePanDoubleClick}
             onPointerDown={() => setIsPanDragging(true)}
@@ -791,8 +785,8 @@ const CompactMixerStrip = memo(
 
 /**
  * Vertical fader rendered as a custom <div> + pointer events so we can
- * keep the DAW-style colours (teal fill below the thumb on a #0e0e0e
- * track + saturated teal thumb) while travelling bottom→top reliably.
+ * draw the console-style cap and groove (shared/faders.css) while
+ * travelling bottom→top reliably.
  * The native <input type=range> route requires either appearance:
  * slider-vertical (which discards custom thumb colouring) or a CSS
  * writing-mode rotation (which in this build mis-rotated the slider
@@ -952,11 +946,6 @@ function CompactVerticalFaderComponent({
       aria-valuemax={1}
       aria-valuenow={value}
       aria-orientation="vertical"
-      // Teal fill below the thumb, black above — same gradient pattern
-      // the DAW track-volume slider uses.
-      style={{
-        background: `linear-gradient(to top, #3cddc7 ${fillPct}%, #0e0e0e ${fillPct}%)`,
-      }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishDrag}

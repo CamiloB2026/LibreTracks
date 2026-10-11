@@ -4424,27 +4424,6 @@ html.lt-ios body {
   min-width: 0;
 }
 
-.lt-track-header.is-compact .lt-track-volume input[type="range"],
-.lt-track-header.is-compact .lt-track-pan input[type="range"],
-.lt-track-header.is-condensed .lt-track-volume input[type="range"],
-.lt-track-header.is-condensed .lt-track-pan input[type="range"],
-.lt-track-header.is-micro .lt-track-volume input[type="range"],
-.lt-track-header.is-micro .lt-track-pan input[type="range"] {
-  height: 3px;
-  width: 100%;
-  min-width: 0;
-}
-
-.lt-track-header.is-compact .lt-track-volume input[type="range"]::-webkit-slider-thumb,
-.lt-track-header.is-compact .lt-track-pan input[type="range"]::-webkit-slider-thumb,
-.lt-track-header.is-condensed .lt-track-volume input[type="range"]::-webkit-slider-thumb,
-.lt-track-header.is-condensed .lt-track-pan input[type="range"]::-webkit-slider-thumb,
-.lt-track-header.is-micro .lt-track-volume input[type="range"]::-webkit-slider-thumb,
-.lt-track-header.is-micro .lt-track-pan input[type="range"]::-webkit-slider-thumb {
-  height: 10px;
-  width: 8px;
-}
-
 /* Mixer controls (faders, pan sliders, toggle buttons) show a focus ring only
    for keyboard navigation (:focus-visible), never for a mouse click or drag —
    the browser default outline flashing while dragging a fader is distracting.
@@ -4804,28 +4783,41 @@ html.lt-ios body {
   opacity: 0;
   will-change: clip-path, opacity;
   transition: opacity 90ms linear;
-  background: linear-gradient(
-    180deg,
-    #ff6150 0%,
-    #ff6150 15%,
-    #dbe95f 25%,
-    #63db78 45%,
-    #2fba69 75%,
-    #1f8a55 100%
-  );
+  /* Segmentado como el de una mesa: una raya del color del fondo cada 3 px. */
+  background:
+    repeating-linear-gradient(0deg, transparent 0 2px, rgb(14 14 14 / 0.85) 2px 3px),
+    linear-gradient(
+      180deg,
+      #ff6150 0%,
+      #ff6150 15%,
+      #dbe95f 25%,
+      #63db78 45%,
+      #2fba69 75%,
+      #1f8a55 100%
+    );
 }
 
+/* Capa del tamano entero del canal; la raya es su borde superior. Se desplaza
+   `(1 - nivel)` de SU alto (peakHoldStyleFromDb), asi que el borde cae justo
+   en el nivel. Con la raya de 2 px como elemento, el mismo translateY la
+   movia 2 px como mucho y el pico se quedaba siempre arriba. */
 .lt-track-meter-peak {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transform: translateY(100%);
+}
+
+.lt-track-meter-peak::before {
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
   height: 2px;
   background: #ffffff;
-  opacity: 0;
-  pointer-events: none;
-  will-change: transform, opacity;
-  transform: translateY(100%);
   box-shadow: 0 0 2px rgb(255 255 255 / 0.6);
 }
 
@@ -4840,7 +4832,7 @@ html.lt-ios body {
   background: #ff6150;
   opacity: 0;
   pointer-events: none;
-  transform: scaleY(0);
+  transform: scale(0);
   transform-origin: center bottom;
   will-change: transform, opacity;
   transition: transform 90ms linear, opacity 90ms linear;
@@ -5060,34 +5052,6 @@ html.lt-ios body {
   content: "•";
   margin-right: 0.35rem;
   color: #57f1db;
-}
-
-.lt-track-volume input[type="range"],
-.lt-track-pan input[type="range"] {
-  width: 100%;
-  margin: 0;
-  appearance: none;
-  height: 6px;
-  border-radius: 3px;
-  background: #0e0e0e;
-  /* Con el dedo, el fader se queda el gesto entero (lo lleva
-     useTouchRangeDrag). Sin esto el navegador reclama el eje vertical a los
-     pocos pixeles, cancela el puntero y desplaza la vista con el fader a
-     medias. No afecta al raton. */
-  touch-action: none;
-}
-
-.lt-track-volume input[type="range"]::-webkit-slider-thumb,
-.lt-track-pan input[type="range"]::-webkit-slider-thumb {
-  appearance: none;
-  width: 9px;
-  height: 17px;
-  border-radius: 2px;
-  background: #3cddc7;
-}
-
-.lt-track-pan input[type="range"]::-webkit-slider-thumb {
-  background: #74b8ff;
 }
 
 .lt-track-lane {
@@ -7025,88 +6989,6 @@ html.lt-ios body {
   height: 1.4rem;
 }
 
-.lt-region-master-fader-meter,
-.lt-region-master-fader-slider {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.lt-region-master-fader-meter {
-  position: relative;
-  align-self: center;
-  height: 0.7rem;
-  width: 100%;
-  border-radius: 2px;
-  background: rgb(20 26 25 / 0.85);
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.lt-region-master-fader-meter-fill {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg,
-    rgb(87 241 219 / 0.6) 0%,
-    rgb(87 241 219 / 0.9) 65%,
-    rgb(255 196 87 / 0.95) 88%,
-    rgb(255 95 95 / 1) 100%);
-  transition: opacity 80ms linear;
-}
-
-/* The slider sits on top of the meter in the same grid cell. Track is
-   invisible so the meter shows through; the thumb is the visible affordance.
-   Override the popover's input width:4rem rule with high specificity. */
-.lt-stepper-control-row input[type="range"].lt-region-master-fader-slider,
-.lt-region-master-fader-slider {
-  width: 100%;
-  height: 1.4rem;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  -webkit-appearance: none;
-  appearance: none;
-  position: relative;
-  z-index: 1;
-  cursor: ew-resize;
-}
-
-.lt-region-master-fader-slider::-webkit-slider-runnable-track {
-  height: 0.7rem;
-  background: transparent;
-  border: 0;
-  border-radius: 2px;
-}
-
-.lt-region-master-fader-slider::-moz-range-track {
-  height: 0.7rem;
-  background: transparent;
-  border: 0;
-  border-radius: 2px;
-}
-
-.lt-region-master-fader-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 0.55rem;
-  height: 1.4rem;
-  /* WebKit anchors the thumb on the track baseline; pull it up so its center
-     aligns with the track center. (track_height - thumb_height) / 2 = -0.35rem. */
-  margin-top: -0.35rem;
-  border: 0;
-  border-radius: 2px;
-  background: #f3f0ef;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
-}
-
-.lt-region-master-fader-slider::-moz-range-thumb {
-  width: 0.55rem;
-  height: 1.4rem;
-  border: 0;
-  border-radius: 2px;
-  background: #f3f0ef;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
-}
-
 /* ─────────────────────────────────────────────────────────────────────────
    Compact view — two zones stacked vertically:
    - Top: horizontal list of song columns. Each has a header (name + master
@@ -7446,79 +7328,6 @@ html.lt-ios body {
   grid-template-rows: 1fr;
   height: 1.4rem;
   min-width: 0;
-}
-
-.lt-compact-song-master > * {
-  grid-column: 1;
-  grid-row: 1;
-}
-
-.lt-compact-song-meter {
-  position: relative;
-  align-self: center;
-  height: 0.55rem;
-  width: 100%;
-  border-radius: 2px;
-  background: rgb(15 18 19 / 0.95);
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.lt-compact-song-meter-fill {
-  height: 100%;
-  width: 0;
-  background: linear-gradient(90deg,
-    rgb(87 241 219 / 0.6) 0%,
-    rgb(87 241 219 / 0.9) 65%,
-    rgb(255 196 87 / 0.95) 88%,
-    rgb(255 95 95 / 1) 100%);
-  transition: opacity 80ms linear;
-}
-
-.lt-compact-song-fader {
-  width: 100%;
-  /* An <input> carries a UA-default intrinsic width (~150px+) that acts as a
-     floor in grid/flex; without this the master fader alone would stop the
-     column from narrowing past ~10rem. */
-  min-width: 0;
-  height: 1.4rem;
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  -webkit-appearance: none;
-  appearance: none;
-  position: relative;
-  z-index: 1;
-  cursor: ew-resize;
-}
-
-.lt-compact-song-fader::-webkit-slider-runnable-track,
-.lt-compact-song-fader::-moz-range-track {
-  height: 0.55rem;
-  background: transparent;
-  border: 0;
-  border-radius: 2px;
-}
-
-.lt-compact-song-fader::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 0.5rem;
-  height: 1.3rem;
-  margin-top: -0.375rem;
-  border: 0;
-  border-radius: 2px;
-  background: #f3f0ef;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
-}
-
-.lt-compact-song-fader::-moz-range-thumb {
-  width: 0.5rem;
-  height: 1.3rem;
-  border: 0;
-  border-radius: 2px;
-  background: #f3f0ef;
-  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.45);
 }
 
 .lt-compact-song-clip-stack {
@@ -8023,50 +7832,6 @@ html.lt-ios body {
   flex: 0 0 0.6rem;
 }
 
-/* Vertical fader: rotate the native <input type=range> with writing-mode
-   so the thumb travels bottom→top as expected for a mixer fader. Thumb
-   colour matches the DAW track-volume slider (teal #3cddc7 on #0e0e0e). */
-/* Custom vertical fader (rendered as a <div role="slider"> in
-   CompactMixer.tsx). The track is the slim teal-on-black bar; the
-   thumb is absolutely positioned so it always sits at the current
-   value, with `bottom: <pct>%`. Width is the visible thickness of
-   the track; the wrapping pointer area is generous so the thumb is
-   easy to grab even on a 0.4rem track. */
-.lt-compact-mixer-fader {
-  position: relative;
-  width: 0.4rem;
-  height: 100%;
-  margin: 0 auto;
-  padding: 0;
-  background: #0e0e0e;
-  border-radius: 2px;
-  cursor: ns-resize;
-  touch-action: none;
-  outline: none;
-}
-
-.lt-compact-mixer-fader:focus-visible {
-  box-shadow: 0 0 0 2px rgb(87 241 219 / 0.45);
-}
-
-.lt-compact-mixer-fader-thumb {
-  position: absolute;
-  /* Centre the 14px-wide thumb on the 0.4rem (~6.4px) track. The
-     thumb's vertical centre maps to `bottom` — we offset by half its
-     own height so at value=0 the thumb sits flush with the bottom of
-     the usable track, and at value=1 it sits flush with the top. The
-     usable track is shrunk inset by half the thumb on each side via
-     a wrapper margin, so the thumb never overflows into the M/S/T
-     buttons sitting above. */
-  left: 50%;
-  transform: translate(-50%, 50%);
-  width: 14px;
-  height: 8px;
-  border-radius: 2px;
-  background: #3cddc7;
-  pointer-events: none;
-}
-
 /* Fixed volume scale beside the vertical fader (100 at top → 0 at bottom),
    mirroring the pan's L/C/R guide row so the fader is readable at rest. */
 .lt-compact-mixer-fader-scale {
@@ -8155,69 +7920,6 @@ html.lt-ios body {
 .lt-compact-mixer-pan-track {
   position: relative;
   height: 0.8rem;
-}
-
-/* Center tick mark only — the track background itself is now painted
-   by the <input>'s inline gradient (azul oscuro → azul → negro) to
-   match the DAW track-pan slider, so we no longer paint a base bar
-   here. Just the 1px C marker remains as a visual reference. */
-.lt-compact-mixer-pan-track::before {
-  content: "";
-  position: absolute;
-  inset: 0.4rem 0 auto 0;
-  height: 4px;
-  border-radius: 2px;
-  background: linear-gradient(90deg,
-    transparent calc(50% - 1px),
-    rgba(255, 255, 255, 0.45) calc(50% - 1px),
-    rgba(255, 255, 255, 0.45) calc(50% + 1px),
-    transparent calc(50% + 1px));
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Pan input. The two-tone azul→negro gradient is painted by the inline
-   `style` prop (see CompactMixer.tsx), so the runnable-track stays
-   transparent and we just shape the thumb. Height 4px to match the
-   DAW track-pan thickness. */
-.lt-compact-mixer-pan {
-  position: relative;
-  width: 100%;
-  height: 4px;
-  margin: 0.5rem 0 0 0;
-  padding: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  cursor: ew-resize;
-  border-radius: 2px;
-  z-index: 1;
-}
-
-.lt-compact-mixer-pan::-webkit-slider-runnable-track,
-.lt-compact-mixer-pan::-moz-range-track {
-  height: 4px;
-  background: transparent;
-  border: 0;
-  border-radius: 2px;
-}
-
-.lt-compact-mixer-pan::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 8px;
-  height: 14px;
-  margin-top: -5px;
-  border: 0;
-  border-radius: 2px;
-  background: #74b8ff;
-}
-
-.lt-compact-mixer-pan::-moz-range-thumb {
-  width: 8px;
-  height: 14px;
-  border: 0;
-  border-radius: 2px;
-  background: #74b8ff;
 }
 
 .lt-compact-mixer-pan-tooltip {
@@ -12186,43 +11888,6 @@ html.lt-ios body {
 .lt-mobile .lt-mobile-track-row-panel .lt-track-volume input,
 .lt-mobile .lt-mobile-track-row-panel .lt-track-pan input {
   min-width: 0;
-}
-
-/* Zona de agarre de 20 px que NO se ve y NO ocupa.
-   El riel y el pulgar se quedan como en escritorio —engordarlos quedaba feo—:
-   el relleno agranda la caja que recibe el toque, `background-clip: content-box`
-   deja el degradado en los 6 px de siempre y el margen negativo devuelve el alto
-   que el relleno anadia, asi que la fila del panel no cambia.
-   `touch-action: none` es aparte: sin el, WKWebView decide a los pocos pixeles
-   que un arrastre torcido era un desplazamiento, cancela el puntero y suelta el
-   fader mientras la app entera se va detras del dedo. Y el arrastre en si lo
-   lleva useTouchRangeDrag, porque WebKit solo mueve el pulgar si el dedo
-   aterriza justo encima de el. */
-.lt-mobile .lt-mobile-track-row-panel .lt-track-volume input[type="range"],
-.lt-mobile .lt-mobile-track-row-panel .lt-track-pan input[type="range"] {
-  height: 1.25rem;
-  /* Riel de 4 px: el relleno se come el resto de la caja. */
-  padding-block: 0.5rem;
-  margin-block: -0.5rem;
-  border-radius: 2px;
-  background-clip: content-box;
-  touch-action: none;
-}
-
-/* Pulgar de canto, como el de un mezclador: estrecho, plano y del alto justo
-   para verse sobre el riel. El de escritorio (9x17 sobre 6 px) se veia
-   desproporcionado en el panel. */
-.lt-mobile
-  .lt-mobile-track-row-panel
-  .lt-track-volume
-  input[type="range"]::-webkit-slider-thumb,
-.lt-mobile
-  .lt-mobile-track-row-panel
-  .lt-track-pan
-  input[type="range"]::-webkit-slider-thumb {
-  width: 7px;
-  height: 13px;
-  border-radius: 1px;
 }
 
 /* Etiquetas del panel: mismo color, un punto mas sobrias. */

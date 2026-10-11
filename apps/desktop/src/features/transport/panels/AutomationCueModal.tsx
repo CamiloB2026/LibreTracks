@@ -777,7 +777,7 @@ function ActionEditor({
             {t("transport.automation.padVolume")}: {formatGainDb(action.volume)}
           </span>
           <input
-            className="lt-range-input"
+            className="lt-range-input lt-fader is-volume"
             type="range"
             min={0}
             max={1}

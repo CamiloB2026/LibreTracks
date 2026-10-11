@@ -8,6 +8,7 @@ import {
   METER_MIN_DB,
   METER_PEAK_DECAY_DB_PER_SECOND,
   METER_PEAK_HOLD_MS,
+  type MeterOrientation,
   meterStyleFromDb,
   peakHoldStyleFromDb,
   peakToMeterDb,
@@ -62,22 +63,31 @@ function idleChannel(): ChannelAnimationState {
   };
 }
 
-function applyMeterBar(element: HTMLDivElement | null, meterDb: number) {
+function applyMeterBar(
+  element: HTMLDivElement | null,
+  meterDb: number,
+  orientation: MeterOrientation,
+) {
   if (!element) {
     return;
   }
 
-  const nextStyle = meterStyleFromDb(meterDb);
+  const nextStyle = meterStyleFromDb(meterDb, orientation);
   element.style.clipPath = nextStyle.clipPath;
   element.style.opacity = nextStyle.opacity;
 }
 
-function applyPeakHold(element: HTMLDivElement | null, peakDb: number, visible: boolean) {
+function applyPeakHold(
+  element: HTMLDivElement | null,
+  peakDb: number,
+  visible: boolean,
+  orientation: MeterOrientation,
+) {
   if (!element) {
     return;
   }
 
-  const nextStyle = peakHoldStyleFromDb(peakDb);
+  const nextStyle = peakHoldStyleFromDb(peakDb, orientation);
   element.style.transform = nextStyle.transform;
   element.style.opacity = visible ? nextStyle.opacity : "0";
 }
@@ -88,20 +98,22 @@ function applyClipIndicator(element: HTMLDivElement | null, isClipping: boolean)
   }
 
   element.style.opacity = isClipping ? "1" : "0";
-  element.style.transform = isClipping ? "scaleY(1)" : "scaleY(0)";
+  element.style.transform = isClipping ? "scale(1)" : "scale(0)";
 }
 
 function applyChannel(
   elements: ChannelElements,
   channel: ChannelAnimationState,
   now: number,
+  orientation: MeterOrientation,
 ) {
-  applyMeterBar(elements.bar, channel.currentDb);
+  applyMeterBar(elements.bar, channel.currentDb, orientation);
   applyClipIndicator(elements.clip, now <= channel.clipHoldUntil);
   applyPeakHold(
     elements.peak,
     channel.peakHoldDb,
     channel.peakHoldDb > METER_MIN_DB + METER_ACTIVE_EPSILON_DB,
+    orientation,
   );
 }
 
@@ -160,14 +172,23 @@ function areTrackMetersEqual(
   );
 }
 
-type TrackMeterProps = {
-  trackId: string;
+type StereoMeterProps = {
+  /** Una pista (`meters`) o el master de una canción (`regionMeters`). */
+  source: "track" | "region";
+  id: string;
+  orientation: MeterOrientation;
+  className: string;
 };
 
-function TrackMeterComponent({ trackId }: TrackMeterProps) {
-  // «Convertir a mono» de la pista: un solo canal en el medidor.
+function StereoMeterComponent({ source, id, orientation, className }: StereoMeterProps) {
+  const selectMeter = (state: ReturnType<typeof useTransportStore.getState>) =>
+    source === "track" ? state.meters[id] : state.regionMeters[id];
+  // «Convertir a mono» de la pista: un solo canal en el medidor. El master de
+  // una canción no tiene esa opción.
   const mono = useSongStore(
-    (state) => state.song?.tracks.find((track) => track.id === trackId)?.monoDownmix === true,
+    (state) =>
+      source === "track" &&
+      state.song?.tracks.find((track) => track.id === id)?.monoDownmix === true,
   );
   const monoRef = useRef(mono);
   monoRef.current = mono;
@@ -192,7 +213,7 @@ function TrackMeterComponent({ trackId }: TrackMeterProps) {
 
     const applyAll = (now: number) => {
       animation.channels.forEach((channel, index) => {
-        applyChannel(elements[index], channel, now);
+        applyChannel(elements[index], channel, now, orientation);
       });
     };
 
@@ -243,7 +264,7 @@ function TrackMeterComponent({ trackId }: TrackMeterProps) {
     };
 
     const currentPeaks = channelPeaks(
-      useTransportStore.getState().meters[trackId] ?? EMPTY_METER,
+      selectMeter(useTransportStore.getState()) ?? EMPTY_METER,
       monoRef.current,
     );
     animation.channels.forEach((channel, index) => {
@@ -258,7 +279,7 @@ function TrackMeterComponent({ trackId }: TrackMeterProps) {
     }
 
     const unsubscribe = useTransportStore.subscribe(
-      (state) => state.meters[trackId],
+      selectMeter,
       (meter) => {
         updateMeterTarget(meter);
       },
@@ -274,12 +295,18 @@ function TrackMeterComponent({ trackId }: TrackMeterProps) {
       applyAll(0);
     };
     // Re-seat the bars when the track switches between mono and stereo.
-  }, [trackId, mono]);
+    // `selectMeter` only reads `source` and `id`, both listed.
+  }, [source, id, mono, orientation]);
 
-  const idleMeterStyle = meterStyleFromDb(peakToMeterDb(0));
+  const idleMeterStyle = meterStyleFromDb(peakToMeterDb(0), orientation);
 
   return (
-    <div className={`lt-track-meter${mono ? " is-mono" : ""}`} aria-hidden="true">
+    <div
+      className={`${className}${mono ? " is-mono" : ""}${
+        orientation === "horizontal" ? " is-horizontal" : ""
+      }`}
+      aria-hidden="true"
+    >
       {elementsRef.current.slice(0, mono ? 1 : CHANNEL_COUNT).map((channelElements, index) => (
         <div className="lt-track-meter-channel" key={index}>
           <div
@@ -307,4 +334,37 @@ function TrackMeterComponent({ trackId }: TrackMeterProps) {
   );
 }
 
+const StereoMeter = memo(StereoMeterComponent);
+
+type TrackMeterProps = {
+  trackId: string;
+};
+
+function TrackMeterComponent({ trackId }: TrackMeterProps) {
+  return (
+    <StereoMeter source="track" id={trackId} orientation="vertical" className="lt-track-meter" />
+  );
+}
+
 export const TrackMeter = memo(TrackMeterComponent);
+
+type SongMasterMeterProps = {
+  regionId: string;
+  /** Para colgar los estilos de cada sitio (vista compacta, barra del timeline). */
+  className?: string;
+};
+
+/** Medidor estéreo horizontal del master de una canción: L arriba, R abajo.
+ * Va dentro de la ranura de su fader, debajo del cap. */
+function SongMasterMeterComponent({ regionId, className = "" }: SongMasterMeterProps) {
+  return (
+    <StereoMeter
+      source="region"
+      id={regionId}
+      orientation="horizontal"
+      className={`lt-track-meter lt-song-master-meter ${className}`.trim()}
+    />
+  );
+}
+
+export const SongMasterMeter = memo(SongMasterMeterComponent);

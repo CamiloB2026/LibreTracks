@@ -359,7 +359,8 @@ private:
     static constexpr int kMaxRegions = 128;
     struct RegionMeterSlot {
         Id region_id;
-        std::atomic<float> peak{0.f};
+        std::atomic<float> left_peak{0.f};
+        std::atomic<float> right_peak{0.f};
     };
     std::array<RegionMeterSlot, kMaxRegions> region_meters_;
     std::atomic<int> region_meter_count_{0};

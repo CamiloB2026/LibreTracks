@@ -1,0 +1,438 @@
+/* ── Faders estilo consola ────────────────────────────────────────────────
+   Ranura hundida, cap de fader con línea índice iluminada (el valor está en
+   la línea, no en un relleno de color) y marcas de la escala a los dos lados
+   de la ranura, con 0 dB más claro. Sustituye al slider de formulario con
+   relleno de color que se leía como un control de ajustes.
+
+   Los faders horizontales siguen siendo <input type="range"> (teclado, foco,
+   accesibilidad y los arrastres táctiles de useTouchRangeDrag no cambian);
+   solo se viste el input con la clase `lt-fader`. Cada sitio ajusta tamaños
+   con las variables, nunca con reglas propias del pulgar.
+
+   Las marcas son el fondo del propio input, en dos bandas (arriba y abajo).
+   El pulgar de WebKit no recorre el 100 % del ancho: su centro va de
+   cap/2 a 100% - cap/2, así que cada marca se coloca en
+   `cap/2 + (100% - cap) * posición`. Las posiciones son las de la escala
+   que dibujan el mezclador y el remote (faderTicks en faderScale.ts):
+   −36 dB = 0.3, −12 dB = 0.6, 0 dB = 0.75. */
+
+.lt-fader {
+  /* Alto del input: la zona que se agarra. */
+  --lt-fader-box: 18px;
+  /* Alto que ocupa en la maquetación. Un margen negativo devuelve la
+     diferencia, así la zona de agarre crece sin mover la fila. */
+  --lt-fader-footprint: var(--lt-fader-box);
+  --lt-fader-groove: 4px;
+  --lt-fader-groove-bg: #070808;
+  --lt-fader-groove-shadow: inset 0 1px 2px #000, 0 1px 0 rgb(255 255 255 / 0.05);
+  /* Cap: ancho a lo largo del recorrido y alto a lo ancho. */
+  --lt-fader-cap-w: 11px;
+  --lt-fader-cap-h: 18px;
+  --lt-fader-index: #57f1db;
+  --lt-fader-index-glow: rgb(87 241 219 / 0.35);
+  --lt-fader-tick-len: 3px;
+  --lt-fader-tick: #3c4443;
+  --lt-fader-tick-unity: #8f9e9b;
+  --lt-fader-ticks: linear-gradient(
+    to right,
+    transparent calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.3 - 0.5px),
+    var(--lt-fader-tick) 0 calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.3 + 0.5px),
+    transparent 0 calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.6 - 0.5px),
+    var(--lt-fader-tick) 0 calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.6 + 0.5px),
+    transparent 0 calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.75 - 0.5px),
+    var(--lt-fader-tick-unity) 0 calc(var(--lt-fader-cap-w) / 2 + (100% - var(--lt-fader-cap-w)) * 0.75 + 0.5px),
+    transparent 0
+  );
+}
+
+/* Paneo y masters de canción: una sola marca, en el centro (C y ganancia
+   1.0 de un recorrido 0..2). */
+.lt-fader.is-pan,
+.lt-fader.is-master {
+  --lt-fader-ticks: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--lt-fader-tick-unity) 0 calc(50% + 0.5px),
+    transparent 0
+  );
+}
+
+/* Valores con un centro que no es volumen ni paneo: semitonos del
+   metrónomo (−24..+24) y desfase del vídeo (−500..+500 ms). */
+.lt-fader.is-bipolar {
+  --lt-fader-ticks: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--lt-fader-tick-unity) 0 calc(50% + 0.5px),
+    transparent 0
+  );
+}
+
+/* Sin escala que marcar (tiempo de fundido de los pads). */
+.lt-fader.is-plain {
+  --lt-fader-ticks: none;
+}
+
+.lt-fader.is-pan {
+  --lt-fader-index: #74b8ff;
+  --lt-fader-index-glow: rgb(116 184 255 / 0.35);
+}
+
+/* El master lleva el medidor estéreo debajo, en la misma celda: la ranura
+   la pinta el medidor y la del input queda transparente. */
+.lt-fader.is-master {
+  --lt-fader-groove-bg: transparent;
+  --lt-fader-groove-shadow: none;
+}
+
+input[type="range"].lt-fader {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--lt-fader-box);
+  margin: calc((var(--lt-fader-footprint) - var(--lt-fader-box)) / 2) 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-image: var(--lt-fader-ticks), var(--lt-fader-ticks);
+  background-position: left top, left bottom;
+  background-size: 100% var(--lt-fader-tick-len);
+  background-repeat: no-repeat;
+  cursor: ew-resize;
+  /* Con el dedo el fader se queda el gesto entero (lo lleva
+     useTouchRangeDrag). Sin esto el navegador reclama el eje vertical a los
+     pocos píxeles, cancela el puntero y desplaza la vista con el fader a
+     medias. No afecta al ratón. */
+  touch-action: none;
+}
+
+input[type="range"].lt-fader:focus {
+  outline: none;
+}
+
+input[type="range"].lt-fader:focus-visible {
+  outline: 1px solid rgb(87 241 219 / 0.7);
+  outline-offset: 1px;
+}
+
+input[type="range"].lt-fader:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+input[type="range"].lt-fader::-webkit-slider-runnable-track {
+  height: var(--lt-fader-groove);
+  border: 0;
+  border-radius: 1px;
+  background: var(--lt-fader-groove-bg);
+  box-shadow: var(--lt-fader-groove-shadow);
+}
+
+input[type="range"].lt-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--lt-fader-cap-w);
+  height: var(--lt-fader-cap-h);
+  /* WebKit apoya el pulgar en el borde superior de la ranura: centrarlo. */
+  margin-top: calc((var(--lt-fader-groove) - var(--lt-fader-cap-h)) / 2);
+  border: 1px solid #000;
+  border-radius: 2px;
+  background:
+    /* Línea índice, con un halo tenue de su color. */
+    linear-gradient(
+        to right,
+        transparent calc(50% - 1px),
+        var(--lt-fader-index) calc(50% - 1px) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      )
+      center / 100% calc(100% - 4px) no-repeat,
+    linear-gradient(
+        to right,
+        transparent calc(50% - 2.5px),
+        var(--lt-fader-index-glow) calc(50% - 2.5px) calc(50% + 2.5px),
+        transparent calc(50% + 2.5px)
+      )
+      center / 100% calc(100% - 4px) no-repeat,
+    /* Cuerpo del cap: plástico oscuro con dos aristas. */
+    linear-gradient(
+      to right,
+      #2c3131 0%,
+      #474e4e 22%,
+      #2a2f2f 46%,
+      #1c2020 54%,
+      #3a4141 78%,
+      #262a2a 100%
+    );
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 0.65),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+  cursor: ew-resize;
+}
+
+input[type="range"].lt-fader:hover:not(:disabled)::-webkit-slider-thumb {
+  border-color: #4a5454;
+}
+
+input[type="range"].lt-fader:active:not(:disabled)::-webkit-slider-thumb {
+  filter: brightness(1.18);
+}
+
+/* ── Tamaños por sitio ── */
+
+/* Cabecera de pista del timeline. La fila se maquetaba con un riel de 6 px;
+   ocupa lo mismo y el agarre crece por fuera. */
+.lt-track-mix-controls .lt-fader {
+  --lt-fader-footprint: 6px;
+}
+
+.lt-track-header.is-compact .lt-fader,
+.lt-track-header.is-condensed .lt-fader,
+.lt-track-header.is-micro .lt-fader {
+  --lt-fader-box: 12px;
+  --lt-fader-footprint: 3px;
+  --lt-fader-groove: 3px;
+  --lt-fader-cap-w: 9px;
+  --lt-fader-cap-h: 12px;
+  --lt-fader-tick-len: 2px;
+}
+
+/* Panel de pista en móvil: cap de dedo, ranura algo más gruesa y una zona
+   de agarre de 36 px aunque la fila solo crezca a 20. */
+.lt-mobile .lt-mobile-track-row-panel .lt-fader {
+  --lt-fader-box: 36px;
+  --lt-fader-footprint: 20px;
+  --lt-fader-groove: 6px;
+  --lt-fader-cap-w: 16px;
+  --lt-fader-cap-h: 32px;
+  --lt-fader-tick-len: 6px;
+}
+
+/* Paneo de la tira del mezclador compacto. */
+.lt-compact-mixer-pan-track .lt-fader {
+  --lt-fader-box: 14px;
+  --lt-fader-groove: 3px;
+  --lt-fader-cap-w: 8px;
+  --lt-fader-cap-h: 14px;
+  --lt-fader-tick-len: 2px;
+}
+
+.lt-compact-mixer-pan-track {
+  height: auto;
+}
+
+/* Masters de canción: cabecera de la vista compacta y popover del master en
+   la barra del timeline. */
+.lt-compact-song-master .lt-fader {
+  --lt-fader-box: 1.4rem;
+  --lt-fader-groove: 8px;
+  --lt-fader-cap-w: 11px;
+  --lt-fader-cap-h: 20px;
+  --lt-fader-tick-len: 3px;
+}
+
+.lt-region-master-fader .lt-fader {
+  --lt-fader-box: 1.4rem;
+  --lt-fader-groove: 10px;
+  --lt-fader-cap-w: 11px;
+  --lt-fader-cap-h: 22px;
+  --lt-fader-tick-len: 3px;
+  position: relative;
+  z-index: 1;
+}
+
+.lt-compact-song-master .lt-fader {
+  position: relative;
+  z-index: 1;
+  /* Sin esto, el ancho intrínseco del input (~150 px) frena la columna de la
+     canción y no se puede estrechar. */
+  min-width: 0;
+}
+
+/* Medidor y fader en la misma celda de la rejilla. */
+.lt-compact-song-master > *,
+.lt-region-master-fader > * {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+/* ── Medidor estéreo del master, dentro de la ranura ──
+   L arriba, R abajo. Ocupa todo el ancho: el medidor tiene su propia escala
+   en dB y no se alinea con el recorrido del fader. */
+.lt-track-meter.lt-song-master-meter {
+  flex-direction: column;
+  align-self: center;
+  width: 100%;
+  flex: none;
+  gap: 1px;
+  padding: 1px;
+  box-sizing: border-box;
+  border-radius: 1px;
+  background: #070808;
+  box-shadow:
+    inset 0 1px 2px #000,
+    0 1px 0 rgb(255 255 255 / 0.05);
+  pointer-events: none;
+}
+
+.lt-compact-song-meter.lt-song-master-meter {
+  height: 8px;
+}
+
+.lt-region-master-fader-meter.lt-song-master-meter {
+  height: 10px;
+}
+
+.lt-track-meter.is-horizontal .lt-track-meter-channel {
+  flex: 1 1 0;
+  min-height: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.lt-track-meter.is-horizontal .lt-track-meter-bar {
+  clip-path: inset(0 100% 0 0);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 3px, rgb(7 8 8 / 0.9) 3px 4px),
+    linear-gradient(
+      90deg,
+      #1f8a55 0%,
+      #2fba69 25%,
+      #63db78 55%,
+      #dbe95f 75%,
+      #ff6150 85%,
+      #ff6150 100%
+    );
+}
+
+.lt-track-meter.is-horizontal .lt-track-meter-peak {
+  transform: translateX(-100%);
+}
+
+.lt-track-meter.is-horizontal .lt-track-meter-peak::before {
+  left: auto;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  height: auto;
+}
+
+.lt-track-meter.is-horizontal .lt-track-meter-clip {
+  top: 0;
+  bottom: 0;
+  left: auto;
+  right: 0;
+  width: calc(8% + 1px);
+  height: auto;
+  border-radius: 0;
+  transform-origin: right center;
+}
+
+/* ── Fader vertical del mezclador compacto ──
+   Es un <div role="slider"> (ver CompactVerticalFader). La caja es tan ancha
+   como el cap; la ranura es un ::before centrado y las marcas, el fondo en
+   dos bandas a los lados. Marcas en la escala que se lee al lado:
+   +10 arriba, 0 dB al 25 %, −12 al 40 %, −36 al 70 %, −∞ abajo. */
+.lt-compact-mixer-fader {
+  --lt-vfader-tick: #3c4443;
+  --lt-vfader-tick-unity: #8f9e9b;
+  --lt-vfader-ticks: linear-gradient(
+    to bottom,
+    var(--lt-vfader-tick) 0 1px,
+    transparent 0 calc(25% - 0.5px),
+    var(--lt-vfader-tick-unity) 0 calc(25% + 0.5px),
+    transparent 0 calc(40% - 0.5px),
+    var(--lt-vfader-tick) 0 calc(40% + 0.5px),
+    transparent 0 calc(70% - 0.5px),
+    var(--lt-vfader-tick) 0 calc(70% + 0.5px),
+    transparent 0 calc(100% - 1px),
+    var(--lt-vfader-tick) 0
+  );
+  position: relative;
+  width: 24px;
+  height: 100%;
+  margin: 0 auto;
+  padding: 0;
+  background-color: transparent;
+  background-image: var(--lt-vfader-ticks), var(--lt-vfader-ticks);
+  background-position: left top, right top;
+  background-size: 5px 100%;
+  background-repeat: no-repeat;
+  cursor: ns-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.lt-compact-mixer-fader::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 4px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: #070808;
+  box-shadow:
+    inset 0 1px 2px #000,
+    1px 0 0 rgb(255 255 255 / 0.05);
+  pointer-events: none;
+}
+
+.lt-compact-mixer-fader:focus-visible {
+  outline: 1px solid rgb(87 241 219 / 0.7);
+  outline-offset: 2px;
+}
+
+.lt-compact-mixer-fader-thumb {
+  position: absolute;
+  /* Centrado en `bottom: <valor>%`; el envoltorio reserva medio cap arriba y
+     abajo para que en los extremos no pise los botones M/S/T. */
+  left: 50%;
+  transform: translate(-50%, 50%);
+  box-sizing: border-box;
+  width: 24px;
+  height: 13px;
+  border: 1px solid #000;
+  border-radius: 2px;
+  background:
+    linear-gradient(
+        to bottom,
+        transparent calc(50% - 1px),
+        #57f1db calc(50% - 1px) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      )
+      center / calc(100% - 4px) 100% no-repeat,
+    repeating-linear-gradient(to bottom, transparent 0 2px, rgb(0 0 0 / 0.22) 2px 3px),
+    linear-gradient(
+      to bottom,
+      #2c3131 0%,
+      #474e4e 22%,
+      #2a2f2f 46%,
+      #1c2020 54%,
+      #3a4141 78%,
+      #262a2a 100%
+    );
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 0.65),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+  pointer-events: none;
+}
+
+.lt-compact-mixer-fader:hover .lt-compact-mixer-fader-thumb {
+  border-color: #4a5454;
+}
+
+.lt-compact-mixer-fader:active .lt-compact-mixer-fader-thumb {
+  filter: brightness(1.18);
+}
+
+.lt-compact-mixer-fader-wrap {
+  /* Medio cap (13px / 2) arriba y abajo. */
+  padding: 7px 0;
+}

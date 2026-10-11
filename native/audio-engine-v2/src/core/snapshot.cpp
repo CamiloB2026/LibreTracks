@@ -97,8 +97,10 @@ std::string snapshot_to_json(const EngineSnapshot& snap) {
     json region_meters = json::array();
     for (const auto& m : snap.region_meters) {
         region_meters.push_back({
-            {"region_id", m.region_id},
-            {"peak",      m.peak},
+            {"region_id",  m.region_id},
+            {"peak",       m.peak},
+            {"left_peak",  m.left_peak},
+            {"right_peak", m.right_peak},
         });
     }
     j["region_meters"] = region_meters;

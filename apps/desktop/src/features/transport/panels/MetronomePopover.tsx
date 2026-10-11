@@ -112,7 +112,7 @@ function MetronomePopoverImpl({
           </span>
           <input
             type="range"
-            className="lt-pads-fader"
+            className="lt-pads-fader lt-fader is-volume"
             min={0}
             max={1}
             step={0.001}
@@ -204,7 +204,7 @@ function MetronomePopoverImpl({
           </span>
           <input
             type="range"
-            className="lt-pads-fader"
+            className="lt-pads-fader lt-fader is-bipolar"
             min={-24}
             max={24}
             step={1}
@@ -256,7 +256,7 @@ function MetronomePopoverImpl({
           </span>
           <input
             type="range"
-            className="lt-pads-fader"
+            className="lt-pads-fader lt-fader is-bipolar"
             min={-24}
             max={24}
             step={1}
@@ -338,7 +338,7 @@ function MetronomePopoverImpl({
               </span>
               <input
                 type="range"
-                className="lt-pads-fader"
+                className="lt-pads-fader lt-fader is-bipolar"
                 min={-24}
                 max={24}
                 step={1}
@@ -362,7 +362,7 @@ function MetronomePopoverImpl({
               </span>
               <input
                 type="range"
-                className="lt-pads-fader"
+                className="lt-pads-fader lt-fader is-volume"
                 min={0}
                 max={1}
                 step={0.001}

@@ -6,12 +6,24 @@ import { describe, expect, it } from "vitest";
 
 const sharedDir = dirname(fileURLToPath(import.meta.url));
 const styles = readFileSync(resolve(sharedDir, "styles.css"), "utf8");
+const faders = readFileSync(resolve(sharedDir, "faders.css"), "utf8");
 const main = readFileSync(resolve(sharedDir, "../main.tsx"), "utf8");
 const viteConfig = readFileSync(resolve(sharedDir, "../../vite.config.ts"), "utf8");
 const desktopApi = readFileSync(
   resolve(sharedDir, "../../../../packages/shared/src/desktopApi.ts"),
   "utf8",
 );
+
+function declarationsIn(source: string, selector: string): string {
+  const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // Anclado a principio de línea: si no, `.lt-fader {` casaría también dentro
+  // de `.lt-mobile ... .lt-fader {`.
+  const matches = Array.from(
+    source.matchAll(new RegExp(`(?:^|\\n)${escaped}\\s*\\{([^}]+)\\}`, "g")),
+  );
+  expect(matches.length, `No se encontró la regla ${selector}`).toBeGreaterThan(0);
+  return matches.at(-1)?.[1] ?? "";
+}
 
 function declarationsFor(selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -181,21 +193,25 @@ describe("contrato responsive móvil", () => {
     expect(floating).toContain("var(--lt-safe-area-bottom)");
   });
 
-  // El fader es de 6 px de alto y su pulgar de 9: con el dedo no se coge. Y sin
-  // `touch-action: none` el navegador se queda con la parte vertical del
-  // arrastre, cancela el puntero y mueve la app entera en vez del fader.
+  // Con el dedo hace falta una zona de agarre grande, pero sin que la fila del
+  // panel engorde. Y sin `touch-action: none` el navegador se queda con la
+  // parte vertical del arrastre, cancela el puntero y mueve la app entera en
+  // vez del fader.
   it("los faders del panel de pista son agarrables con el dedo", () => {
-    const faders = declarationsFor(
-      '.lt-mobile .lt-mobile-track-row-panel .lt-track-pan input[type="range"]',
+    const base = declarationsIn(faders, 'input[type="range"].lt-fader');
+    expect(base).toContain("touch-action: none");
+    // La caja que recibe el toque mide --lt-fader-box; el margen negativo
+    // devuelve la diferencia con --lt-fader-footprint.
+    expect(base).toContain("height: var(--lt-fader-box)");
+    expect(base).toContain(
+      "margin: calc((var(--lt-fader-footprint) - var(--lt-fader-box)) / 2) 0",
     );
 
-    expect(faders).toContain("touch-action: none");
-    expect(faders).toContain("padding-block:");
-    // El relleno agranda la zona de agarre, no el riel...
-    expect(faders).toContain("background-clip: content-box");
-    // ...y el margen negativo devuelve el alto que anadia, para que la fila del
-    // panel no engorde. Sin el, el fader se ve el doble de grande.
-    expect(faders).toMatch(/margin-block:\s*-/);
+    const panel = declarationsIn(faders, ".lt-mobile .lt-mobile-track-row-panel .lt-fader");
+    const box = Number(panel.match(/--lt-fader-box:\s*(\d+)px/)?.[1]);
+    const footprint = Number(panel.match(/--lt-fader-footprint:\s*(\d+)px/)?.[1]);
+    expect(box).toBeGreaterThanOrEqual(36);
+    expect(footprint).toBeLessThan(box);
   });
 
   // `input, textarea { user-select: text }` se lo daba tambien a los faders, y

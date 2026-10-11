@@ -312,6 +312,7 @@ export function VideoSettingsTab() {
         <span>{t("transport.video.settings.latency")}</span>
         <div className="lt-video-settings-row">
           <input
+            className="lt-fader is-bipolar"
             type="range"
             aria-label={t("transport.video.settings.latency")}
             min={MIN_OFFSET_MS}

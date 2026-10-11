@@ -268,11 +268,24 @@ fn region_meters_round_trip() {
     snap.region_meters = vec![RegionMeterValues {
         region_id: "r1".into(),
         peak: 0.9,
+        left_peak: 0.9,
+        right_peak: 0.4,
     }];
     let rt = round_trip(&snap);
     assert_eq!(rt.region_meters.len(), 1);
     assert_eq!(rt.region_meters[0].region_id, "r1");
     assert!((rt.region_meters[0].peak - 0.9).abs() < 1e-6);
+    assert!((rt.region_meters[0].left_peak - 0.9).abs() < 1e-6);
+    assert!((rt.region_meters[0].right_peak - 0.4).abs() < 1e-6);
+}
+
+#[test]
+fn region_meters_from_a_mono_engine_default_their_channels() {
+    let json = r#"{"region_id":"r1","peak":0.5}"#;
+    let meter: RegionMeterValues = serde_json::from_str(json).expect("parse");
+    assert!((meter.peak - 0.5).abs() < 1e-6);
+    assert_eq!(meter.left_peak, 0.0);
+    assert_eq!(meter.right_peak, 0.0);
 }
 
 #[test]

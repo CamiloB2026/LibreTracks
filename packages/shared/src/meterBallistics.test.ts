@@ -136,4 +136,20 @@ describe("peakHoldStyleFromDb", () => {
     expect(style.transform).toBe("translateY(0.00%)");
     expect(style.opacity).toBe("1");
   });
+
+  it("moves the horizontal marker in from the left as the level rises", () => {
+    expect(peakHoldStyleFromDb(METER_MIN_DB, "horizontal").transform).toBe(
+      "translateX(-100.00%)",
+    );
+    expect(peakHoldStyleFromDb(METER_MAX_DB, "horizontal").transform).toBe(
+      "translateX(0.00%)",
+    );
+  });
+});
+
+describe("horizontal meterStyleFromDb", () => {
+  it("clips from the right instead of the top", () => {
+    expect(meterStyleFromDb(METER_MIN_DB, "horizontal").clipPath).toBe("inset(0 100.00% 0 0)");
+    expect(meterStyleFromDb(METER_MAX_DB, "horizontal").clipPath).toBe("inset(0 0.00% 0 0)");
+  });
 });

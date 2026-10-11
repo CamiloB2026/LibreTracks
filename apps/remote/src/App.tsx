@@ -2909,6 +2909,7 @@ function MixerStrip({
     lastNativeVolumeRef.current = null;
     commitDraftVolume(position);
   };
+  const volumePosition = gainToPosition(draftVolume, TRACK_FADER_SCALE);
 
   return (
     <article
@@ -2928,6 +2929,7 @@ function MixerStrip({
           <span className="pan-value">{formatRemotePan(draftPan)}</span>
         </div>
         <input
+          className="lt-fader is-pan"
           type="range"
           min={-1}
           max={1}
@@ -2965,29 +2967,41 @@ function MixerStrip({
             ))}
           </div>
           <MeterBar trackId={track.id} />
-          <input
-            className="volume-fader"
-            type="range"
-            min={0}
-            max={1}
-            step={0.001}
-            value={gainToPosition(draftVolume, TRACK_FADER_SCALE)}
-            onChange={handleVolumeChange}
-            onDoubleClick={resetVolumeToUnity}
-            onPointerDown={() => {
-              volumeInteractionRef.current = true;
-              lastNativeVolumeRef.current = null;
-            }}
-            onPointerUp={(event) =>
-              commitVolumeDrag(Number(event.currentTarget.value))
-            }
-            onPointerCancel={(event) =>
-              commitVolumeDrag(Number(event.currentTarget.value))
-            }
-            onLostPointerCapture={(event) =>
-              commitVolumeDrag(Number(event.currentTarget.value))
-            }
-          />
+          {/* El input nativo vertical (slider-vertical) no deja vestir su
+              pulgar: se queda encima, transparente, y sigue llevando el
+              arrastre, el teclado y el ajuste fino. Debajo se dibuja la
+              ranura, las marcas y el cap del fader de consola. */}
+          <div
+            className="volume-fader-stack"
+            style={{ "--p": volumePosition } as CSSProperties}
+          >
+            <div className="volume-fader-visual" aria-hidden="true">
+              <div className="volume-fader-cap" />
+            </div>
+            <input
+              className="volume-fader"
+              type="range"
+              min={0}
+              max={1}
+              step={0.001}
+              value={volumePosition}
+              onChange={handleVolumeChange}
+              onDoubleClick={resetVolumeToUnity}
+              onPointerDown={() => {
+                volumeInteractionRef.current = true;
+                lastNativeVolumeRef.current = null;
+              }}
+              onPointerUp={(event) =>
+                commitVolumeDrag(Number(event.currentTarget.value))
+              }
+              onPointerCancel={(event) =>
+                commitVolumeDrag(Number(event.currentTarget.value))
+              }
+              onLostPointerCapture={(event) =>
+                commitVolumeDrag(Number(event.currentTarget.value))
+              }
+            />
+          </div>
         </div>
       </div>
 
@@ -3136,7 +3150,7 @@ function SongMasterFader({ region }: { region: SongRegionSummary | null }) {
       </div>
       <div className="song-master-fader-area">
         <input
-          className="song-master-fader"
+          className="song-master-fader lt-fader is-master"
           type="range"
           min={MASTER_GAIN_MIN}
           max={MASTER_GAIN_MAX}

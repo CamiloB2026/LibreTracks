@@ -171,7 +171,7 @@ function VoiceGuidePopoverImpl({
               </span>
               <input
                 type="range"
-                className="lt-pads-fader"
+                className="lt-pads-fader lt-fader is-volume"
                 min={0}
                 max={1}
                 step={0.001}

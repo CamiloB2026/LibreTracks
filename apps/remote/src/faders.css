@@ -1,0 +1,229 @@
+/* ── Faders estilo consola ────────────────────────────────────────────────
+   El mismo lenguaje que la app de escritorio (apps/desktop/src/shared/
+   faders.css): ranura hundida, cap con línea índice y marcas de la escala
+   real. Aquí con tamaños de dedo, porque el remote se usa en tablet y móvil.
+
+   Horizontales (paneo y master de canción): se viste el propio input con la
+   clase `lt-fader`. Las marcas son su fondo, en dos bandas; el centro del
+   pulgar recorre de cap/2 a 100% - cap/2, y las marcas solo están en el
+   centro (C, o ganancia 1.0 de 0..2), que no depende de eso. */
+
+.lt-fader {
+  --lt-fader-box: 26px;
+  --lt-fader-groove: 4px;
+  --lt-fader-cap-w: 15px;
+  --lt-fader-cap-h: 26px;
+  --lt-fader-index: #57f1db;
+  --lt-fader-index-glow: rgb(87 241 219 / 0.35);
+  --lt-fader-tick-len: 4px;
+  --lt-fader-tick-unity: #8f9e9b;
+  --lt-fader-ticks: linear-gradient(
+    to right,
+    transparent calc(50% - 0.5px),
+    var(--lt-fader-tick-unity) 0 calc(50% + 0.5px),
+    transparent 0
+  );
+}
+
+.lt-fader.is-pan {
+  --lt-fader-index: #74b8ff;
+  --lt-fader-index-glow: rgb(116 184 255 / 0.35);
+}
+
+.song-master-fader-area .lt-fader {
+  --lt-fader-box: 24px;
+  --lt-fader-cap-w: 13px;
+  --lt-fader-cap-h: 24px;
+}
+
+input[type="range"].lt-fader {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--lt-fader-box);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background-color: transparent;
+  background-image: var(--lt-fader-ticks), var(--lt-fader-ticks);
+  background-position: left top, left bottom;
+  background-size: 100% var(--lt-fader-tick-len);
+  background-repeat: no-repeat;
+  touch-action: none;
+}
+
+input[type="range"].lt-fader:disabled {
+  opacity: 0.45;
+}
+
+input[type="range"].lt-fader::-webkit-slider-runnable-track {
+  height: var(--lt-fader-groove);
+  border: 0;
+  border-radius: 1px;
+  background: #070808;
+  box-shadow:
+    inset 0 1px 2px #000,
+    0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+input[type="range"].lt-fader::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  width: var(--lt-fader-cap-w);
+  height: var(--lt-fader-cap-h);
+  margin-top: calc((var(--lt-fader-groove) - var(--lt-fader-cap-h)) / 2);
+  border: 1px solid #000;
+  border-radius: 2px;
+  background:
+    linear-gradient(
+        to right,
+        transparent calc(50% - 1px),
+        var(--lt-fader-index) calc(50% - 1px) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      )
+      center / 100% calc(100% - 4px) no-repeat,
+    linear-gradient(
+        to right,
+        transparent calc(50% - 2.5px),
+        var(--lt-fader-index-glow) calc(50% - 2.5px) calc(50% + 2.5px),
+        transparent calc(50% + 2.5px)
+      )
+      center / 100% calc(100% - 4px) no-repeat,
+    linear-gradient(
+      to right,
+      #2c3131 0%,
+      #474e4e 22%,
+      #2a2f2f 46%,
+      #1c2020 54%,
+      #3a4141 78%,
+      #262a2a 100%
+    );
+  box-shadow:
+    0 2px 4px rgb(0 0 0 / 0.65),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+input[type="range"].lt-fader:active:not(:disabled)::-webkit-slider-thumb {
+  filter: brightness(1.18);
+}
+
+/* ── Fader vertical del volumen ──
+   El input nativo (slider-vertical) va encima y transparente: lleva el
+   arrastre. Debajo, la ranura y el cap, dentro de un recorrido recortado
+   medio cap por arriba y por abajo, igual que la escala de números de al
+   lado, para que el cap quede a la altura de su número. */
+.volume-fader-stack {
+  --cap-h: 24px;
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.volume-fader-stack > .volume-fader {
+  position: relative;
+  z-index: 1;
+  height: auto;
+  align-self: stretch;
+  opacity: 0;
+}
+
+.volume-fader-visual {
+  /* Marcas a los dos lados de la ranura, en la escala que se lee al lado:
+     +10 arriba, 0 dB al 25 %, −12 al 40 %, −36 al 70 %, −∞ abajo. */
+  --ticks: linear-gradient(
+    to bottom,
+    #3c4443 0 1px,
+    transparent 0 calc(25% - 0.5px),
+    #8f9e9b 0 calc(25% + 0.5px),
+    transparent 0 calc(40% - 0.5px),
+    #3c4443 0 calc(40% + 0.5px),
+    transparent 0 calc(70% - 0.5px),
+    #3c4443 0 calc(70% + 0.5px),
+    transparent 0 calc(100% - 1px),
+    #3c4443 0
+  );
+  position: absolute;
+  top: calc(var(--cap-h) / 2);
+  bottom: calc(var(--cap-h) / 2);
+  left: 0;
+  right: 0;
+  background-image: var(--ticks), var(--ticks);
+  background-position: left top, right top;
+  background-size: 9px 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+}
+
+.volume-fader-visual::before {
+  content: "";
+  position: absolute;
+  top: calc(var(--cap-h) / -2);
+  bottom: calc(var(--cap-h) / -2);
+  left: 50%;
+  width: 6px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: #070808;
+  box-shadow:
+    inset 0 1px 2px #000,
+    1px 0 0 rgb(255 255 255 / 0.05);
+}
+
+.volume-fader-cap {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--p, 0.75) * 100%);
+  transform: translate(-50%, 50%);
+  box-sizing: border-box;
+  width: 100%;
+  height: var(--cap-h);
+  border: 1px solid #000;
+  border-radius: 3px;
+  background:
+    linear-gradient(
+        to bottom,
+        transparent calc(50% - 1px),
+        #57f1db calc(50% - 1px) calc(50% + 1px),
+        transparent calc(50% + 1px)
+      )
+      center / calc(100% - 6px) 100% no-repeat,
+    linear-gradient(
+        to bottom,
+        transparent calc(50% - 2.5px),
+        rgb(87 241 219 / 0.3) calc(50% - 2.5px) calc(50% + 2.5px),
+        transparent calc(50% + 2.5px)
+      )
+      center / calc(100% - 6px) 100% no-repeat,
+    repeating-linear-gradient(to bottom, transparent 0 3px, rgb(0 0 0 / 0.22) 3px 4px),
+    linear-gradient(
+      to bottom,
+      #2c3131 0%,
+      #474e4e 22%,
+      #2a2f2f 46%,
+      #1c2020 54%,
+      #3a4141 78%,
+      #262a2a 100%
+    );
+  box-shadow:
+    0 3px 6px rgb(0 0 0 / 0.65),
+    inset 0 1px 0 rgb(255 255 255 / 0.12);
+}
+
+.volume-fader-stack:active .volume-fader-cap {
+  filter: brightness(1.18);
+}
+
+.volume-fader-stack:has(.volume-fader:focus-visible) {
+  outline: 2px solid rgba(87, 241, 219, 0.7);
+  outline-offset: 2px;
+}
+
+/* La escala de números, recortada igual que el recorrido del cap. */
+.volume-fader-area .volume-scale {
+  padding: 0;
+  margin-block: calc(24px / 2);
+}

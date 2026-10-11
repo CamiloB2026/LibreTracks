@@ -349,7 +349,7 @@ function PadsPopoverImpl({
             </span>
             <input
               type="range"
-              className="lt-pads-fader"
+              className="lt-pads-fader lt-fader is-volume"
               min={0}
               max={1}
               step={0.001}
@@ -492,7 +492,7 @@ function PadFadeField({
       {enabled && (
         <input
           type="range"
-          className="lt-pads-fader lt-pads-fade-slider"
+          className="lt-pads-fader lt-pads-fade-slider lt-fader is-plain"
           min={PAD_FADE_MIN_SECONDS}
           max={PAD_FADE_MAX_SECONDS}
           step={0.1}

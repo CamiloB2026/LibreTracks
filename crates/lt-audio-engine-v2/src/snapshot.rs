@@ -202,6 +202,12 @@ pub struct TrackMeterValues {
 pub struct RegionMeterValues {
     pub region_id: String,
     pub peak: f32,
+    /// Per channel. An engine built before stereo region meters sends only
+    /// `peak`; the defaults leave both at zero and readers fall back to it.
+    #[serde(default)]
+    pub left_peak: f32,
+    #[serde(default)]
+    pub right_peak: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

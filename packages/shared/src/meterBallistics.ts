@@ -84,18 +84,28 @@ export function stepMeterDb(
   return Math.max(targetDb, currentDb - decayAmount);
 }
 
-export function meterStyleFromDb(db: number) {
+/** Vertical meters fill bottom→top; horizontal ones (the song master, which
+ * sits inside its fader's groove) fill left→right. */
+export type MeterOrientation = "vertical" | "horizontal";
+
+export function meterStyleFromDb(db: number, orientation: MeterOrientation = "vertical") {
   const displayScale = meterDbToDisplayScale(db);
+  const hidden = `${((1 - displayScale) * 100).toFixed(2)}%`;
   return {
-    clipPath: `inset(${((1 - displayScale) * 100).toFixed(2)}% 0 0 0)`,
+    clipPath: orientation === "vertical" ? `inset(${hidden} 0 0 0)` : `inset(0 ${hidden} 0 0)`,
     opacity: displayScale > 0 ? "1" : "0",
   } as const;
 }
 
-export function peakHoldStyleFromDb(db: number) {
+/** The hold marker is a full-size layer whose leading edge draws the line:
+ * shifting it by `(1 - scale)` of its own size puts that edge at the level. */
+export function peakHoldStyleFromDb(db: number, orientation: MeterOrientation = "vertical") {
   const displayScale = meterDbToDisplayScale(db);
   return {
-    transform: `translateY(${((1 - displayScale) * 100).toFixed(2)}%)`,
+    transform:
+      orientation === "vertical"
+        ? `translateY(${((1 - displayScale) * 100).toFixed(2)}%)`
+        : `translateX(${((displayScale - 1) * 100).toFixed(2)}%)`,
     opacity: displayScale > 0 ? "1" : "0",
   } as const;
 }

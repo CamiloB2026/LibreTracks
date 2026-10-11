@@ -1931,17 +1931,27 @@ button {
   );
 }
 
+/* Capa del tamano entero del medidor; la raya es su borde superior. Se
+   desplaza `(1 - nivel)` de SU alto (peakHoldStyleFromDb), asi que el borde
+   cae justo en el nivel. Con la raya de 2 px como elemento, el mismo
+   translateY la movia 2 px como mucho y el pico se quedaba siempre arriba. */
 .mixer-meter-peak {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transform: translateY(100%);
+}
+
+.mixer-meter-peak::before {
+  content: "";
   position: absolute;
   left: 0;
   right: 0;
   top: 0;
   height: 2px;
   background: #ffffff;
-  opacity: 0;
-  pointer-events: none;
-  will-change: transform, opacity;
-  transform: translateY(100%);
   box-shadow: 0 0 2px rgb(255 255 255 / 0.6);
 }
 

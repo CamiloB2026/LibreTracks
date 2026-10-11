@@ -1737,19 +1737,22 @@ void Mixer::update_region_meters(float** output_channels,
     }
     region_meter_count_.store(region_count, std::memory_order_release);
 
-    // Compute the peak of the active region from the final output bus (mono
-    // max(|L|, |R|)) and apply a 200ms release to every other slot so inactive
-    // bars decay smoothly toward zero instead of snapping off when the playhead
-    // crosses a region boundary.
-    float block_peak = 0.f;
+    // Compute the per-channel peak of the active region from the final output
+    // bus (L, R; a mono bus feeds both) and apply a 200ms release to every
+    // other slot so inactive bars decay smoothly toward zero instead of
+    // snapping off when the playhead crosses a region boundary.
+    float block_peaks[2] = {0.f, 0.f};
     if (active_index >= 0) {
         for (int ch = 0; ch < std::min(num_channels, 2); ++ch) {
             if (!output_channels[ch]) continue;
+            float channel_peak = 0.f;
             for (int f = 0; f < num_frames; ++f) {
                 const float v = std::abs(output_channels[ch][f]);
-                if (v > block_peak) block_peak = v;
+                if (v > channel_peak) channel_peak = v;
             }
+            block_peaks[ch] = channel_peak;
         }
+        if (num_channels == 1) block_peaks[1] = block_peaks[0];
     }
 
     const int sr = clock_ ? std::max(1, clock_->sample_rate()) : 48000;
@@ -1757,21 +1760,24 @@ void Mixer::update_region_meters(float** output_channels,
     const float release_coef = std::exp(
         -static_cast<float>(num_frames) / (0.2f * static_cast<float>(sr)));
 
-    for (int i = 0; i < region_count; ++i) {
-        auto& slot = region_meters_[static_cast<std::size_t>(i)];
-        const float prev = slot.peak.load(std::memory_order_relaxed);
+    // Peak follows the block: rise instantly to the new peak if higher,
+    // otherwise fall by release_coef. Standard PPM behaviour.
+    auto advance = [release_coef](std::atomic<float>& meter, bool active, float block_peak) {
+        const float prev = meter.load(std::memory_order_relaxed);
         float next;
-        if (i == active_index) {
-            // Peak follows the block: rise instantly to the new peak if higher,
-            // otherwise fall by release_coef. Standard PPM behaviour.
-            next = (block_peak >= prev)
-                ? block_peak
-                : prev * release_coef;
+        if (active && block_peak >= prev) {
+            next = block_peak;
         } else {
             next = prev * release_coef;
-            if (next < 1e-6f) next = 0.f;
+            if (!active && next < 1e-6f) next = 0.f;
         }
-        slot.peak.store(next, std::memory_order_relaxed);
+        meter.store(next, std::memory_order_relaxed);
+    };
+    for (int i = 0; i < region_count; ++i) {
+        auto& slot = region_meters_[static_cast<std::size_t>(i)];
+        const bool active = i == active_index;
+        advance(slot.left_peak, active, block_peaks[0]);
+        advance(slot.right_peak, active, block_peaks[1]);
     }
 }
 
@@ -1784,7 +1790,9 @@ std::vector<RegionMeterValues> Mixer::region_meters() const {
         const auto& slot = region_meters_[static_cast<std::size_t>(i)];
         RegionMeterValues out;
         out.region_id = slot.region_id;
-        out.peak = slot.peak.load(std::memory_order_relaxed);
+        out.left_peak = slot.left_peak.load(std::memory_order_relaxed);
+        out.right_peak = slot.right_peak.load(std::memory_order_relaxed);
+        out.peak = std::max(out.left_peak, out.right_peak);
         values.push_back(std::move(out));
     }
     return values;

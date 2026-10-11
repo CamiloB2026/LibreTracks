@@ -72,8 +72,6 @@ export function TrackMixControls({
 }: TrackMixControlsProps) {
   const { t } = useTranslation();
   const volumePosition = gainToPosition(volumeValue, TRACK_FADER_SCALE);
-  const volumeFill = `${(volumePosition * 100).toFixed(2)}%`;
-  const panFill = `${(((panValue + 1) * 0.5) * 100).toFixed(2)}%`;
 
   // El iman de la unidad (0 dB). Vivia solo en el mezclador compacto, asi que
   // el mismo fader tenia iman en una vista y no en la otra —y el paneo, al
@@ -129,14 +127,12 @@ export function TrackMixControls({
         </span>
         <input
           aria-label={t("trackHeader.volumeAria", { name: trackName })}
+          className="lt-fader is-volume"
           type="range"
           min={0}
           max={1}
           step={0.001}
           value={volumePosition}
-          style={{
-            background: `linear-gradient(to right, #3cddc7 ${volumeFill}, #0e0e0e ${volumeFill})`,
-          }}
           onChange={volumeFineDrag.handleChange}
           onPointerDown={(event) => {
             volumeFineDrag.handlePointerDown();
@@ -177,14 +173,12 @@ export function TrackMixControls({
         </span>
         <input
           aria-label={t("trackHeader.panAria", { name: trackName })}
+          className="lt-fader is-pan"
           type="range"
           min={-1}
           max={1}
           step={0.01}
           value={panValue}
-          style={{
-            background: `linear-gradient(to right, #4d79d8 0%, #74b8ff ${panFill}, #0e0e0e ${panFill}, #0e0e0e 100%)`,
-          }}
           onChange={(event) => applyPan(Number(event.target.value))}
           onPointerDown={panTouchDrag}
           onDoubleClick={(event) => {

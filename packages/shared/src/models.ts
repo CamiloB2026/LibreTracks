@@ -1077,6 +1077,10 @@ export type RegionMeterLevel = {
   /** Linear peak amplitude (max(|L|, |R|)) of the post-region-master signal,
    * smoothed by a 200ms release in the engine. 0 means silence or inactive. */
   peak: number;
+  /** Per channel, same ballistics. Missing from a host older than stereo
+   * region meters (a network session can mix versions): fall back to `peak`. */
+  leftPeak?: number;
+  rightPeak?: number;
 };
 
 export type MidiBinding = {

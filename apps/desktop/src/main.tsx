@@ -9,6 +9,7 @@ import { ErrorBoundary } from "./app/ErrorBoundary";
 import { installGlobalErrorHandlers } from "./shared/errorLogging";
 import { isIOSApp, isMobileApp } from "./features/transport/desktopApi";
 import "./shared/styles.css";
+import "./shared/faders.css";
 import { getZoomedRectScale } from "./shared/zoomedRects";
 import { bootGuestMirrorMode } from "./features/network/guestMirrorBoot";
 

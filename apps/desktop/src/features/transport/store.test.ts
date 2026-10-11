@@ -72,10 +72,13 @@ describe("regionMeterDictionaryFromLevels", () => {
   it("maps region peaks into a keyed dictionary", () => {
     expect(
       regionMeterDictionaryFromLevels([
-        { regionId: "r1", peak: 0.5 },
-        { regionId: "r2", peak: 0.9 },
+        { regionId: "r1", peak: 0.5, leftPeak: 0.5, rightPeak: 0.2 },
+        { regionId: "r2", peak: 0.9, leftPeak: 0.4, rightPeak: 0.9 },
       ]),
-    ).toEqual({ r1: 0.5, r2: 0.9 });
+    ).toEqual({
+      r1: { leftPeak: 0.5, rightPeak: 0.2 },
+      r2: { leftPeak: 0.4, rightPeak: 0.9 },
+    });
   });
 });
 
@@ -86,8 +89,21 @@ describe("useTransportStore", () => {
     it("replaces the meter and region-meter dictionaries", () => {
       get().setMeters({ a: { leftPeak: 0.1, rightPeak: 0.2 } });
       expect(get().meters).toEqual({ a: { leftPeak: 0.1, rightPeak: 0.2 } });
-      get().setRegionMeters({ r1: 0.7 });
-      expect(get().regionMeters).toEqual({ r1: 0.7 });
+      get().setRegionMeters({ r1: { leftPeak: 0.7, rightPeak: 0.5 } });
+      expect(get().regionMeters).toEqual({ r1: { leftPeak: 0.7, rightPeak: 0.5 } });
+    });
+
+    it("reads stereo region meters and falls back to the mono peak", () => {
+      expect(
+        regionMeterDictionaryFromLevels([
+          { regionId: "r1", peak: 0.8, leftPeak: 0.8, rightPeak: 0.3 },
+          // A host older than stereo region meters sends only `peak`.
+          { regionId: "r2", peak: 0.6 },
+        ]),
+      ).toEqual({
+        r1: { leftPeak: 0.8, rightPeak: 0.3 },
+        r2: { leftPeak: 0.6, rightPeak: 0.6 },
+      });
     });
   });
 

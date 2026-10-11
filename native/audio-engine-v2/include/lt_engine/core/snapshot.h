@@ -101,12 +101,15 @@ struct TrackMeterValues {
     float right_rms   = 0.f;
 };
 
-// Post-master meter for a single region. `peak` is max(|L|, |R|) of the
+// Post-master meter for a single region, per channel, of the
 // post-region-master-gain signal, smoothed by a release filter so the bar
 // decays rather than snapping off when the playhead leaves the region.
+// `peak` is max(left, right): the mono value older hosts read.
 struct RegionMeterValues {
     Id    region_id;
-    float peak = 0.f;
+    float peak       = 0.f;
+    float left_peak  = 0.f;
+    float right_peak = 0.f;
 };
 
 struct SourcePreparationInfo {

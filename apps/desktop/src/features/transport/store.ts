@@ -25,7 +25,8 @@ export type OptimisticMixState = Partial<{
 
 export type MeterDictionary = Record<string, TrackMeterState>;
 
-export type RegionMeterDictionary = Record<string, number>;
+/** Same shape as a track meter: the song master meter is stereo too. */
+export type RegionMeterDictionary = Record<string, TrackMeterState>;
 
 export type OptimisticRegionMasterDictionary = Record<string, number>;
 
@@ -76,7 +77,10 @@ export function regionMeterDictionaryFromLevels(
   const meters: RegionMeterDictionary = {};
 
   for (const level of levels) {
-    meters[level.regionId] = level.peak;
+    meters[level.regionId] = {
+      leftPeak: level.leftPeak ?? level.peak,
+      rightPeak: level.rightPeak ?? level.peak,
+    };
   }
 
   return meters;

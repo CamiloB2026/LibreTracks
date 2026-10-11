@@ -176,6 +176,8 @@ pub struct AudioDeviceStatusEvent {
 pub struct RegionMeterLevel {
     pub region_id: String,
     pub peak: f32,
+    pub left_peak: f32,
+    pub right_peak: f32,
 }
 
 /// What the meter thread reads from one engine snapshot.
@@ -2620,9 +2622,16 @@ impl AudioController {
             let regions: Vec<RegionMeterLevel> = snapshot
                 .region_meters
                 .into_iter()
-                .map(|meter| RegionMeterLevel {
-                    region_id: meter.region_id,
-                    peak: meter.peak,
+                .map(|meter| {
+                    // An engine without per-channel region meters leaves both
+                    // at zero: show its mono peak on both sides.
+                    let stereo = meter.left_peak > 0.0 || meter.right_peak > 0.0;
+                    RegionMeterLevel {
+                        region_id: meter.region_id,
+                        peak: meter.peak,
+                        left_peak: if stereo { meter.left_peak } else { meter.peak },
+                        right_peak: if stereo { meter.right_peak } else { meter.peak },
+                    }
                 })
                 .collect();
             tick.frame = Some(MeterFrame {
