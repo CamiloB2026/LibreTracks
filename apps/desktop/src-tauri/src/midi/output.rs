@@ -251,23 +251,41 @@ impl MidiOutputManager {
             return;
         }
 
-        let Ok(mut extra) = self.extra.lock() else {
-            return;
+        let opened = {
+            let Ok(mut extra) = self.extra.lock() else {
+                return;
+            };
+            let opened = !extra.contains_key(port_name);
+            if opened {
+                let handle =
+                    spawn_output(Arc::clone(&self.transport), port_name.to_string(), false).ok();
+                extra.insert(port_name.to_string(), handle);
+            }
+            if let Some(handle) = extra[port_name].as_ref() {
+                for message in messages {
+                    let _ = handle.sender.send(*message);
+                }
+            }
+            opened
         };
-        if !extra.contains_key(port_name) {
-            let handle =
-                spawn_output(Arc::clone(&self.transport), port_name.to_string(), false).ok();
-            extra.insert(port_name.to_string(), handle);
-            // A named port now exists to watch (and to retry if it failed).
-            super::watch::ensure_running();
+        // A named port now exists to watch (and to retry if it failed). Only
+        // with `extra` released: the watcher asks `wants_ports`, which locks
+        // it again, and std's Mutex is not reentrant. Called with it held,
+        // the first MIDI clip played to a named port hung the playback
+        // thread forever, holding the session lock (2026-10-11).
+        if opened {
+            self.named_port_opened();
         }
-        let handle = &extra[port_name];
-        let Some(handle) = handle.as_ref() else {
-            return;
-        };
-        for message in messages {
-            let _ = handle.sender.send(*message);
-        }
+    }
+
+    fn named_port_opened(&self) {
+        // What the watcher will do first; a test without an app cannot reach it.
+        #[cfg(test)]
+        assert!(
+            self.extra.try_lock().is_ok(),
+            "the watcher is woken with `extra` still locked"
+        );
+        super::watch::ensure_running();
     }
 
     /// Silence every channel on every open port.
@@ -422,6 +440,23 @@ mod tests {
         assert!(!manager.is_default_port_open());
         manager.send(&[OutboundMidiMessage::note_on(1, 60, 100)]);
         manager.panic();
+    }
+
+    #[test]
+    fn the_first_message_to_a_named_port_does_not_keep_the_ports_locked() {
+        // Hung the playback thread holding the session lock (2026-10-11): the
+        // port is opened (or fails to, no such device here) and the watcher
+        // is woken, which locks the ports again.
+        let manager = MidiOutputManager::default();
+        manager.send_to(
+            Some("LibreTracks test port"),
+            &[OutboundMidiMessage::note_on(1, 60, 100)],
+        );
+        assert!(manager.wants_ports());
+        manager.send_to(
+            Some("LibreTracks test port"),
+            &[OutboundMidiMessage::note_on(1, 62, 100)],
+        );
     }
 
     #[test]
