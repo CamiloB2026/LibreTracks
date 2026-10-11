@@ -4403,7 +4403,9 @@ html.lt-ios body {
 .lt-track-header.is-condensed .lt-track-pan > span,
 .lt-track-header.is-micro .lt-track-volume > span,
 .lt-track-header.is-micro .lt-track-pan > span {
-  flex: 0 0 1.85rem;
+  /* Cabe "-12.5" y "L 100" a 9 px; la unidad "dB" se oculta aqui abajo. */
+  flex: 0 0 2.1rem;
+  overflow: hidden;
   margin-right: 0.2rem;
   font-size: 9px;
   letter-spacing: 0;
@@ -4416,10 +4418,16 @@ html.lt-ios body {
   display: none;
 }
 
+.lt-track-header.is-compact .lt-track-mix-unit,
+.lt-track-header.is-condensed .lt-track-mix-unit,
+.lt-track-header.is-micro .lt-track-mix-unit {
+  display: none;
+}
+
 .lt-track-header.is-compact .lt-track-mix-value,
 .lt-track-header.is-condensed .lt-track-mix-value,
 .lt-track-header.is-micro .lt-track-mix-value {
-  margin-left: 0;
+  margin-left: auto;
   /* El hueco ya lo fija el span (flex: 0 0 1.85rem) y la etiqueta no esta. */
   min-width: 0;
 }
@@ -4783,18 +4791,15 @@ html.lt-ios body {
   opacity: 0;
   will-change: clip-path, opacity;
   transition: opacity 90ms linear;
-  /* Segmentado como el de una mesa: una raya del color del fondo cada 3 px. */
-  background:
-    repeating-linear-gradient(0deg, transparent 0 2px, rgb(14 14 14 / 0.85) 2px 3px),
-    linear-gradient(
-      180deg,
-      #ff6150 0%,
-      #ff6150 15%,
-      #dbe95f 25%,
-      #63db78 45%,
-      #2fba69 75%,
-      #1f8a55 100%
-    );
+  background: linear-gradient(
+    180deg,
+    #ff6150 0%,
+    #ff6150 15%,
+    #dbe95f 25%,
+    #63db78 45%,
+    #2fba69 75%,
+    #1f8a55 100%
+  );
 }
 
 /* Capa del tamano entero del canal; la raya es su borde superior. Se desplaza
@@ -4940,13 +4945,24 @@ html.lt-ios body {
 
 .lt-track-volume > span,
 .lt-track-pan > span {
-  /* Auto width (label + value) instead of a fixed gutter, so the slider claims
-     the remaining space and reads longer. Capped so a long value can't crowd
-     the fader out. */
-  flex: 0 0 auto;
-  max-width: 5rem;
+  /* Columna FIJA para etiqueta + valor, igual en VOL y en PAN. Con ancho
+     automatico, "-12.5 dB" ocupaba mas que "0.0 dB" y el fader de al lado se
+     encogia y se movia al pasar a dos cifras; y los dos faders empezaban en
+     sitios distintos. `min-width: 0` hace falta porque un elemento flex no
+     baja de su contenido aunque la base sea fija. */
+  display: flex;
+  align-items: baseline;
+  flex: 0 0 5.6rem;
+  min-width: 0;
   white-space: nowrap;
   text-align: left;
+}
+
+/* El valor se pega a la derecha de la columna: el numero acaba siempre en el
+   mismo sitio, junto al fader. */
+.lt-track-volume > span > .lt-track-mix-value,
+.lt-track-pan > span > .lt-track-mix-value {
+  margin-left: auto;
 }
 
 /* Give the sliders visual presence: they're the most-used control, so let them
@@ -5900,11 +5916,17 @@ html.lt-ios body {
 }
 
 .lt-song-transition-row {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 0.45rem;
   padding-left: 0.65rem;
   border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* En la hoja del movil la pareja Corte limpio / Fade out baja a su propia
+   linea: sin el sangrado ni el separador, que alli solo la descolocaban
+   respecto a la fila de arriba. */
+.lt-mobile .lt-song-transition-row {
+  flex-basis: 100%;
+  padding-left: 0;
+  border-left: 0;
 }
 
 .lt-stepper-control-compact .jump-range-input {
@@ -8621,6 +8643,72 @@ html.lt-ios body {
 
 .lt-android .lt-control-popover-panel {
   max-height: 55vh;
+}
+
+/* La hoja mide lo que su contenido, no 40rem fijos: Vamp (dos botones) o
+   Transposicion (un stepper) salian como una franja enorme casi vacia. Con
+   left/right puestos, `fit-content` + margenes auto la centra; el maximo la
+   mantiene dentro de los recortes laterales. */
+.lt-mobile .lt-control-popover-panel {
+  width: fit-content;
+  min-width: min(20rem, calc(100vw - var(--lt-safe-area-left) - var(--lt-safe-area-right)));
+  max-width: min(40rem, calc(100vw - var(--lt-safe-area-left) - var(--lt-safe-area-right)));
+}
+
+/* Un grupo sin botones (Master, Warp) no reserva su columna: si no, se quedaba
+   con el ancho libre y empujaba el fader al borde derecho. */
+.lt-control-group-actions:empty {
+  display: none;
+}
+
+.lt-mobile .lt-control-group-master .lt-region-master-fader {
+  min-width: 18rem;
+}
+
+/* Transposicion en la hoja: el stepper centrado y sin su etiqueta, que repetia
+   el titulo de la hoja. */
+.lt-mobile .lt-control-group-region .lt-stepper-control {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.lt-mobile .lt-control-group-region .lt-stepper-control > span {
+  display: none;
+}
+
+.lt-mobile .lt-control-group-region .lt-stepper-control-row {
+  width: auto;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* Los botones - / + eran negros sobre la hoja casi negra y se leian como texto
+   suelto: con borde y tamano de dedo se ven como botones. */
+.lt-mobile .lt-control-popover-panel .lt-stepper-control-row button {
+  min-width: 3rem;
+  border: 1px solid rgb(87 241 219 / 0.22);
+  font-size: 16px;
+}
+
+/* El boton de Warp (y cualquier lt-vamp-button) tiene su estilo colgado de la
+   barra de escritorio; la hoja del movil se monta en <body>, fuera de ella, y
+   salia como boton gris del sistema. Aqui luce como los segmentos. */
+.lt-control-popover-portal .lt-vamp-button {
+  height: 2.5rem;
+  border: 0;
+  border-radius: 2px;
+  background: #0e0e0e;
+  color: #e5e2e1;
+  padding: 0 0.8rem;
+  font: 700 11px/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lt-control-popover-portal .lt-vamp-button.is-active {
+  color: #57f1db;
+  background: rgb(87 241 219 / 0.16);
 }
 
 /* Finger-sized controls inside the sheets. */

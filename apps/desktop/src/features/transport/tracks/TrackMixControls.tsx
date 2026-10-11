@@ -122,7 +122,9 @@ export function TrackMixControls({
         <span>
           <span className="lt-track-mix-label">{t("trackHeader.volume")}</span>
           <em className="lt-track-mix-value">
-            {formatVolumeValue(volumeValue)}
+            {formatGainDb(volumeValue)}
+            {/* En las alturas compactas no cabe: se oculta y queda el número. */}
+            <span className="lt-track-mix-unit"> dB</span>
           </em>
         </span>
         <input

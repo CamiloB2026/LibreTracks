@@ -874,10 +874,10 @@ export function TimelineToolbar({
                 {t("transport.jumpMode.nextMarker")}
               </button>
             </div>
-            <div className="lt-song-transition-row">
+            <div className="lt-segmented-control lt-song-transition-row">
               <button
                 type="button"
-                className={`lt-vamp-button ${songTransitionMode === "instant" ? "is-active" : ""}`}
+                className={songTransitionMode === "instant" ? "is-active" : ""}
                 disabled={controlsDisabled}
                 onClick={() =>
                   handleModeButtonClick(
@@ -890,7 +890,7 @@ export function TimelineToolbar({
               </button>
               <button
                 type="button"
-                className={`lt-vamp-button ${songTransitionMode === "fade_out" ? "is-active" : ""}`}
+                className={songTransitionMode === "fade_out" ? "is-active" : ""}
                 disabled={controlsDisabled}
                 onClick={() =>
                   handleModeButtonClick(
