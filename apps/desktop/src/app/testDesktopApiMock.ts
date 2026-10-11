@@ -1266,6 +1266,23 @@ export const testDesktopApiMock = {
     missingFiles: [] as string[],
   }),
   cancelRenderSongAudio: async () => {},
+  measureSongLoudness: async (request: { regionIds: string[]; trackIds: string[] }) => ({
+    cancelled: false,
+    songs: request.regionIds.map((regionId) => ({
+      regionId,
+      hasSignal: request.trackIds.length > 0,
+      integratedLufs: -16,
+      loudLufs: -14,
+      loudnessRangeLu: 5,
+      samplePeak: 0.5,
+      tracksWithAudio: [...request.trackIds],
+    })),
+    missingFiles: [] as string[],
+  }),
+  cancelMeasureSongLoudness: async () => {},
+  listenToLevelSongsProgress: async (
+    _handler: (event: { fraction: number; songsDone: number; songCount: number }) => void,
+  ) => () => {},
   listenToRenderAudioProgress: async (
     _handler: (event: { fraction: number; stage: string }) => void,
   ) => () => {},
@@ -1795,6 +1812,20 @@ export const testDesktopApiMock = {
           ? { ...region, master: { gain: masterGain } }
           : region,
       ),
+    });
+    return clone(buildSnapshot());
+  },
+  updateSongRegionMasterGains: async (
+    gains: { regionId: string; masterGain: number }[],
+  ) => {
+    replaceSong({
+      ...state.song,
+      regions: state.song.regions.map((region) => {
+        const entry = gains.find((gain) => gain.regionId === region.id);
+        return entry
+          ? { ...region, master: { ...region.master, gain: entry.masterGain } }
+          : region;
+      }),
     });
     return clone(buildSnapshot());
   },

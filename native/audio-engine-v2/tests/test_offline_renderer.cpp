@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace lt;
@@ -462,4 +463,82 @@ TEST_CASE("offline render request JSON round trip") {
     CHECK(r.outputs[0].include_metronome);
     CHECK(r.metronome.beat_preset == 3);
     CHECK(offline_render_request_from_json(R"({"format":"mp3"})").is_err());
+}
+
+TEST_CASE("offline render: measure mode reports loudness and writes nothing") {
+    TempDir dir;
+    const std::string a = dir.file("a.wav");
+    write_float_wav(a, stereo_sine_at(48000 * 8, 1000.0, 48000), 2, 48000);   // 0.5 peak
+    const json song = song_json(json::array({track_json("ta", 1.0), track_json("tb", 2.0)}),
+                                json::array({clip_json("ca", "ta", a, 0.0, 8.0),
+                                             clip_json("cb", "tb", a, 0.0, 8.0)}));
+
+    auto req = base_request(song, 0.0, 8.0);
+    req.measure_loudness = true;
+    req.outputs.push_back({"", {"ta"}});
+    req.outputs.push_back({"", {"tb"}});
+    auto result = render_offline(req);
+    REQUIRE_MESSAGE(result.is_ok(), (result.is_err() ? result.error() : ""));
+    const auto& files = result.unwrap().files;
+    REQUIRE(files.size() == 2);
+    REQUIRE(files[0].measured);
+    REQUIRE(files[0].loudness.has_signal);
+    // A 0.5-peak (-6.02 dBFS) stereo 1 kHz sine reads -6.02 LUFS.
+    CHECK(std::abs(files[0].loudness.integrated_lufs + 6.02) < 0.15);
+    // Track gain applies: x2 is +6.02 LU, and the peak is measured before any limiter.
+    CHECK(files[1].loudness.loud_lufs - files[0].loudness.loud_lufs
+          == doctest::Approx(6.02).epsilon(0.01));
+    CHECK(files[1].loudness.sample_peak == doctest::Approx(1.0f).epsilon(1e-3));
+    CHECK(std::distance(fs::directory_iterator(dir.path), fs::directory_iterator{}) == 1);   // only the fixture
+
+    const json reported = json::parse(offline_render_result_to_json(result));
+    CHECK(reported["files"][0]["loudness"]["has_signal"].get<bool>());
+    CHECK(reported["files"][0]["loudness"].contains("loud_lufs"));
+}
+
+TEST_CASE("offline render: measure flag and empty paths cross the JSON boundary") {
+    const json j = {{"project_json", "{}"}, {"start_seconds", 0.0}, {"end_seconds", 1.0},
+                    {"measure_loudness", true},
+                    {"outputs", json::array({{{"track_ids", json::array({"t"})}}})}};
+    auto parsed = offline_render_request_from_json(j.dump());
+    REQUIRE(parsed.is_ok());
+    CHECK(parsed.unwrap().measure_loudness);
+    CHECK(parsed.unwrap().outputs[0].path.empty());
+}
+
+// "Nivelar canciones" measures several songs at once, each on its own thread
+// and reading the same files: the renderer must give the same figures as one
+// at a time.
+TEST_CASE("offline render: concurrent measurements match sequential ones") {
+    TempDir dir;
+    const std::string a = dir.file("a.wav");
+    write_float_wav(a, stereo_sine_at(48000 * 6, 440.0, 48000), 2, 48000);
+    const json song = song_json(json::array({track_json("ta", 1.0), track_json("tb", 0.25)}),
+                                json::array({clip_json("ca", "ta", a, 0.0, 6.0),
+                                             clip_json("cb", "tb", a, 0.0, 6.0)}));
+    auto request_for = [&](const char* track) {
+        auto req = base_request(song, 0.0, 6.0);
+        req.measure_loudness = true;
+        req.outputs.push_back({"", {track}});
+        return req;
+    };
+    const auto seq_a = render_offline(request_for("ta"));
+    const auto seq_b = render_offline(request_for("tb"));
+    REQUIRE(seq_a.is_ok());
+    REQUIRE(seq_b.is_ok());
+
+    for (int round = 0; round < 4; ++round) {
+        Result<OfflineRenderReport> par_a = Result<OfflineRenderReport>::err("not run");
+        Result<OfflineRenderReport> par_b = Result<OfflineRenderReport>::err("not run");
+        std::thread t1([&] { par_a = render_offline(request_for("ta")); });
+        std::thread t2([&] { par_b = render_offline(request_for("tb")); });
+        t1.join();
+        t2.join();
+        REQUIRE(par_a.is_ok());
+        REQUIRE(par_b.is_ok());
+        CHECK(par_a.unwrap().files[0].loudness.loud_lufs
+              == seq_a.unwrap().files[0].loudness.loud_lufs);
+        CHECK(par_b.unwrap().files[0].loudness.integrated_lufs
+              == seq_b.unwrap().files[0].loudness.integrated_lufs);
+    }
 }

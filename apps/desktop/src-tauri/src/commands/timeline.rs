@@ -577,6 +577,34 @@ pub fn update_song_region_master_gain(
         .map_err(|error| error.to_string())
 }
 
+/// One song master per entry, committed as a single undo step ("Nivelar
+/// canciones").
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionMasterGain {
+    pub region_id: String,
+    pub master_gain: f64,
+}
+
+#[tauri::command(async)]
+pub fn update_song_region_master_gains(
+    gains: Vec<RegionMasterGain>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    let gains: Vec<(String, f64)> = gains
+        .into_iter()
+        .map(|entry| (entry.region_id, entry.master_gain))
+        .collect();
+    session
+        .update_song_region_master_gains(&gains, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command(async)]
 pub fn update_song_region_fades(
     region_id: String,

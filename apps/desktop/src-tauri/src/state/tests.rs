@@ -4708,6 +4708,49 @@ fn song_region_fades_are_stored_capped_and_validated() {
         .is_err());
 }
 
+/// "Nivelar canciones" sets every song master in one edit: one undo puts them
+/// all back, and a bad value or unknown song changes nothing.
+#[test]
+fn song_master_gains_are_set_together_and_undone_together() {
+    let mut song = demo_song();
+    let mut second = song.regions[0].clone();
+    second.id = "region_2".into();
+    second.start_seconds = 6.0;
+    song.regions[0].end_seconds = 6.0;
+    song.regions.push(second);
+    let mut session = session_with_song_dir("level-songs-demo", song);
+    let audio = crate::audio::engine::AudioController::default();
+
+    session
+        .update_song_region_master_gains(
+            &[("region_1".into(), 0.5), ("region_2".into(), 1.5)],
+            &audio,
+        )
+        .expect("gains should be stored");
+    let gains = |session: &DesktopSession| -> Vec<f64> {
+        session
+            .engine
+            .song()
+            .expect("song")
+            .regions
+            .iter()
+            .map(|region| region.master.gain)
+            .collect()
+    };
+    assert_eq!(gains(&session), vec![0.5, 1.5]);
+
+    assert!(session
+        .update_song_region_master_gains(&[("region_1".into(), 2.0), ("nope".into(), 1.0)], &audio)
+        .is_err());
+    assert!(session
+        .update_song_region_master_gains(&[("region_1".into(), f64::NAN)], &audio)
+        .is_err());
+    assert_eq!(gains(&session), vec![0.5, 1.5], "a rejected batch changes nothing");
+
+    session.undo_action(&audio).expect("undo");
+    assert_eq!(gains(&session), vec![1.0, 1.0], "one undo restores every song");
+}
+
 /// «Fade out y parar»: fades while playing, stops when the fade runs out, and
 /// a second press stops at once. Pause cancels it. Every way out leaves the
 /// fade cleared, or the next Play would start under a silenced master.

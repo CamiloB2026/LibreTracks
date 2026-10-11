@@ -267,6 +267,8 @@ import {
   type ExportSongTarget,
 } from "./panels/ExportSongModal";
 import { RenderSongModal } from "./render/RenderSongModal";
+import { LevelSongsModal } from "./levelSongs/LevelSongsModal";
+import { LevelSongsMenuItem } from "./levelSongs/LevelSongsMenuItem";
 import { ExportSessionModal } from "./panels/ExportSessionModal";
 import { beginExportWithChoice, cancelExportChoice, CloudLandingButton, CloudMenuItem, CloudSurfaces, confirmSessionExport, confirmSongExport, importSessionWithChoice, importSongWithChoice, useCloudStore } from "./cloud";
 import {
@@ -7135,6 +7137,10 @@ export function TransportPanelContent() {
                     defaultValue: "Guardar como plantilla…",
                   })}
                 </button>
+                <LevelSongsMenuItem
+                  disabled={!song}
+                  onSelected={() => setIsMobileFileActionsOpen(false)}
+                />
               </div>
             </div>
           ) : null}
@@ -8210,6 +8216,7 @@ export function TransportPanelContent() {
             />
 
             <RenderSongModal />
+            <LevelSongsModal onApplied={applyPlaybackSnapshot} />
 
             <ExportSessionModal
               isOpen={isExportSessionModalOpen}

@@ -970,6 +970,44 @@ impl DesktopSession {
         Ok(self.snapshot())
     }
 
+    /// Set several song masters at once ("Nivelar canciones"): one edit, so a
+    /// single undo puts every song back. Validated up front, all or nothing.
+    pub fn update_song_region_master_gains(
+        &mut self,
+        gains: &[(String, f64)],
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        if gains
+            .iter()
+            .any(|(_, gain)| !gain.is_finite() || *gain < 0.0)
+        {
+            return Err(DesktopError::AudioCommand(
+                "master gain must be a finite, non-negative number".into(),
+            ));
+        }
+
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        for (region_id, gain) in gains {
+            let region = song
+                .regions
+                .iter_mut()
+                .find(|region| &region.id == region_id)
+                .ok_or_else(|| DesktopError::RegionNotFound(region_id.clone()))?;
+            region.master.gain = *gain;
+        }
+
+        for (region_id, gain) in gains {
+            audio.update_live_region_master_gain(region_id, *gain as f32)?;
+        }
+        self.persist_song_update(song, audio, AudioChangeImpact::MixerOnly, true)?;
+
+        Ok(self.snapshot())
+    }
+
     /// Song fade in / fade out (they live in the song master, next to its
     /// gain). Each is capped at the song's length. An edit like any other:
     /// undo, autosave, `project_revision`.

@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 
 import { clientToZoomedCoords } from "../../../shared/uiZoom";
 import { useDismissOnBack } from "../mobile/backNavigation";
+import { openLevelSongs } from "../levelSongs/levelSongsStore";
 import { openRenderSong } from "../render/renderStore";
 import { ArrangementBadge } from "../structure/ArrangementBadge";
 import { openStructureEditor } from "../structure/structureEditor";
@@ -327,6 +328,16 @@ export function CompactSongHeaderComponent({
                 }}
               >
                 {t("transport.menu.renderSong")}
+              </button>
+              <button
+                type="button"
+                className="lt-compact-clip-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  openLevelSongs();
+                }}
+              >
+                {t("transport.menu.levelSongs")}
               </button>
               <div className="lt-compact-clip-menu-divider" aria-hidden="true" />
               <button

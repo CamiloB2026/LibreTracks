@@ -1,0 +1,136 @@
+KIT GRÁFICO PARA VIDEOTUTORIALES DE LIBRETRACKS
+================================================
+
+¡Gracias por echar una mano! Aquí tienes todo lo necesario para que tu vídeo
+se vea igual que los tutoriales oficiales y que la web (libretracks.com).
+
+No hace falta usarlo todo. Lo mínimo para un vídeo es:
+  1. una PORTADA al principio,
+  2. tu grabación de pantalla con tu voz,
+  3. el CIERRE al final.
+Los rótulos, flechas y la marca de agua son opcionales: úsalos si te ayudan.
+
+Funciona con cualquier editor: CapCut, DaVinci Resolve, Canva, iMovie,
+Premiere, Shotcut... Todas las piezas son imágenes PNG: se arrastran al
+editor como cualquier foto.
+
+
+QUÉ HAY EN CADA CARPETA
+-----------------------
+
+01-logo
+    icono-512/1024/2048.png   El icono de la app (fondo transparente).
+    logotipo-turquesa.png     Icono + "LibreTracks". El de uso normal.
+    logotipo-blanco.png       Para poner encima de la grabación.
+    logotipo-oscuro.png       Solo si algún día hace falta sobre fondo claro.
+    icono.svg                 El original vectorial (por si tu editor lo admite).
+
+02-colores
+    paleta.png / paleta.txt   Los colores oficiales con su código.
+
+03-fuentes
+    Inter y Space Grotesk. Instálalas ANTES de abrir tu editor
+    (Windows: clic derecho > Instalar para todos los usuarios.
+     Mac: doble clic > Instalar). Son gratuitas (licencia OFL).
+
+04-horizontal-youtube        → vídeos para YouTube (1920x1080)
+    0-guia-no-exportar        Plantilla de zona segura. Ponla encima mientras
+                              editas para ver dónde no poner texto, y QUÍTALA
+                              antes de exportar.
+    1-portadas                portada-ejemplo.png enseña cómo queda.
+                              portada-fondo-vacio.png para escribir tu título.
+                              por-tutorial/ trae ya hechas las portadas de los
+                              tutoriales previstos (escritorio y móvil).
+    2-superposiciones         velo-oscuro: oscurece la grabación para escribir
+                              un título encima (como en los vídeos oficiales).
+                              marca-de-agua: logotipo pequeño en una esquina
+                              para dejar encima de todo el vídeo.
+    3-rotulos                 La caja "PASO 1 · lo que se hace" para la parte
+                              de abajo. numeros-de-paso/ son círculos sueltos.
+    4-flechas-y-resaltes      Flecha, círculo, recuadro y "clic" en turquesa
+                              para señalar botones.
+    5-cierre                  cierre.png: pantalla final sencilla.
+                              cierre-pantalla-final-youtube.png: deja libre la
+                              mitad derecha para los "vídeos siguientes" que
+                              YouTube coloca al subir el vídeo.
+
+05-vertical-reels            → vídeos para Reels de Instagram/Facebook (1080x1920)
+    La misma estructura que la horizontal.
+    MUY IMPORTANTE: mira 0-guia-no-exportar/zona-segura-reels.png. Instagram
+    y Facebook tapan arriba, abajo y la columna derecha con sus botones;
+    cualquier texto fuera del recuadro turquesa se pierde.
+
+06-miniaturas-youtube        → la imagen que se ve antes de darle a play (1280x720)
+    Ya hechas para cada tutorial, más un fondo vacío y un ejemplo.
+
+07-cancion-demo
+    Las pistas (stems) de las dos canciones de ejemplo de la app. Úsalas para
+    grabar: así todos los tutoriales suenan igual y no hay problemas de
+    derechos de autor. NO uses canciones comerciales ni multitracks comprados.
+      Costa Norte      110 BPM, Re mayor, 4/4
+      Callejón Blues    90 BPM, La mayor, 4/4
+    En el móvil también puedes abrir la "Canción de demostración" desde la
+    pantalla de inicio, sin importar nada.
+
+
+ESTILO: PARA ESCRIBIR TUS PROPIOS TEXTOS
+----------------------------------------
+Copia lo que ves en los archivos de ejemplo. Por si tu editor pide números
+(medidas para un vídeo de 1920x1080):
+
+  Títulos            Inter ExtraBold, blanco, 110-125 px
+  Subtítulos         Inter Medium, turquesa #57F1DB, 44-48 px
+  Etiquetas          Space Grotesk Bold, MAYÚSCULAS, turquesa, letras
+  ("TUTORIAL 01")    separadas (espaciado ~18 %), 24-30 px
+  Rótulo de paso     "PASO 1": Space Grotesk Bold 22 px turquesa
+                     Texto:    Inter Bold 42 px blanco
+                     Número:   Inter ExtraBold 50 px, color #0A0F12
+  Miniatura          Inter ExtraBold, blanco, ~120 px, máximo 2 líneas
+  Margen izquierdo   120 px en portadas, 96 px en rótulos
+
+Reglas rápidas:
+  - Fondo oscuro, títulos en blanco, lo destacado en turquesa. Nada más.
+  - No cambies los colores ni deformes el logo.
+  - Pocas palabras en pantalla: lo explica tu voz.
+
+
+CÓMO GRABAR
+-----------
+Escritorio
+  - Graba a 1920x1080 (Full HD). En Windows, la escala de pantalla al 100 %
+    o 125 % para que los botones no salgan diminutos.
+  - Silencia las notificaciones y cierra lo que no uses. Que no se vea tu
+    correo, tu escritorio personal ni nombres de archivos privados.
+  - Mueve el ratón despacio y haz una pausa antes de cada clic.
+  - Herramientas gratis: OBS Studio (Windows/Mac/Linux), Xbox Game Bar
+    (Win+G), o Cmd+Mayús+5 en Mac.
+
+Móvil y tablet
+  - La app se usa en HORIZONTAL: graba con el móvil tumbado.
+  - Activa "No molestar" para que no salgan notificaciones.
+  - Grabación de pantalla integrada: en Android desde los ajustes rápidos;
+    en iPhone/iPad desde el Centro de control.
+  - Para un Reel vertical, coloca la grabación horizontal en el centro de la
+    plantilla vertical y aprovecha el espacio de arriba y abajo para el
+    título y el rótulo (siempre dentro de la zona segura).
+
+Voz
+  - Habla cerca del micro, en un cuarto sin eco (con cortinas o ropa
+    alrededor ayuda mucho). Los auriculares con micro del móvil valen.
+  - Si añades música de fondo, que sea de la Biblioteca de audio de YouTube
+    y muy baja. Mejor sin música que con música que tape la voz.
+
+
+EXPORTAR
+--------
+  YouTube   1920x1080, 30 fps, MP4 (H.264), audio AAC.
+  Reels     1080x1920, 30 fps, MP4 (H.264), audio AAC. Cortos: mejor
+            por debajo de 90 segundos.
+  Miniatura PNG o JPG de 1280x720.
+
+Antes de exportar: quita la plantilla de zona segura.
+
+
+¿DUDAS?
+-------
+Escríbenos por el mismo canal por el que te llegó el guion. ¡Gracias!

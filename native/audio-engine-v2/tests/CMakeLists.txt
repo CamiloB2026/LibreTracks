@@ -47,6 +47,7 @@ add_executable(lt_engine_tests
     test_render_pool_step08.cpp
     test_render_threads_step09.cpp
     test_offline_renderer.cpp
+    test_loudness_meter.cpp
     test_region_envelope.cpp
 )
 

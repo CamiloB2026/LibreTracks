@@ -879,7 +879,7 @@ Result<OfflineRenderReport> render_offline(const OfflineRenderRequest& request,
     double units_total = 0.0;
     bool wants_guide = false;
     for (const auto& output : request.outputs) {
-        if (output.path.empty())
+        if (output.path.empty() && !request.measure_loudness)
             return R::err("output path missing");
         std::vector<TrackRef> refs;
         std::unordered_set<Id> seen;
@@ -963,6 +963,21 @@ Result<OfflineRenderReport> render_offline(const OfflineRenderRequest& request,
                 peak = std::max(peak, std::abs(0.5f * (acc_l[i] + acc_r[i])));
         }
 
+        if (request.measure_loudness) {
+            // Before any limiter: the level the mix arrives at, which is what
+            // the song master scales.
+            LoudnessMeter meter(request.sample_rate);
+            meter.process(acc_l.data(), acc_r.data(), acc_l.size());
+            OfflineRenderedFile measured{output.path, total, peak};
+            measured.measured = true;
+            measured.loudness = meter.finish();
+            report.files.push_back(measured);
+            run.units_done += 0.25;
+            if (!run.report_progress(0.0))
+                return fail(kCancelled);
+            continue;
+        }
+
         if (request.normalize && peak > 1.0e-9f) {
             const float target = static_cast<float>(std::pow(10.0, request.normalize_peak_db / 20.0));
             const float g = target / peak;
@@ -1017,9 +1032,10 @@ Result<OfflineRenderRequest> offline_render_request_from_json(const std::string&
         req.normalize_peak_db = j.value("normalize_peak_db", -0.3);
         req.apply_mixer = j.value("apply_mixer", true);
         req.dither = j.value("dither", true);
+        req.measure_loudness = j.value("measure_loudness", false);
         for (const auto& jo : j.at("outputs")) {
             OfflineRenderOutput out;
-            out.path = jo.at("path").get<std::string>();
+            out.path = jo.value("path", std::string());
             out.track_ids = jo.value("track_ids", std::vector<std::string>{});
             out.include_metronome = jo.value("include_metronome", false);
             out.include_voice_guide = jo.value("include_voice_guide", false);
@@ -1062,8 +1078,19 @@ std::string offline_render_result_to_json(const Result<OfflineRenderReport>& res
     }
     const auto& report = result.unwrap();
     json files = json::array();
-    for (const auto& f : report.files)
-        files.push_back({{"path", f.path}, {"frames", f.frames}, {"peak", f.peak}});
+    for (const auto& f : report.files) {
+        json file{{"path", f.path}, {"frames", f.frames}, {"peak", f.peak}};
+        if (f.measured) {
+            file["loudness"] = {
+                {"has_signal", f.loudness.has_signal},
+                {"integrated_lufs", f.loudness.integrated_lufs},
+                {"loud_lufs", f.loudness.loud_lufs},
+                {"loudness_range_lu", f.loudness.loudness_range_lu},
+                {"sample_peak", f.loudness.sample_peak},
+            };
+        }
+        files.push_back(std::move(file));
+    }
     out["files"] = files;
     out["missing_clips"] = report.missing_clips;
     out["missing_files"] = report.missing_files;

@@ -8,4 +8,5 @@ target_sources(lt_audio_engine_v2 PRIVATE
     mixer.cpp
     render_thread_pool.cpp
     offline_renderer.cpp
+    loudness_meter.cpp
 )

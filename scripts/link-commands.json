@@ -173,6 +173,7 @@
     "update_song_region_fades",
     "update_song_region_key",
     "update_song_region_master_gain",
+    "update_song_region_master_gains",
     "update_song_region_transpose",
     "update_song_region_warp",
     "update_song_tempo",
@@ -196,6 +197,7 @@
   ],
   "blocked": [
     "answer_video_import_question",
+    "cancel_measure_song_loudness",
     "cancel_render_song_audio",
     "create_audio_tracks_with_clips",
     "create_clips_batch",
@@ -214,6 +216,7 @@
     "import_song_package",
     "import_staged_audio_files",
     "import_video_files",
+    "measure_song_loudness",
     "open_demo_session",
     "pick_and_add_videos",
     "pick_and_import_external_project_from_dialog",

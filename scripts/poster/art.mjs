@@ -204,7 +204,70 @@ function testers(theme, assets, spec) {
 </div>`;
   return { css, html };
 }
-export const ART = { kofi, stores, testers };
+/**
+ * A video player paused on a lesson: a play button, a REC light in
+ * the corner, a progress bar, and a short chapter list under it.
+ *
+ * For calls that ask the community to MAKE something (tutorials) rather than
+ * install or fund it. A phone would say "download"; a player with chapters
+ * says "this is what we would like to watch", and the REC light says who
+ * records it. Chapter titles come from `artChapters` so the poster can name
+ * the lessons people actually ask for.
+ */
+function tutorial(theme, assets, spec) {
+  const chapters = spec.artChapters ?? [];
+  const caption = spec.artCaption;
+  const css = `
+.art-tut{width:100%;display:flex;flex-direction:column;align-items:stretch;gap:24px;}
+.tut-player{position:relative;width:100%;aspect-ratio:16/10;border-radius:28px;overflow:hidden;
+  background:linear-gradient(160deg,#ffffff14 0%,#ffffff05 100%);
+  border:2px solid ${theme.accent}55;box-shadow:0 30px 80px #000000cc;}
+.tut-frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;}
+/* paused on the first frame of a lesson */
+.tut-play{position:absolute;width:112px;height:112px;border-radius:50%;
+  background:${theme.accent};display:flex;align-items:center;justify-content:center;
+  box-shadow:0 14px 40px #000000b3;}
+.tut-play::after{content:"";margin-left:10px;border-style:solid;border-width:24px 0 24px 40px;
+  border-color:transparent transparent transparent ${theme.bg};}
+.tut-rec{position:absolute;top:20px;left:22px;display:flex;align-items:center;gap:10px;
+  background:#000000a6;border-radius:999px;padding:8px 16px 8px 12px;
+  font-size:17px;font-weight:900;letter-spacing:.14em;color:#fff;}
+.tut-rec::before{content:"";width:16px;height:16px;border-radius:50%;background:#ef4444;
+  box-shadow:0 0 14px #ef4444;}
+.tut-bar{position:absolute;left:22px;right:22px;bottom:22px;height:8px;border-radius:99px;
+  background:#ffffff2e;}
+.tut-bar::before{content:"";position:absolute;left:0;top:0;bottom:0;width:34%;
+  border-radius:99px;background:${theme.accent};}
+.tut-bar::after{content:"";position:absolute;left:34%;top:50%;width:20px;height:20px;
+  margin:-10px 0 0 -10px;border-radius:50%;background:#fff;}
+.tut-list{display:flex;flex-direction:column;gap:10px;}
+.tut-ch{display:flex;align-items:center;gap:14px;padding:12px 18px;border-radius:16px;
+  background:#ffffff0d;border:1px solid #ffffff17;font-size:20px;font-weight:600;color:#ffffffd9;}
+.tut-ch-n{font-size:15px;font-weight:900;color:${theme.accent};letter-spacing:.06em;
+  font-variant-numeric:tabular-nums;}
+.tut-ch-q{margin-left:auto;font-size:15px;font-weight:800;color:${theme.accentSoft};
+  letter-spacing:.1em;}
+.tut-url{font-size:20px;font-weight:800;color:${theme.accent};text-align:center;}
+`;
+  const list = chapters
+    .map(
+      (c, i) => `<div class="tut-ch"><span class="tut-ch-n">${String(i + 1).padStart(2, '0')}</span>${esc(c)}<span class="tut-ch-q">¿TÚ?</span></div>`,
+    )
+    .join('\n    ');
+  const html = `<div class="art-tut">
+  <div class="tut-player">
+    <div class="tut-frame">
+      <div class="tut-play"></div>
+    </div>
+    <div class="tut-rec">REC</div>
+    <div class="tut-bar"></div>
+  </div>
+  ${list ? `<div class="tut-list">${list}</div>` : ''}
+  ${caption ? `<div class="tut-url">${esc(caption)}</div>` : ''}
+</div>`;
+  return { css, html };
+}
+export const ART = { kofi, stores, testers, tutorial };
 
 export function renderArt(name, theme, assets, spec) {
   const piece = ART[name];

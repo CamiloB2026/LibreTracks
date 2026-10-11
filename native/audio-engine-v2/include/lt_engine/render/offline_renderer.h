@@ -25,6 +25,7 @@
 
 #include <lt_engine/core/result.h>
 #include <lt_engine/core/types.h>
+#include <lt_engine/render/loudness_meter.h>
 #include <lt_engine/render/metronome_renderer.h>
 #include <lt_engine/render/voice_guide_renderer.h>
 
@@ -65,6 +66,10 @@ struct OfflineRenderRequest {
     // exactly as in playback. false: every track at unity, centred — raw stems.
     bool   apply_mixer = true;
     bool   dither = true;                   // TPDF, 16-bit only
+    // Measure instead of writing: no file is created (output paths may be
+    // empty), the limiter is skipped and each output's loudness is reported.
+    // "Level songs" uses it to compare songs as they reach the desk.
+    bool   measure_loudness = false;
 
     MetronomeConfig  metronome;             // used by outputs with include_metronome
     VoiceGuideConfig voice_guide;           // used by outputs with include_voice_guide
@@ -76,6 +81,8 @@ struct OfflineRenderedFile {
     std::string path;
     Frame       frames = 0;
     float       peak = 0.0f;                // linear peak BEFORE normalize/limiter
+    bool        measured = false;           // loudness filled (measure_loudness)
+    LoudnessStats loudness;
 };
 
 struct OfflineRenderReport {

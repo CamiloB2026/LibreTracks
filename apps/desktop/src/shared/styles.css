@@ -1967,6 +1967,23 @@ html.lt-ios body {
   flex: 1 1 auto;
 }
 
+/* "All / None" style buttons above a track picker: the modal action buttons'
+   look, one size down. `.lt-secondary-button` alone has no global style. */
+.lt-render-track-tools button {
+  border-radius: 2px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.05);
+  color: #f3f0ef;
+  padding: 0.45rem 0.75rem;
+  font: 700 0.75rem/1 "Space Grotesk", sans-serif;
+  cursor: pointer;
+}
+
+.lt-render-track-tools button:hover {
+  border-color: rgb(87 241 219 / 0.28);
+  color: #57f1db;
+}
+
 .lt-render-hint {
   color: rgb(214 226 224 / 0.6);
   font-size: 0.82rem;
@@ -2123,6 +2140,176 @@ html.lt-ios body {
   .lt-render-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+/* "Nivelar canciones": the render modal's frame and track picker, plus the
+   per-song proposal table. */
+.lt-level-songs-modal {
+  max-width: 52rem;
+}
+
+.lt-level-songs-groups {
+  max-height: 20rem;
+}
+
+/* Short screens (a phone in landscape): the modal body already scrolls, so
+   the list and the table give up their own scroll. Two nested scrollers on
+   touch leave the finger dragging the wrong one. */
+@media (max-height: 520px) {
+  .lt-level-songs-groups,
+  .lt-level-songs-table-wrap {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .lt-level-songs-table th {
+    position: static;
+  }
+
+  .lt-level-songs-modal .lt-settings-modal-header p {
+    display: none;
+  }
+}
+
+.lt-level-songs-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0 0.45rem;
+}
+
+.lt-level-songs-group-header > input {
+  width: 0.95rem;
+  height: 0.95rem;
+  margin: 0;
+  flex: none;
+}
+
+.lt-level-songs-group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2rem;
+  padding: 0 0.2rem;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #f3f0ef;
+  font: 700 0.85rem/1.2 "Space Grotesk", sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lt-level-songs-group-toggle:hover {
+  background: rgb(87 241 219 / 0.06);
+}
+
+.lt-level-songs-group-toggle .material-symbols-outlined {
+  font-size: 18px;
+  color: rgb(214 226 224 / 0.6);
+}
+
+.lt-level-songs-group-title {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lt-level-songs-group-summary {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: rgb(214 226 224 / 0.55);
+  font-weight: 500;
+  font-size: 0.75rem;
+}
+
+@media (pointer: coarse) {
+  .lt-level-songs-group-toggle {
+    min-height: 2.5rem;
+  }
+}
+
+.lt-level-songs-track-grid {
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  padding: 0 0 0.3rem 1.6rem;
+}
+
+.lt-render-track.is-excluded .lt-render-track-name {
+  color: rgb(214 226 224 / 0.55);
+}
+
+.lt-level-songs-tag {
+  margin-left: auto;
+  flex: none;
+  color: rgb(214 226 224 / 0.5);
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.lt-level-songs-table-wrap {
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 4px;
+  background: rgb(15 18 19 / 0.92);
+  max-height: 22rem;
+  overflow: auto;
+}
+
+.lt-level-songs-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.lt-level-songs-table th {
+  position: sticky;
+  top: 0;
+  background: rgb(22 25 26);
+  color: rgb(214 226 224 / 0.6);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+}
+
+.lt-level-songs-table td {
+  padding: 0.4rem 0.5rem;
+  border-top: 1px solid rgb(255 255 255 / 0.05);
+  vertical-align: top;
+}
+
+.lt-level-songs-table .is-number {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.lt-level-songs-table tr.is-muted td {
+  color: rgb(214 226 224 / 0.45);
+}
+
+.lt-level-songs-name {
+  display: block;
+  color: #f3f0ef;
+}
+
+.lt-level-songs-note {
+  display: block;
+  margin-top: 0.15rem;
+  color: rgb(214 226 224 / 0.55);
+  font-size: 0.75rem;
+}
+
+.lt-level-songs-change {
+  color: #57f1db;
+  font-weight: 700;
 }
 
 .lt-automation-modal {
@@ -9250,6 +9437,11 @@ html.lt-ios body {
   display: flex;
   flex-direction: column;
   min-width: 15rem;
+  /* Anchored 6rem up from the bottom: on a short landscape phone a longer
+     list must scroll rather than run off the top. No overscroll-behavior on
+     purpose (it swallows the finger drag when the list does not overflow). */
+  max-height: calc(100vh - 6rem - var(--lt-safe-area-top) - 0.5rem);
+  overflow-y: auto;
   padding: 0.4rem;
   gap: 0.15rem;
   border: 1px solid rgb(87 241 219 / 0.2);

@@ -44,6 +44,13 @@ fn main() {
                 );
                 for file in report.files {
                     println!("  {} frames={} peak={:.3}", file.path, file.frames, file.peak);
+                    if let Some(l) = file.loudness {
+                        println!(
+                            "  loudness: integrated={:.2} loud={:.2} lra={:.2} peak={:.4} signal={}",
+                            l.integrated_lufs, l.loud_lufs, l.loudness_range_lu, l.sample_peak,
+                            l.has_signal
+                        );
+                    }
                 }
             }
             Err(error) => {

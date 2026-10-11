@@ -109,6 +109,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "update_song_region_fades"
         | "update_song_region_key"
         | "update_song_region_master_gain"
+        | "update_song_region_master_gains"
         | "update_song_region_transpose"
         | "update_song_region_warp"
         | "update_song_tempo"
@@ -233,6 +234,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "update_song_region_fades",
     "update_song_region_key",
     "update_song_region_master_gain",
+    "update_song_region_master_gains",
     "update_song_region_transpose",
     "update_song_region_warp",
     "update_song_tempo",
@@ -951,6 +953,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
                 into_value_result(crate::commands::timeline::update_song_region_master_gain(arg(&args, "regionId")?, arg(&args, "masterGain")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
+        "update_song_region_master_gains" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::update_song_region_master_gains(arg(&args, "gains")?, app.state()))
             })
             .await
             .map_err(|error| error.to_string())?

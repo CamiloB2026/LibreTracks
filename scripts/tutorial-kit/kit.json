@@ -1,0 +1,42 @@
+{
+  "out": "marketing/kit-videotutoriales",
+  "site": "libretracks.com",
+  "youtube": "youtube.com/@LibreTracks",
+  "example": {
+    "number": 1,
+    "title": "Tu primera canción",
+    "subtitle": "De los stems al directo, paso a paso",
+    "platform": "Escritorio",
+    "step": "Importar las pistas"
+  },
+  "tutorials": [
+    {
+      "slug": "01-primera-cancion",
+      "number": 1,
+      "title": "Prepara tu primera canción",
+      "subtitle": "Importar pistas, tono y tempo",
+      "thumb": "Tu primera\ncanción"
+    },
+    {
+      "slug": "02-marcas-y-saltos",
+      "number": 2,
+      "title": "Marcas y saltos en directo",
+      "subtitle": "Salta entre secciones sin parar la música",
+      "thumb": "Marcas\ny saltos"
+    },
+    {
+      "slug": "03-clic-guia-pads",
+      "number": 3,
+      "title": "Clic, guía de voz y pads",
+      "subtitle": "Todo lo que suena además de tus pistas",
+      "thumb": "Clic, guía\ny pads"
+    },
+    {
+      "slug": "04-del-ordenador-al-movil",
+      "number": 4,
+      "title": "Del ordenador al móvil",
+      "subtitle": "Lleva tus sesiones a cualquier dispositivo",
+      "thumb": "Del PC\nal móvil"
+    }
+  ]
+}

@@ -4,6 +4,7 @@ pub mod cloud;
 pub mod demo;
 pub mod engine_v2;
 pub mod events;
+pub mod level_songs;
 pub mod library;
 pub mod library_places;
 pub mod open_with;

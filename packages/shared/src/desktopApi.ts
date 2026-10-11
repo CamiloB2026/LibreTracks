@@ -1334,6 +1334,60 @@ export async function listenToRenderAudioProgress(
   });
 }
 
+/** "Nivelar canciones": measure songs as they reach the desk. See
+ * commands/level_songs.rs. */
+export type MeasureSongLoudnessRequest = {
+  regionIds: string[];
+  /** Audio tracks that count: the ones going to the PA, audible. */
+  trackIds: string[];
+};
+
+export type SongLoudness = {
+  regionId: string;
+  /** false: nothing audible among the chosen tracks in this song. */
+  hasSignal: boolean;
+  integratedLufs: number;
+  /** 90th percentile of the short-term (3 s) loudness: the loud parts. */
+  loudLufs: number;
+  loudnessRangeLu: number;
+  /** Linear sample peak of the mix with the song master at unity. */
+  samplePeak: number;
+  /** Chosen tracks with audio inside this song. */
+  tracksWithAudio: string[];
+};
+
+export type MeasureSongLoudnessResult = {
+  cancelled: boolean;
+  songs: SongLoudness[];
+  missingFiles: string[];
+};
+
+export type LevelSongsProgressEvent = {
+  fraction: number;
+  /** Songs already measured: several are measured at once. */
+  songsDone: number;
+  songCount: number;
+};
+
+export async function measureSongLoudness(
+  request: MeasureSongLoudnessRequest,
+): Promise<MeasureSongLoudnessResult> {
+  return invokeCommand<MeasureSongLoudnessResult>("measure_song_loudness", { request });
+}
+
+export async function cancelMeasureSongLoudness(): Promise<void> {
+  await invokeCommand<void>("cancel_measure_song_loudness");
+}
+
+export async function listenToLevelSongsProgress(
+  handler: (event: LevelSongsProgressEvent) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<LevelSongsProgressEvent>("level-songs-progress", (event) => {
+    handler(event.payload);
+  });
+}
+
 // Export the WHOLE session as a single portable .ltset (every region + library
 // + automation + waveforms, and — in full mode — the clip audio). The "build it
 // at home, open it at the venue" flow. The native save dialog runs on the Rust
@@ -1909,6 +1963,15 @@ export async function updateSongRegionMasterGain(
   return invokeCommand<TransportSnapshot>("update_song_region_master_gain", {
     regionId,
     masterGain,
+  });
+}
+
+/** Several song masters in one edit: a single undo restores them all. */
+export async function updateSongRegionMasterGains(
+  gains: { regionId: string; masterGain: number }[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("update_song_region_master_gains", {
+    gains,
   });
 }
 

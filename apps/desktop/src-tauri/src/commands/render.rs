@@ -476,6 +476,7 @@ impl RenderJob<'_> {
             normalize_peak_db: -0.3,
             apply_mixer: request.apply_mixer,
             dither: true,
+            measure_loudness: false,
             metronome: request
                 .include_metronome
                 .then(|| crate::audio::engine::metronome_render_config(self.settings)),

@@ -70,10 +70,27 @@ pub struct RenderRequest {
     pub normalize_peak_db: f64,
     pub apply_mixer: bool,
     pub dither: bool,
+    /// Measure instead of writing: no file is created (output paths may be
+    /// empty), no limiter, and each [`RenderedFile`] carries its loudness.
+    #[serde(default)]
+    pub measure_loudness: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metronome: Option<RenderMetronome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_guide: Option<RenderVoiceGuide>,
+}
+
+/// Mirrors `lt::LoudnessStats` (see loudness_meter.h). LUFS values are -70
+/// when `has_signal` is false.
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+pub struct RenderLoudness {
+    pub has_signal: bool,
+    pub integrated_lufs: f64,
+    /// 90th percentile of the gated short-term (3 s) loudness: how loud the
+    /// song's loud parts are.
+    pub loud_lufs: f64,
+    pub loudness_range_lu: f64,
+    pub sample_peak: f32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -82,6 +99,9 @@ pub struct RenderedFile {
     pub frames: i64,
     /// Linear peak before normalisation / limiter.
     pub peak: f32,
+    /// Present only when the request asked to `measure_loudness`.
+    #[serde(default)]
+    pub loudness: Option<RenderLoudness>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -202,6 +222,7 @@ mod tests {
             normalize_peak_db: -0.3,
             apply_mixer: true,
             dither: true,
+            measure_loudness: false,
             metronome: None,
             voice_guide: None,
         };
@@ -231,5 +252,17 @@ mod tests {
         .unwrap();
         assert_eq!(report.files.len(), 1);
         assert_eq!(report.missing_clips, 1);
+        assert!(report.files[0].loudness.is_none());
+    }
+
+    #[test]
+    fn measured_files_carry_their_loudness() {
+        let report = parse_render_response(
+            r#"{"ok":true,"files":[{"path":"","frames":10,"peak":0.5,"loudness":{"has_signal":true,"integrated_lufs":-14.2,"loud_lufs":-11.5,"loudness_range_lu":6.0,"sample_peak":0.5}}],"missing_clips":0,"missing_files":[]}"#,
+        )
+        .unwrap();
+        let loudness = report.files[0].loudness.unwrap();
+        assert!(loudness.has_signal);
+        assert_eq!(loudness.loud_lufs, -11.5);
     }
 }
