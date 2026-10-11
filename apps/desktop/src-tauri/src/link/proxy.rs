@@ -23,7 +23,6 @@ use tauri::{AppHandle, EventId, Listener, Manager};
 use super::proxy_dispatch::{access, dispatch, ProxyAccess, EVENTS_TO_RELAY};
 use crate::infra::settings::{AppSettings, AppSettingsStore};
 
-
 /// Deserialize one command argument; the type comes from the command's own
 /// parameter. A missing key reads as null, so `Option` parameters work.
 pub fn arg<T: DeserializeOwned>(args: &Value, key: &str) -> Result<T, String> {
@@ -64,6 +63,13 @@ pub async fn handle_invoke(
     command: &str,
     args: Value,
 ) -> CommandReply {
+    // Bench (plan song-patches/01): the host's own timings, for any guest.
+    if command == "get_link_perf" {
+        return Ok(serde_json::json!({
+            "feed": crate::session_feed::feed_perf(),
+            "invokes": super::host::invoke_perf(),
+        }));
+    }
     let Some(access) = access(command) else {
         return Err(CommandRejection::NotAvailable.into());
     };

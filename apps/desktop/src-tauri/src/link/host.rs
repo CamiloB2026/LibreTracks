@@ -411,6 +411,27 @@ async fn persist_trusted(app: AppHandle, handle: HostHandle) {
     }
 }
 
+/// Last commands guests ran here and how long each took, in microseconds
+/// (plan song-patches/01).
+static INVOKE_PERF: std::sync::Mutex<std::collections::VecDeque<(String, u128)>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+
+fn record_invoke_perf(command: &str, micros: u128) {
+    if let Ok(mut ring) = INVOKE_PERF.lock() {
+        if ring.len() == 64 {
+            ring.pop_front();
+        }
+        ring.push_back((command.to_string(), micros));
+    }
+}
+
+pub fn invoke_perf() -> Vec<(String, u128)> {
+    INVOKE_PERF
+        .lock()
+        .map(|ring| ring.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
 async fn apply_commands(
     app: AppHandle,
     mut commands: tokio::sync::mpsc::Receiver<IncomingCommand>,
@@ -428,7 +449,11 @@ async fn apply_commands(
             } => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move {
+                    let started = std::time::Instant::now();
                     let result = super::proxy::handle_invoke(&app, grants, &command, args).await;
+                    if command != "get_link_perf" {
+                        record_invoke_perf(&command, started.elapsed().as_micros());
+                    }
                     let _ = reply.send(result);
                 });
             }

@@ -33,6 +33,41 @@ use crate::{
 
 pub const FEED_INTERVAL: Duration = Duration::from_millis(90);
 
+/// Timings of one feed tick, in microseconds (plan song-patches/01). Only
+/// ticks that rebuilt the song view are kept: those are the expensive ones.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FeedTickPerf {
+    pub lock_wait: u128,
+    pub snapshot: u128,
+    pub song_build: u128,
+    /// The extra serialization `song_view_with_options` does to count bytes.
+    pub song_count: u128,
+    /// The tracker serializing the view to compare it with the last one.
+    pub compare: u128,
+    pub song_bytes: usize,
+}
+
+const PERF_RING: usize = 64;
+static FEED_PERF: std::sync::Mutex<std::collections::VecDeque<FeedTickPerf>> =
+    std::sync::Mutex::new(std::collections::VecDeque::new());
+
+pub fn feed_perf() -> Vec<FeedTickPerf> {
+    FEED_PERF
+        .lock()
+        .map(|ring| ring.iter().cloned().collect())
+        .unwrap_or_default()
+}
+
+fn record_feed_perf(perf: FeedTickPerf) {
+    if let Ok(mut ring) = FEED_PERF.lock() {
+        if ring.len() == PERF_RING {
+            ring.pop_front();
+        }
+        ring.push_back(perf);
+    }
+}
+
 /// Latest value of each part plus a counter that moves when that part
 /// changes, so a subscriber can tell which of the three to republish.
 #[derive(Debug)]
@@ -195,21 +230,49 @@ async fn run_session_feed(app: AppHandle, tx: watch::Sender<Arc<SessionFeedFrame
         }
 
         let settings = app.state::<AppSettingsStore>().current().ok();
+        let mut perf: Option<FeedTickPerf> = None;
+        let mut read_done = std::time::Instant::now();
         let changed = tracker.tick(settings, |last_revision| {
             let state = app.state::<DesktopState>();
+            let wait_started = std::time::Instant::now();
             let mut session = state.session.lock().ok()?;
+            let lock_wait = wait_started.elapsed().as_micros();
+            let snapshot_started = std::time::Instant::now();
             let snapshot = session.snapshot_with_sync(&state.audio).ok()?;
+            let snapshot_micros = snapshot_started.elapsed().as_micros();
             let revision = (snapshot.project_revision, snapshot.mix_revision);
             // The remote UI and the guests never render waveform peaks: with
             // peaks this payload is ~27 MB and holds the lock for ~700 ms.
             let song = (last_revision != Some(revision))
                 .then(|| session.song_view_with_options(false).ok().flatten());
+            if song.is_some() {
+                let (song_build, song_count) = session.last_song_view_micros();
+                perf = Some(FeedTickPerf {
+                    lock_wait,
+                    snapshot: snapshot_micros,
+                    song_build,
+                    song_count,
+                    ..FeedTickPerf::default()
+                });
+            }
+            read_done = std::time::Instant::now();
             Some(SessionRead {
                 snapshot,
                 revision,
                 song,
             })
         });
+        if let Some(mut perf) = perf {
+            perf.compare = read_done.elapsed().as_micros();
+            perf.song_bytes = tracker
+                .frame()
+                .song
+                .as_ref()
+                .and_then(|song| serde_json::to_vec(song.as_ref()).ok())
+                .map(|bytes| bytes.len())
+                .unwrap_or(0);
+            record_feed_perf(perf);
+        }
 
         if changed {
             tx.send_replace(Arc::new(tracker.frame().clone()));

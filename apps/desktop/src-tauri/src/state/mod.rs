@@ -1541,6 +1541,10 @@ pub(super) struct DesktopPerformanceMetrics {
     transport_snapshot_bytes: usize,
     song_view_bytes: usize,
     last_react_render_millis: f64,
+    /// Last `song_view_with_options`: building the view, and serializing it
+    /// only to count its bytes (network sessions bench, plan song-patches/01).
+    song_view_build_micros: u128,
+    song_view_count_micros: u128,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1678,6 +1682,15 @@ impl DesktopSession {
     /// that don't touch clip audio (transpose, gain, mute, solo, region rename
     /// — none of these change the peaks). The frontend keeps the previously
     /// hydrated waveforms in its local cache.
+    /// Microseconds the last song view took to build, and to serialize once
+    /// only to count its bytes.
+    pub(crate) fn last_song_view_micros(&self) -> (u128, u128) {
+        (
+            self.perf_metrics.song_view_build_micros,
+            self.perf_metrics.song_view_count_micros,
+        )
+    }
+
     pub fn song_view_with_options(
         &mut self,
         include_waveforms: bool,
@@ -1694,7 +1707,8 @@ impl DesktopSession {
                 include_waveforms,
             )
         });
-        let build_ms = started_at.elapsed().as_millis();
+        let build_micros = started_at.elapsed().as_micros();
+        let build_ms = build_micros / 1000;
         let serialize_started = Instant::now();
         let bytes = song_view
             .as_ref()
@@ -1702,7 +1716,10 @@ impl DesktopSession {
             .transpose()
             .map_err(|error| DesktopError::AudioCommand(error.to_string()))?
             .unwrap_or(0);
-        let serialize_ms = serialize_started.elapsed().as_millis();
+        let count_micros = serialize_started.elapsed().as_micros();
+        let serialize_ms = count_micros / 1000;
+        self.perf_metrics.song_view_build_micros = build_micros;
+        self.perf_metrics.song_view_count_micros = count_micros;
         self.perf_metrics.song_view_build_millis = build_ms;
         self.perf_metrics.song_view_bytes = bytes;
         if jump_debug_logging_enabled() {
