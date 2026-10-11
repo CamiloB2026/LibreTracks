@@ -339,6 +339,12 @@ async fn relay(
             } => {
                 remember_token(&app, &address, &host_id, token.as_deref());
                 with_guest(&app, |guest| {
+                    // A new connection: the host may have restarted and its
+                    // revisions started over, so nothing cached from before
+                    // may hold the new pushes back (see `is_older`).
+                    guest.transport = None;
+                    guest.song = None;
+                    guest.song_revision = None;
                     guest.status.host_name = host_name;
                     guest.status.role = Some(grants.role);
                 });
@@ -369,15 +375,13 @@ async fn relay(
                 host_monotonic_ms,
             } => {
                 let transport = with_guest(&app, |guest| {
-                    if cfg!(debug_assertions) {
-                        let cached = guest
-                            .transport
-                            .as_ref()
-                            .and_then(|t| snapshot_revision(&t.snapshot));
-                        let pushed = snapshot_revision(&snapshot);
-                        if cached.is_some() && pushed < cached {
-                            eprintln!("[libretracks-link] pushed transport {pushed:?} older than cached {cached:?}");
+                    if is_older(&snapshot, guest.transport.as_ref()) {
+                        if cfg!(debug_assertions) {
+                            eprintln!(
+                                "[libretracks-link] dropped a pushed transport older than the cached one"
+                            );
                         }
+                        return None;
                     }
                     let position = host_position_now(
                         &snapshot,
@@ -391,9 +395,9 @@ async fn relay(
                         emitted_at_unix_ms: unix_ms(),
                     };
                     guest.transport = Some(transport.clone());
-                    transport
+                    Some(transport)
                 });
-                if let Some(transport) = transport {
+                if let Some(Some(transport)) = transport {
                     let _ = app.emit(GUEST_TRANSPORT_EVENT, transport);
                 }
             }
@@ -543,7 +547,11 @@ pub async fn proxy_invoke(app: &AppHandle, command: String, args: Value) -> Resu
             snapshot: value.clone(),
             emitted_at_unix_ms: unix_ms(),
         };
-        with_guest(app, |guest| guest.transport = Some(transport));
+        with_guest(app, |guest| {
+            if !is_older(&transport.snapshot, guest.transport.as_ref()) {
+                guest.transport = Some(transport);
+            }
+        });
     }
     Ok(value)
 }
@@ -575,6 +583,22 @@ fn snapshot_revision(snapshot: &Value) -> Option<(u64, u64)> {
         snapshot["projectRevision"].as_u64()?,
         snapshot["mixRevision"].as_u64()?,
     ))
+}
+
+/// Whether `snapshot` is from before the cached one. Within one connection
+/// the host's revisions only grow, but the pushes and the answers to this
+/// guest's commands travel separately: an answer can land, then a push read
+/// just before the command. Taking that push made the UI show the edit and
+/// then undo it (a warp switched on, then off, on the tablet with an iPhone
+/// host, 2026-10-10) until the next push.
+fn is_older(snapshot: &Value, cached: Option<&GuestTransport>) -> bool {
+    match (
+        snapshot_revision(snapshot),
+        cached.and_then(|cached| snapshot_revision(&cached.snapshot)),
+    ) {
+        (Some(new), Some(old)) => new < old,
+        _ => false,
+    }
 }
 
 fn is_transport_snapshot(value: &Value) -> bool {
@@ -738,6 +762,24 @@ mod tests {
             snapshot_revision(&json!({ "projectRevision": 12, "mixRevision": 3 })),
             Some((12, 3))
         );
+    }
+
+    #[test]
+    fn an_older_snapshot_never_replaces_a_newer_one() {
+        let cached = |project: u64, mix: u64| GuestTransport {
+            snapshot: json!({ "projectRevision": project, "mixRevision": mix }),
+            anchor_position_seconds: 0.0,
+            emitted_at_unix_ms: 0,
+        };
+        let snapshot =
+            |project: u64, mix: u64| json!({ "projectRevision": project, "mixRevision": mix });
+        assert!(is_older(&snapshot(4, 9), Some(&cached(5, 0))));
+        assert!(is_older(&snapshot(5, 0), Some(&cached(5, 1))));
+        assert!(!is_older(&snapshot(5, 1), Some(&cached(5, 1))));
+        assert!(!is_older(&snapshot(6, 0), Some(&cached(5, 3))));
+        assert!(!is_older(&snapshot(1, 0), None));
+        // Without revisions (an unexpected payload) nothing is held back.
+        assert!(!is_older(&json!({}), Some(&cached(5, 0))));
     }
 
     #[test]
