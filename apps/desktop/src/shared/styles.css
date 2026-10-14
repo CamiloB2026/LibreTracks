@@ -7277,6 +7277,11 @@ html.lt-ios body {
   padding: 0;
 }
 
+.lt-mobile .lt-compact-column-resizer {
+  right: -0.875rem;
+  width: 1.75rem;
+}
+
 .lt-compact-column-resizer::after {
   content: "";
   position: absolute;
@@ -7298,6 +7303,11 @@ html.lt-ios body {
 
 .lt-compact-column-resizer:focus-visible {
   outline: none;
+}
+
+.lt-mobile .lt-compact-column-resizer::after {
+  width: 3px;
+  background: rgb(87 241 219 / 0.55);
 }
 
 /* While a resize drag is live the whole view keeps the col-resize cursor

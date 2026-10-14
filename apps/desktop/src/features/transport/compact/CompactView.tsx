@@ -35,6 +35,7 @@ import type { SongReorderHandleProps } from "../songs/SongReorderHandle";
 import { isMobileApp } from "../desktopApi";
 import { LIBRARY_ASSET_DRAG_MIME } from "../library/dragDrop";
 import { clientToZoomedCoords } from "../../../shared/uiZoom";
+import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
 import {
   COMPACT_COLUMN_MAX_WIDTH_REM,
   COMPACT_COLUMN_MIN_WIDTH_REM,
@@ -609,6 +610,13 @@ function CompactSongColumnComponent({
   onResizingChange,
 }: CompactSongColumnProps) {
   const { t } = useTranslation();
+  const clipTouchContextMenu = useTouchContextMenu({
+    ignoreTarget: (target) =>
+      !(target instanceof Element) ||
+      target.closest(
+        ".lt-compact-clip-entry:not(.is-drop-placeholder)",
+      ) === null,
+  });
   const regionId = region.id;
   const headerReorderHandleProps = useMemo(
     () => reorderHandleProps?.(regionId),
@@ -737,6 +745,15 @@ function CompactSongColumnComponent({
       className={`lt-compact-song-column ${isActive ? "is-active" : ""} ${isQueued ? "is-queued" : ""} ${columnDensityClass(
         widthRem,
       )}`}
+      onPointerDownCapture={clipTouchContextMenu.begin}
+      onPointerMoveCapture={clipTouchContextMenu.move}
+      onPointerUpCapture={clipTouchContextMenu.cancel}
+      onPointerCancelCapture={clipTouchContextMenu.cancel}
+      onClickCapture={(event) => {
+        if (!clipTouchContextMenu.consumeTriggered()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       /* data-region-id lets the library asset pointer-drag pipeline in
          TransportPanelContent identify which song the user just dropped
          onto without having to plumb a per-column React ref through the

@@ -20,6 +20,7 @@ import {
   type SongRegionSummary,
 } from "../desktopApi";
 import { useTransportStore } from "../store";
+import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
 import {
   SongReorderHandle,
   type SongReorderHandleProps,
@@ -95,6 +96,13 @@ export function CompactSongHeaderComponent({
   reorderSurfaceProps,
 }: CompactSongHeaderProps) {
   const { t } = useTranslation();
+  const touchContextMenu = useTouchContextMenu({
+    ignoreTarget: (target) =>
+      target instanceof Element &&
+      target.closest(
+        "button, input, select, [data-song-reorder-ignore], .lt-compact-clip-menu",
+      ) !== null,
+  });
   const [contextMenu, setContextMenu] = useState<{
     x: number;
     y: number;
@@ -169,6 +177,15 @@ export function CompactSongHeaderComponent({
       } ${
         isSelected ? "is-selected" : ""
       }`}
+      onPointerDownCapture={touchContextMenu.begin}
+      onPointerMoveCapture={touchContextMenu.move}
+      onPointerUpCapture={touchContextMenu.cancel}
+      onPointerCancelCapture={touchContextMenu.cancel}
+      onClickCapture={(event) => {
+        if (!touchContextMenu.consumeTriggered()) return;
+        event.preventDefault();
+        event.stopPropagation();
+      }}
       onContextMenu={openMenu}
       onClick={handleHeaderClick}
       onPointerDown={reorderSurfaceProps?.onPointerDown}
