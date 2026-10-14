@@ -785,6 +785,35 @@ function CompactSongColumnComponent({
         onSelect={onSelect}
         reorderHandleProps={headerReorderHandleProps}
         reorderSurfaceProps={headerReorderSurfaceProps}
+        resizeHandle={
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label={`Ancho de la columna ${region.name}`}
+            aria-valuenow={Math.round(widthRem)}
+            aria-valuemin={COMPACT_COLUMN_MIN_WIDTH_REM}
+            aria-valuemax={COMPACT_COLUMN_MAX_WIDTH_REM}
+            tabIndex={0}
+            data-no-song-reorder=""
+            title={t("compactView.resizeColumn")}
+            className={
+              isResizing
+                ? "lt-compact-column-resizer is-resizing"
+                : "lt-compact-column-resizer"
+            }
+            onPointerDown={handleResizePointerDown}
+            onKeyDown={handleResizeKeyDown}
+            onDoubleClick={handleResizeDoubleClick}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span
+              className="lt-compact-column-resizer-icon material-symbols-outlined"
+              aria-hidden="true"
+            >
+              swap_horiz
+            </span>
+          </div>
+        }
       />
       <div
         className={
@@ -894,35 +923,6 @@ function CompactSongColumnComponent({
         </div>
       ) : null}
 
-      {/* Drag the right edge to widen / narrow this song's column;
-          double-click restores the default width. Rendered as a button so
-          it is focusable and the arrow-key fallback works without a
-          pointer. */}
-      <div
-        role="separator"
-        aria-orientation="vertical"
-        aria-label={`Ancho de la columna ${region.name}`}
-        aria-valuenow={Math.round(widthRem)}
-        aria-valuemin={COMPACT_COLUMN_MIN_WIDTH_REM}
-        aria-valuemax={COMPACT_COLUMN_MAX_WIDTH_REM}
-        tabIndex={0}
-        title={t("compactView.resizeColumn")}
-        className={
-          isResizing
-            ? "lt-compact-column-resizer is-resizing"
-            : "lt-compact-column-resizer"
-        }
-        onPointerDown={handleResizePointerDown}
-        onKeyDown={handleResizeKeyDown}
-        onDoubleClick={handleResizeDoubleClick}
-      >
-        <span
-          className="lt-compact-column-resizer-icon material-symbols-outlined"
-          aria-hidden="true"
-        >
-          swap_horiz
-        </span>
-      </div>
     </div>
   );
 }

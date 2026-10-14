@@ -6,6 +6,7 @@ import {
   useState,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 
@@ -62,6 +63,7 @@ type CompactSongHeaderProps = {
   reorderSurfaceProps?: {
     onPointerDown: (event: ReactPointerEvent<HTMLElement>) => void;
   };
+  resizeHandle: ReactNode;
 };
 
 // Master fader snaps to unity (1.0) within ±3% of full range (0..2), so the
@@ -94,13 +96,14 @@ export function CompactSongHeaderComponent({
   onSelect,
   reorderHandleProps,
   reorderSurfaceProps,
+  resizeHandle,
 }: CompactSongHeaderProps) {
   const { t } = useTranslation();
   const touchContextMenu = useTouchContextMenu({
     ignoreTarget: (target) =>
       target instanceof Element &&
       target.closest(
-        "button, input, select, [data-song-reorder-ignore], .lt-compact-clip-menu",
+        "button, input, select, [data-song-reorder-ignore], [data-no-song-reorder], .lt-compact-clip-menu",
       ) !== null,
   });
   const [contextMenu, setContextMenu] = useState<{
@@ -402,6 +405,7 @@ export function CompactSongHeaderComponent({
             }
           }}
         />
+        {resizeHandle}
       </div>
     </div>
   );

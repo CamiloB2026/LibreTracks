@@ -126,4 +126,15 @@ describe("CompactView touch context menu", () => {
 
     expect(onDeleteClip).toHaveBeenCalledWith(clip.id);
   });
+
+  it("keeps the resize grip in the song header, beside the fader", () => {
+    renderCompactView(vi.fn());
+    const resizeGrip = screen.getByRole("separator", {
+      name: "Ancho de la columna Cancion",
+    });
+
+    expect(resizeGrip.closest(".lt-compact-song-master")).not.toBeNull();
+    expect(resizeGrip.querySelector(".lt-compact-column-resizer-icon")?.textContent)
+      .toBe("swap_horiz");
+  });
 });

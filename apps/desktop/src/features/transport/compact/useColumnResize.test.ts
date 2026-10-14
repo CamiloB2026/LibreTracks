@@ -113,6 +113,23 @@ describe("useColumnResize pointer commit", () => {
       expectedWidth,
     );
   });
+
+  it("does not begin resizing while a song reorder is active", () => {
+    const onCommit = vi.fn();
+    render(createElement(ResizeHarness, { onCommit }));
+    document.body.classList.add("lt-song-reordering");
+
+    fireEvent(
+      screen.getByTestId("handle"),
+      touchPointer("pointerdown", 2, 100),
+    );
+    act(() => {
+      window.dispatchEvent(touchPointer("pointerup", 2, 140));
+    });
+
+    document.body.classList.remove("lt-song-reordering");
+    expect(onCommit).not.toHaveBeenCalled();
+  });
 });
 
 describe("resolveColumnWidthRem", () => {

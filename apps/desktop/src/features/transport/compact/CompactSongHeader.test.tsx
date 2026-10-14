@@ -39,6 +39,7 @@ const renderHeader = (isQueued: boolean, onSelect = vi.fn()) => (
     onSetKey={vi.fn()}
     isSelected={false}
     onSelect={onSelect}
+    resizeHandle={null}
   />
 );
 

@@ -278,6 +278,7 @@ export function useColumnResize({
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
+      if (document.body.classList.contains("lt-song-reordering")) return;
       // Left button only; ignore right-click and middle-click so the column's
       // context menu still opens normally.
       if (event.button !== 0) return;
