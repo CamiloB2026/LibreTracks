@@ -45,6 +45,22 @@ function declaration(selector: string, property: string): string | null {
   return null;
 }
 
+function mobileDeclaration(selector: string, property: string): string | null {
+  const start = css.lastIndexOf(`${selector} {`);
+  if (start < 0) return null;
+  const open = css.indexOf("{", start);
+  const close = css.indexOf("}", open);
+  if (open < 0 || close < 0) return null;
+  const body = css.slice(open + 1, close);
+  for (const line of body.split(";")) {
+    const colon = line.indexOf(":");
+    if (colon < 0) continue;
+    if (line.slice(0, colon).trim() !== property) continue;
+    return line.slice(colon + 1).trim();
+  }
+  return null;
+}
+
 describe("barra de progreso de la fila de marcas de la vista Live", () => {
   it("la fila sigue reservando su alto de siempre cuando el contenido es corto", () => {
     // El minimo es lo que mantiene uniformes las filas normales; si se perdiera,
@@ -56,6 +72,14 @@ describe("barra de progreso de la fila de marcas de la vista Live", () => {
     // Sin esto, flexbox la comprime hasta hacerla desaparecer justo en el caso
     // denso, que es precisamente cuando hace falta verla.
     expect(declaration(".lt-live-cue-progress", "flex")).toBe("0 0 auto");
+  });
+
+  it("mantiene las filas móviles uniformes y deja envolver el texto del aviso", () => {
+    expect(mobileDeclaration(".lt-live-cue-grid", "grid-auto-rows")).toBe("3.65rem");
+    expect(mobileDeclaration(".lt-live-cue-warnings span", "white-space")).toBe("normal");
+    expect(mobileDeclaration(".lt-live-cue-warnings span", "-webkit-line-clamp")).toBe("2");
+    expect(mobileDeclaration(".lt-live-cue-name-line em.is-vamp", "font-size")).toBe("0");
+    expect(mobileDeclaration(".lt-live-cue-name-line em.is-vamp::after", "content")).toBe('"VAMP"');
   });
 
   // El carril —el fondo sobre el que corre el relleno— tiene que verse entero,

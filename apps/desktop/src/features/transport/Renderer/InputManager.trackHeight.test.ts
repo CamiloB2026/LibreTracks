@@ -14,6 +14,7 @@ import { InputManager, type TimelineNavigationScheme } from "./InputManager";
 type Recorded = {
   globalHeights: number[];
   rowSteps: Array<{ localY: number; deltaPx: number }>;
+  zoomLevels: number[];
 };
 
 const managers: InputManager[] = [];
@@ -37,7 +38,7 @@ function setup(options: {
     }) as DOMRect;
   document.body.append(container);
 
-  const recorded: Recorded = { globalHeights: [], rowSteps: [] };
+  const recorded: Recorded = { globalHeights: [], rowSteps: [], zoomLevels: [] };
 
   const manager = new InputManager({
     container,
@@ -57,7 +58,10 @@ function setup(options: {
     trackHeightMax: 148,
     onPreviewCameraX: (cameraX) => cameraX,
     onCommitCameraX: () => {},
-    onPreviewZoom: (zoomLevel) => ({ cameraX: 0, zoomLevel }),
+    onPreviewZoom: (zoomLevel) => {
+      recorded.zoomLevels.push(zoomLevel);
+      return { cameraX: 0, zoomLevel };
+    },
     onCommitZoom: () => {},
     onTrackHeightChange: (trackHeight) =>
       recorded.globalHeights.push(trackHeight),
@@ -116,6 +120,15 @@ describe("the global height keeps its own modifier", () => {
 
     expect(recorded.globalHeights).toEqual([88]);
     expect(recorded.rowSteps).toEqual([]);
+  });
+
+  it("ctrl + trackpad pinch zooms in the libretracks scheme", () => {
+    const { recorded, wheel } = setup({ navigationScheme: "libretracks" });
+
+    wheel({ deltaY: -5, deltaMode: 0, ctrlKey: true });
+
+    expect(recorded.zoomLevels[0]).toBeGreaterThan(1);
+    expect(recorded.globalHeights).toEqual([]);
   });
 
   it("alt + shift + wheel resizes every row in the ableton scheme", () => {

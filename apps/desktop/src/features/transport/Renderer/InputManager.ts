@@ -18,6 +18,12 @@ type NativeZoomView = {
 
 export type TimelineNavigationScheme = "ableton" | "libretracks";
 
+function isTrackpadPinchWheel(event: WheelEvent): boolean {
+  // Native pinch events are high-resolution pixel deltas; a discrete Ctrl+wheel
+  // notch remains the global track-height control in the LibreTracks scheme.
+  return event.deltaMode === 0 && event.deltaY !== 0 && Math.abs(event.deltaY) <= 10;
+}
+
 type InputManagerState = {
   cameraX: number;
   zoomLevel: number;
@@ -305,6 +311,14 @@ export class InputManager {
 
   private handleWheelLibreTracks(event: WheelEvent, state: InputManagerState) {
     if (event.ctrlKey || event.metaKey) {
+      if (isTrackpadPinchWheel(event)) {
+        if (!state.canZoom) {
+          event.preventDefault();
+          return;
+        }
+        this.applyZoomFromWheel(event, state);
+        return;
+      }
       event.preventDefault();
       this.applyGlobalTrackHeightStep(event, state);
       return;

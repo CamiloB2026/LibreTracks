@@ -178,6 +178,13 @@ describe("contrato responsive móvil", () => {
     expect(items).toContain("flex: 0 0 auto");
   });
 
+  it("mantiene la tabla de nivelación dentro del único scroll vertical del modal", () => {
+    const table = declarationsFor(".lt-mobile .lt-level-songs-table-wrap");
+
+    expect(table).toContain("max-height: none");
+    expect(table).toContain("overflow-x: auto");
+  });
+
   // La barra de acciones se apartaba 2.6rem del borde para dejar paso a la
   // barra de desplazamiento lateral... que en movil no se pinta. Eran 40 px de
   // timeline regalados a un control que no existe.

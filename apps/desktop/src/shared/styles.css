@@ -10807,6 +10807,11 @@ html.lt-ios body {
   overflow: hidden;
 }
 
+.lt-mobile .lt-level-songs-table-wrap {
+  max-height: none;
+  overflow-x: auto;
+}
+
 .lt-mobile .lt-settings-modal--fixed .lt-settings-modal-header {
   flex-direction: row;
   gap: 0.6rem;
