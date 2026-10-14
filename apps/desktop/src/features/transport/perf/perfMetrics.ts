@@ -723,8 +723,14 @@ function buildRecordingPayload() {
  * Returns a label describing what actually happened so the HUD button
  * can show a brief confirmation.
  */
-export async function downloadRecording(): Promise<string> {
-  const payload = buildRecordingPayload();
+type RecordingExtras = {
+  timelineWheelEvents?: unknown[];
+};
+
+export async function downloadRecording(
+  extra: RecordingExtras = {},
+): Promise<string> {
+  const payload = { ...buildRecordingPayload(), ...extra };
   const json = JSON.stringify(payload, null, 2);
 
   // Always log first — guaranteed to surface in DevTools and the user can

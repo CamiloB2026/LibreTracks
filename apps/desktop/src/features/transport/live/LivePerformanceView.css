@@ -822,7 +822,7 @@
   }
 
   .lt-live-cue-name-line em.is-vamp::after {
-    content: "VAMP";
+    content: "V";
     font: 700 7px/1 "Space Grotesk", sans-serif;
   }
 
@@ -837,6 +837,10 @@
     text-overflow: clip;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+
+  .lt-live-cue-progress {
+    transform: translateY(-0.2rem);
   }
 
   .lt-live-countdown-short {

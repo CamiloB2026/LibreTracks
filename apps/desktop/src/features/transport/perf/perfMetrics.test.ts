@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   isPerfHudEnabled,
+  downloadRecording,
   readPerfSnapshot,
   recordRender,
   recordSnapshotIpc,
@@ -16,6 +17,8 @@ import {
 afterEach(() => {
   stopPerfMetrics();
   window.localStorage.clear();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("perf HUD flag", () => {
@@ -40,6 +43,25 @@ describe("recording is a no-op until started", () => {
     const snap = readPerfSnapshot();
     expect(snap.renderCounts).toEqual([]);
     expect(snap.snapshotIpcEma).toBe(0);
+  });
+});
+
+describe("copying a performance recording", () => {
+  it("includes supplied timeline wheel diagnostics in the copied JSON", async () => {
+    const events = [{ deltaX: 0, deltaY: -4, ctrlKey: true }];
+    let copied = "";
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        writeText: async (value: string) => {
+          copied = value;
+        },
+      },
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    await downloadRecording({ timelineWheelEvents: events });
+
+    expect(JSON.parse(copied).timelineWheelEvents).toEqual(events);
   });
 });
 

@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from "vitest";
 
-import { InputManager, type TimelineNavigationScheme } from "./InputManager";
+import {
+  InputManager,
+  readLatestTimelineWheelDebugRecord,
+  readTimelineWheelDebugRecords,
+  setTimelineWheelDebugEnabled,
+  type TimelineNavigationScheme,
+} from "./InputManager";
 
 /**
  * Wheel gestures that change row height.
@@ -82,6 +88,7 @@ function setup(options: {
 }
 
 afterEach(() => {
+  setTimelineWheelDebugEnabled(false);
   for (const manager of managers.splice(0)) {
     manager.destroy();
   }
@@ -127,8 +134,43 @@ describe("the global height keeps its own modifier", () => {
 
     wheel({ deltaY: -5, deltaMode: 0, ctrlKey: true });
 
-    expect(recorded.zoomLevels[0]).toBeGreaterThan(1);
+    expect(recorded.zoomLevels[0]).toBeCloseTo(1.2 ** 0.2);
     expect(recorded.globalHeights).toEqual([]);
+  });
+
+  it("increases pinch sensitivity without changing conventional ctrl + wheel zoom in Ableton", () => {
+    const pinch = setup({ navigationScheme: "ableton" });
+    const largerPinch = setup({ navigationScheme: "ableton" });
+    const peakPinch = setup({ navigationScheme: "ableton" });
+    const wheelZoom = setup({ navigationScheme: "ableton" });
+
+    pinch.wheel({ deltaY: -5, deltaMode: 0, ctrlKey: true });
+    largerPinch.wheel({ deltaY: -25.6, deltaMode: 0, ctrlKey: true });
+    peakPinch.wheel({ deltaY: -35.5, deltaMode: 0, ctrlKey: true });
+    wheelZoom.wheel({ deltaY: -100, deltaMode: 0, ctrlKey: true });
+
+    expect(pinch.recorded.zoomLevels[0]).toBeCloseTo(1.2 ** 0.2);
+    expect(largerPinch.recorded.zoomLevels[0]).toBeCloseTo(1.2 ** 1.024);
+    expect(peakPinch.recorded.zoomLevels[0]).toBeCloseTo(1.2 ** 1.42);
+    expect(wheelZoom.recorded.zoomLevels[0]).toBeCloseTo(1.2);
+  });
+
+  it("records raw wheel metadata when touchpad diagnostics are enabled", () => {
+    setTimelineWheelDebugEnabled(true);
+    const { wheel } = setup({ navigationScheme: "libretracks" });
+
+    wheel({ deltaX: 0, deltaY: -5, deltaMode: 0, ctrlKey: true });
+
+    expect(readLatestTimelineWheelDebugRecord()).toMatchObject({
+      deltaY: -5,
+      deltaMode: 0,
+      ctrlKey: true,
+      navigationScheme: "libretracks",
+      zoomLevel: 1,
+      pinchLike: true,
+      target: "div",
+    });
+    expect(readTimelineWheelDebugRecords()).toHaveLength(1);
   });
 
   it("alt + shift + wheel resizes every row in the ableton scheme", () => {

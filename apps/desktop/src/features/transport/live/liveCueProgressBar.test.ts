@@ -79,7 +79,10 @@ describe("barra de progreso de la fila de marcas de la vista Live", () => {
     expect(mobileDeclaration(".lt-live-cue-warnings span", "white-space")).toBe("normal");
     expect(mobileDeclaration(".lt-live-cue-warnings span", "-webkit-line-clamp")).toBe("2");
     expect(mobileDeclaration(".lt-live-cue-name-line em.is-vamp", "font-size")).toBe("0");
-    expect(mobileDeclaration(".lt-live-cue-name-line em.is-vamp::after", "content")).toBe('"VAMP"');
+    expect(mobileDeclaration(".lt-live-cue-name-line em.is-vamp::after", "content")).toBe('"V"');
+    expect(mobileDeclaration(".lt-live-cue-progress", "transform")).toBe(
+      "translateY(-0.2rem)",
+    );
   });
 
   // El carril —el fondo sobre el que corre el relleno— tiene que verse entero,

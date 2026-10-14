@@ -182,7 +182,9 @@ describe("contrato responsive móvil", () => {
     const table = declarationsFor(".lt-mobile .lt-level-songs-table-wrap");
 
     expect(table).toContain("max-height: none");
+    expect(table).toContain("flex: 0 0 auto");
     expect(table).toContain("overflow-x: auto");
+    expect(table).toContain("overflow-y: hidden");
   });
 
   // La barra de acciones se apartaba 2.6rem del borde para dejar paso a la

@@ -19,6 +19,7 @@
         "minHeight": 640,
         "maximized": true,
         "dragDropEnabled": true,
+        "zoomHotkeysEnabled": true,
         "backgroundColor": "#131313"
       }
     ]

@@ -3,6 +3,12 @@ import { useEffect, useState } from "react";
 import type { TransportDriftSample } from "@libretracks/shared/models";
 import { useTransportStore } from "../store";
 import {
+  readLatestTimelineWheelDebugRecord,
+  readTimelineWheelDebugRecords,
+  setTimelineWheelDebugEnabled,
+  type TimelineWheelDebugRecord,
+} from "../Renderer/InputManager";
+import {
   clearRecording,
   downloadRecording,
   isPerfHudEnabled,
@@ -34,6 +40,9 @@ export function PerfHud() {
   const [enabled, setEnabled] = useState<boolean>(() => isPerfHudEnabled());
   const [snapshot, setSnapshot] = useState<PerfSnapshot | null>(null);
   const [drift, setDrift] = useState<TransportDriftSample | null>(null);
+  const [wheelDebug, setWheelDebug] = useState<TimelineWheelDebugRecord | null>(
+    () => readLatestTimelineWheelDebugRecord(),
+  );
   const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
 
   // Keybinding toggle. Lives at the window level so it works regardless of
@@ -49,6 +58,7 @@ export function PerfHud() {
         setEnabled((prev) => {
           const next = !prev;
           setPerfHudEnabled(next);
+          setTimelineWheelDebugEnabled(next);
           return next;
         });
       }
@@ -72,6 +82,7 @@ export function PerfHud() {
       // session afterwards (see Download button below).
       recordingTick();
       setSnapshot(readPerfSnapshot());
+      setWheelDebug(readLatestTimelineWheelDebugRecord());
       // Read, don't subscribe: the backend refreshes this only on play/seek/
       // jump, and the HUD is already on a 250ms tick. A store subscription
       // would re-render the HUD on every transport poll for a value that
@@ -262,6 +273,35 @@ export function PerfHud() {
 
       <div
         style={{
+          marginTop: 6,
+          paddingTop: 6,
+          borderTop: "1px solid rgba(255,255,255,0.12)",
+          overflowWrap: "anywhere",
+        }}
+      >
+        <div style={{ opacity: 0.6, marginBottom: 2 }}>timeline wheel</div>
+        {wheelDebug ? (
+          <>
+            <div>
+              {wheelDebug.navigationScheme} · Δx {wheelDebug.deltaX.toFixed(1)} · Δy{" "}
+              {wheelDebug.deltaY.toFixed(1)} · mode {wheelDebug.deltaMode}
+            </div>
+            <div>
+              Ctrl {wheelDebug.ctrlKey ? "1" : "0"} · Meta{" "}
+              {wheelDebug.metaKey ? "1" : "0"} · pinch-like{" "}
+              {wheelDebug.pinchLike ? "1" : "0"} · zoom{" "}
+                {wheelDebug.canZoom ? "on" : "off"} · level{" "}
+                {wheelDebug.zoomLevel.toFixed(3)}
+            </div>
+            <div title={wheelDebug.target}>{wheelDebug.target}</div>
+          </>
+        ) : (
+          <div>sin eventos recibidos</div>
+        )}
+      </div>
+
+      <div
+        style={{
           display: "flex",
           gap: 6,
           marginTop: 8,
@@ -278,7 +318,9 @@ export function PerfHud() {
             // brief HUD message so they aren't left wondering whether the
             // button did anything (the <a download> path silently no-ops
             // inside Tauri's webview).
-            const status = await downloadRecording();
+            const status = await downloadRecording({
+              timelineWheelEvents: readTimelineWheelDebugRecords(),
+            });
             setDownloadStatus(status);
             window.setTimeout(() => setDownloadStatus(null), 3500);
           }}
