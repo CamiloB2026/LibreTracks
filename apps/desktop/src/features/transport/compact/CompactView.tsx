@@ -324,6 +324,7 @@ function CompactViewComponent({
     onReorder: onReorderSong,
     disabled: resizingRegionId !== null,
   });
+  const canRenderSongReorder = Boolean(onReorderSong) && regionIds.length > 1;
 
   const handleAddSong = useCallback(async () => {
     try {
@@ -417,10 +418,10 @@ function CompactViewComponent({
             key={region.id}
             region={region}
             reorderHandleProps={
-              songReorder.enabled ? songReorder.handleProps : undefined
+              canRenderSongReorder ? songReorder.handleProps : undefined
             }
             reorderSurfaceProps={
-              songReorder.enabled ? songReorder.surfaceProps : undefined
+              canRenderSongReorder ? songReorder.surfaceProps : undefined
             }
             clips={clipsByRegion[region.id] ?? []}
             moveTargets={moveTargets}
@@ -741,6 +742,7 @@ function CompactSongColumnComponent({
     : null;
 
   return (
+    <>
     <div
       className={`lt-compact-song-column ${isActive ? "is-active" : ""} ${isQueued ? "is-queued" : ""} ${columnDensityClass(
         widthRem,
@@ -785,35 +787,6 @@ function CompactSongColumnComponent({
         onSelect={onSelect}
         reorderHandleProps={headerReorderHandleProps}
         reorderSurfaceProps={headerReorderSurfaceProps}
-        resizeHandle={
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label={`Ancho de la columna ${region.name}`}
-            aria-valuenow={Math.round(widthRem)}
-            aria-valuemin={COMPACT_COLUMN_MIN_WIDTH_REM}
-            aria-valuemax={COMPACT_COLUMN_MAX_WIDTH_REM}
-            tabIndex={0}
-            data-no-song-reorder=""
-            title={t("compactView.resizeColumn")}
-            className={
-              isResizing
-                ? "lt-compact-column-resizer is-resizing"
-                : "lt-compact-column-resizer"
-            }
-            onPointerDown={handleResizePointerDown}
-            onKeyDown={handleResizeKeyDown}
-            onDoubleClick={handleResizeDoubleClick}
-            onClick={(event) => event.stopPropagation()}
-          >
-            <span
-              className="lt-compact-column-resizer-icon material-symbols-outlined"
-              aria-hidden="true"
-            >
-              swap_horiz
-            </span>
-          </div>
-        }
       />
       <div
         className={
@@ -922,8 +895,37 @@ function CompactSongColumnComponent({
           </button>
         </div>
       ) : null}
-
     </div>
+    <div className="lt-compact-column-resize-slot">
+      <div
+        role="separator"
+        aria-orientation="vertical"
+        aria-label={`Ancho de la columna ${region.name}`}
+        aria-valuenow={Math.round(widthRem)}
+        aria-valuemin={COMPACT_COLUMN_MIN_WIDTH_REM}
+        aria-valuemax={COMPACT_COLUMN_MAX_WIDTH_REM}
+        tabIndex={0}
+        data-no-song-reorder=""
+        title={t("compactView.resizeColumn")}
+        className={
+          isResizing
+            ? "lt-compact-column-resizer is-resizing"
+            : "lt-compact-column-resizer"
+        }
+        onPointerDown={handleResizePointerDown}
+        onKeyDown={handleResizeKeyDown}
+        onDoubleClick={handleResizeDoubleClick}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <span
+          className="lt-compact-column-resizer-icon material-symbols-outlined"
+          aria-hidden="true"
+        >
+          drag_handle
+        </span>
+      </div>
+    </div>
+    </>
   );
 }
 

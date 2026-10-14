@@ -39,6 +39,7 @@ const region = {
   master: { gain: 1 },
   compactColumnWidthRem: null,
 };
+const secondRegion = { ...region, id: "song-2", name: "Otra" };
 
 const clip = {
   id: "clip-1",
@@ -47,13 +48,18 @@ const clip = {
   trackName: "Bateria",
 };
 
-function renderCompactView(onDeleteClip: () => void) {
+function renderCompactView(
+  onDeleteClip: () => void,
+  regions = [region],
+) {
   const props = {
-    regions: [region],
+    regions,
     tracks: [],
     activeRegionId: null,
     pendingRegionId: null,
-    clipsByRegion: { [region.id]: [clip] },
+    clipsByRegion: Object.fromEntries(
+      regions.map((item) => [item.id, item.id === region.id ? [clip] : []]),
+    ),
     audioRoutingOptions: [],
     mixerHandlers: {
       onToggleMute: vi.fn(),
@@ -86,6 +92,7 @@ function renderCompactView(onDeleteClip: () => void) {
     onDeleteSong: vi.fn(),
     onExportSong: vi.fn(),
     onSongColumnWidthChange: vi.fn(),
+    onReorderSong: vi.fn(),
     onSetSongKey: vi.fn(),
     bpmByRegion: {},
     onSnapshotApplied: vi.fn(),
@@ -94,7 +101,7 @@ function renderCompactView(onDeleteClip: () => void) {
     dragPreview: null,
   } satisfies ComponentProps<typeof CompactView>;
 
-  render(<CompactView {...props} />);
+  return render(<CompactView {...props} />);
 }
 
 function touchPointer(type: "pointerdown" | "pointerup", pointerId: number) {
@@ -127,14 +134,34 @@ describe("CompactView touch context menu", () => {
     expect(onDeleteClip).toHaveBeenCalledWith(clip.id);
   });
 
-  it("keeps the resize grip in the song header, beside the fader", () => {
+  it("places the resize grip in the gap after its song column", () => {
     renderCompactView(vi.fn());
     const resizeGrip = screen.getByRole("separator", {
       name: "Ancho de la columna Cancion",
     });
+    const resizeSlot = resizeGrip.parentElement;
 
-    expect(resizeGrip.closest(".lt-compact-song-master")).not.toBeNull();
+    expect(resizeSlot?.classList.contains("lt-compact-column-resize-slot")).toBe(true);
+    expect(resizeSlot?.previousElementSibling?.classList.contains("lt-compact-song-column")).toBe(true);
+    expect(resizeGrip.closest(".lt-compact-song-header")).toBeNull();
     expect(resizeGrip.querySelector(".lt-compact-column-resizer-icon")?.textContent)
-      .toBe("swap_horiz");
+      .toBe("drag_handle");
+  });
+
+  it("keeps reorder grips mounted while a column is being resized", () => {
+    const { container } = renderCompactView(vi.fn(), [region, secondRegion]);
+    const reorderGrips = () =>
+      container.querySelectorAll(".lt-song-reorder-handle");
+    expect(reorderGrips()).toHaveLength(2);
+
+    fireEvent(
+      screen.getByRole("separator", {
+        name: "Ancho de la columna Cancion",
+      }),
+      touchPointer("pointerdown", 21),
+    );
+
+    expect(reorderGrips()).toHaveLength(2);
+    fireEvent(window, touchPointer("pointerup", 21));
   });
 });

@@ -20,6 +20,16 @@
   pointer-events: none;
 }
 
+.lt-compact-song-column.lt-reorder-ghost {
+  opacity: 0.62;
+}
+
+.lt-compact-song-column.lt-reorder-ghost .lt-song-reorder-handle,
+.lt-drag-lift .lt-song-reorder-handle {
+  color: #57f1db;
+  opacity: 1;
+}
+
 /* Va a quedar dentro de una carpeta plegada: no se verá. */
 .lt-reorder-hidden {
   opacity: 0;
