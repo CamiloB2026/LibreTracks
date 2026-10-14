@@ -159,6 +159,8 @@ mod tests {
         assert!(!role_allows(Role::Controller, ProxyAccess::Edit));
         assert!(role_allows(Role::Editor, ProxyAccess::Edit));
         assert!(!role_allows(Role::Viewer, ProxyAccess::Custom));
+        assert!(role_allows(Role::Controller, ProxyAccess::Custom));
+        assert!(role_allows(Role::Editor, ProxyAccess::Custom));
     }
 
     #[test]
