@@ -81,4 +81,28 @@ describe("App / settings", () => {
       ),
     );
   });
+
+  it("saves live jump settings through the host in guest mirror mode", async () => {
+    const desktopApi = await import("../features/transport/desktopApi");
+    const sharedDesktopApi = await import("@libretracks/shared/desktopApi");
+    const updateSpy = vi.mocked(desktopApi.updateAudioSettings);
+    const saveSpy = vi.mocked(desktopApi.saveSettings);
+    updateSpy.mockClear();
+    saveSpy.mockClear();
+    sharedDesktopApi.setGuestMirrorMode(true);
+
+    try {
+      await renderApp();
+      await chooseMarkerJumpMode(en.transport.jumpMode.nextMarker);
+
+      await waitFor(() =>
+        expect(saveSpy).toHaveBeenCalledWith(
+          expect.objectContaining({ globalJumpMode: "next_marker" }),
+        ),
+      );
+      expect(updateSpy).not.toHaveBeenCalled();
+    } finally {
+      sharedDesktopApi.setGuestMirrorMode(false);
+    }
+  });
 });

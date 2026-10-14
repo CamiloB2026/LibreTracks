@@ -2011,9 +2011,9 @@ export function TransportPanelContent() {
 
       void runAction(async () => {
         try {
-          const liveSettings = normalizeAppSettings(
-            await updateAudioSettings(normalizedSettings),
-          );
+          const liveSettings = isGuestMirrorMode()
+            ? normalizedSettings
+            : normalizeAppSettings(await updateAudioSettings(normalizedSettings));
           const savedSettings = normalizeAppSettings(
             await saveSettings(liveSettings),
           );
