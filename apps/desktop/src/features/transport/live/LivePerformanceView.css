@@ -282,6 +282,12 @@
   scrollbar-color: rgb(87 241 219 / 0.25) transparent;
 }
 
+/* Without lyrics, keep the cards wider instead of filling the extra space
+   with another column; names, vamp badges and marker times stay distinct. */
+.lt-live-view:not(.has-chart) .lt-live-cue-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 27rem), 1fr));
+}
+
 .lt-live-cue-row {
   --lt-live-marker-color: #bacac5;
   position: relative;
@@ -852,6 +858,10 @@
     grid-auto-rows: 3.65rem;
     gap: 0.22rem;
     padding: 0.12rem 0.25rem 0.25rem;
+  }
+
+  .lt-live-view:not(.has-chart) .lt-live-cue-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 10.5rem), 1fr));
   }
 
   .lt-live-cue-row {

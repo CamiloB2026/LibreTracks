@@ -40,6 +40,12 @@ describe("colores de las marcas en la vista Live", () => {
     expect(rule(".lt-live-cue-row.is-pending")).not.toContain("background");
   });
 
+  it("al ocultar letras deja las tarjetas mas anchas en escritorio", () => {
+    expect(rule(".lt-live-view:not(.has-chart) .lt-live-cue-grid")).toContain(
+      "min(100%, 27rem)",
+    );
+  });
+
   it("no usa color-mix(), que Safari 15 no soporta", () => {
     // Sin comentarios: el propio CSS explica por qué no lo usa.
     const code = css.replace(/\/\*[\s\S]*?\*\//g, "");
