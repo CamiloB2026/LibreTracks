@@ -5,6 +5,7 @@ import {
   COMPACT_COLUMN_MAX_WIDTH_REM,
   COMPACT_COLUMN_MIN_WIDTH_REM,
 } from "@libretracks/shared/models";
+import { getUiZoom } from "../../../shared/uiZoom";
 
 /** Pixels per rem, read from the document root so the drag maps 1:1 with the
  * pointer even when the user has changed the browser/app font size. Falls back
@@ -181,10 +182,8 @@ type UseColumnResizeOptions = {
   /** Whether the header renders the BPM / key badges, which take room from the
    * title and so widen the auto-fit. */
   hasBadges: boolean;
-  /** Commits the width to the project. Called ONCE on pointer-up, never
-   * during the drag: every commit round-trips through the Tauri command and
-   * rewrites the session, which at 60fps would hammer the backend and flood
-   * undo history with a hundred intermediate widths. `null` restores the
+  /** Commits the width to the project. Called once at the end of a drag or
+   * keyboard adjustment, never during pointer movement. `null` restores the
    * default width (double-click on the handle). */
   onCommit: (widthRem: number | null) => void;
 };
@@ -206,6 +205,10 @@ export function useColumnResize({
 }: UseColumnResizeOptions) {
   const [isResizing, setIsResizing] = useState(false);
   const [draftWidthRem, setDraftWidthRem] = useState<number | null>(null);
+  const [committedWidth, setCommittedWidth] = useState<{
+    widthRem: number | null;
+    persistedWidthRem: number | null | undefined;
+  } | null>(null);
 
   // Live drag bookkeeping. Refs, not state: these change on every pointermove
   // and nothing renders off them directly.
@@ -224,6 +227,14 @@ export function useColumnResize({
   useEffect(() => {
     onCommitRef.current = onCommit;
   }, [onCommit]);
+
+  const commitWidth = useCallback(
+    (widthRem: number | null) => {
+      setCommittedWidth({ widthRem, persistedWidthRem });
+      onCommitRef.current(widthRem);
+    },
+    [persistedWidthRem],
+  );
 
   // Web fonts load asynchronously, and a canvas measurement taken before
   // "Space Grotesk" is ready silently uses the fallback face — which is wider,
@@ -254,10 +265,16 @@ export function useColumnResize({
     [songName, hasBadges, fontsRevision],
   );
 
+  const hasCurrentCommit =
+    committedWidth !== null &&
+    committedWidth.persistedWidthRem === persistedWidthRem;
+  const settledWidthRem = hasCurrentCommit
+    ? resolveColumnWidthRem(committedWidth.widthRem, autoWidthRem)
+    : resolveColumnWidthRem(persistedWidthRem, autoWidthRem);
   const widthRem =
     isResizing && draftWidthRem !== null
       ? draftWidthRem
-      : resolveColumnWidthRem(persistedWidthRem, autoWidthRem);
+      : settledWidthRem;
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLElement>) => {
@@ -267,23 +284,17 @@ export function useColumnResize({
       event.preventDefault();
       event.stopPropagation();
 
-      // Start from what is on screen (auto-fit included), so grabbing the
-      // handle never makes the column jump before the pointer has moved.
-      const startWidthRem = resolveColumnWidthRem(
-        persistedWidthRem,
-        autoWidthRem,
-      );
       dragRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
-        startWidthRem,
-        pxPerRem: rootFontSizePx(),
-        latestWidthRem: startWidthRem,
+        startWidthRem: widthRem,
+        pxPerRem: rootFontSizePx() * getUiZoom(),
+        latestWidthRem: widthRem,
       };
-      setDraftWidthRem(startWidthRem);
+      setDraftWidthRem(widthRem);
       setIsResizing(true);
     },
-    [persistedWidthRem, autoWidthRem],
+    [widthRem],
   );
 
   // Window-level listeners so the drag survives the pointer leaving the
@@ -303,6 +314,12 @@ export function useColumnResize({
     const finish = (event: PointerEvent) => {
       const drag = dragRef.current;
       if (!drag || event.pointerId !== drag.pointerId) return;
+      if (event.type === "pointerup") {
+        drag.latestWidthRem = clampColumnWidthRem(
+          drag.startWidthRem +
+            (event.clientX - drag.startX) / drag.pxPerRem,
+        );
+      }
       const committed = drag.latestWidthRem;
       dragRef.current = null;
       setIsResizing(false);
@@ -310,7 +327,7 @@ export function useColumnResize({
       // Only write when the width actually moved, so a stray click on the
       // handle doesn't push a no-op edit onto the undo stack.
       if (Math.abs(committed - drag.startWidthRem) > 0.01) {
-        onCommitRef.current(committed);
+        commitWidth(committed);
       }
     };
 
@@ -332,7 +349,7 @@ export function useColumnResize({
       window.removeEventListener("pointercancel", finish);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [isResizing]);
+  }, [commitWidth, isResizing]);
 
   /** Keyboard resize for the handle: arrows nudge, Shift+arrows jump. Keeps
    * the affordance reachable without a pointer. */
@@ -344,13 +361,12 @@ export function useColumnResize({
       else if (event.key === "ArrowRight") delta = step;
       else return;
       event.preventDefault();
-      const current = resolveColumnWidthRem(persistedWidthRem, autoWidthRem);
-      const next = clampColumnWidthRem(current + delta);
-      if (next !== current) {
-        onCommitRef.current(next);
+      const next = clampColumnWidthRem(widthRem + delta);
+      if (next !== widthRem) {
+        commitWidth(next);
       }
     },
-    [persistedWidthRem, autoWidthRem],
+    [commitWidth, widthRem],
   );
 
   /** Double-click the handle → back to the default width, like resetting a
@@ -360,9 +376,9 @@ export function useColumnResize({
     (event: React.MouseEvent<HTMLElement>) => {
       event.preventDefault();
       event.stopPropagation();
-      onCommitRef.current(null);
+      commitWidth(null);
     },
-    [],
+    [commitWidth],
   );
 
   return {

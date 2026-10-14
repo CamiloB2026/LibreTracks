@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   COMPACT_COLUMN_DEFAULT_WIDTH_REM,
@@ -15,7 +17,36 @@ import {
   COMPACT_COLUMN_NARROW_WIDTH_REM,
   COMPACT_COLUMN_VERY_NARROW_WIDTH_REM,
   resolveColumnWidthRem,
+  useColumnResize,
 } from "./useColumnResize";
+import { getUiZoom, setUiZoom } from "../../../shared/uiZoom";
+
+function ResizeHarness({ onCommit }: { onCommit: (widthRem: number | null) => void }) {
+  const resize = useColumnResize({
+    persistedWidthRem: null,
+    songName: "Song 1",
+    hasBadges: false,
+    onCommit,
+  });
+  return createElement(
+    "div",
+    null,
+    createElement("output", { "data-testid": "width" }, resize.widthRem),
+    createElement("button", {
+      "data-testid": "handle",
+      onPointerDown: resize.handlePointerDown,
+    }),
+  );
+}
+
+function touchPointer(type: "pointerdown" | "pointerup", pointerId: number, clientX: number) {
+  const event = new MouseEvent(type, { bubbles: true, button: 0, clientX });
+  Object.defineProperties(event, {
+    pointerType: { value: "touch" },
+    pointerId: { value: pointerId },
+  });
+  return event;
+}
 
 describe("clampColumnWidthRem", () => {
   it("keeps a width inside the supported range", () => {
@@ -43,6 +74,43 @@ describe("clampColumnWidthRem", () => {
     );
     expect(clampColumnWidthRem(Number.POSITIVE_INFINITY)).toBe(
       COMPACT_COLUMN_DEFAULT_WIDTH_REM,
+    );
+  });
+});
+
+describe("useColumnResize pointer commit", () => {
+  let previousZoom = 1;
+
+  beforeEach(() => {
+    previousZoom = getUiZoom();
+  });
+
+  afterEach(() => {
+    setUiZoom(previousZoom);
+  });
+
+  it("uses the interface zoom and keeps the release position while saving", () => {
+    setUiZoom(0.8);
+    const onCommit = vi.fn();
+    render(createElement(ResizeHarness, { onCommit }));
+    const startingWidth = Number(screen.getByTestId("width").textContent);
+    const measuredRootFontSize = Number.parseFloat(
+      getComputedStyle(document.documentElement).fontSize,
+    );
+    const pxPerRem =
+      (Number.isFinite(measuredRootFontSize) && measuredRootFontSize > 0
+        ? measuredRootFontSize
+        : 16) * getUiZoom();
+
+    fireEvent(screen.getByTestId("handle"), touchPointer("pointerdown", 1, 100));
+    act(() => {
+      window.dispatchEvent(touchPointer("pointerup", 1, 200));
+    });
+
+    const expectedWidth = clampColumnWidthRem(startingWidth + 100 / pxPerRem);
+    expect(onCommit).toHaveBeenCalledWith(expectedWidth);
+    expect(Number(screen.getByTestId("width").textContent)).toBeCloseTo(
+      expectedWidth,
     );
   });
 });

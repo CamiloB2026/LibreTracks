@@ -915,7 +915,14 @@ function CompactSongColumnComponent({
         onPointerDown={handleResizePointerDown}
         onKeyDown={handleResizeKeyDown}
         onDoubleClick={handleResizeDoubleClick}
-      />
+      >
+        <span
+          className="lt-compact-column-resizer-icon material-symbols-outlined"
+          aria-hidden="true"
+        >
+          swap_horiz
+        </span>
+      </div>
     </div>
   );
 }
