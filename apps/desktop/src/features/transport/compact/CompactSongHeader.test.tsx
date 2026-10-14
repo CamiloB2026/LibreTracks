@@ -58,6 +58,7 @@ describe("CompactSongHeader", () => {
   it("el selector de nota tiene atras y vuelve al menu raiz", () => {
     const { container } = render(renderHeader(false));
     fireEvent.contextMenu(container.firstElementChild!);
+    expect(screen.queryByText("transport.menu.levelSongs")).toBeNull();
     fireEvent.click(screen.getByText("compactView.songKey ▸"));
     expect(screen.getByText(/Sin nota/)).toBeTruthy();
 
