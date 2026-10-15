@@ -72,6 +72,25 @@ public:
                 const Session* session,
                 const int* active_output_channels = nullptr,
                 int active_output_channel_count = 0) noexcept;
+    // Same, with the song whose tempo map drives the clicks given explicitly
+    // instead of looked up from `timeline_frame`. The "vamp between songs"
+    // keeps clicking the song that just ended at frames past its end, which
+    // the lookup would hand to the next song.
+    void render_song(float** output_channels,
+                     int num_channels,
+                     int num_frames,
+                     double sample_rate,
+                     Frame timeline_frame,
+                     const Song* song,
+                     const int* active_output_channels = nullptr,
+                     int active_output_channel_count = 0) noexcept;
+
+    // Copies into `out` the timing that drives the click at `frame` (tempo,
+    // meter and the start of their grid) as a song without a tempo map.
+    // Scalars only: `out`'s vectors are never touched, so it is safe on the
+    // audio thread. Feeding `out` to render_song() keeps clicking in phase
+    // with that song for as long as needed, past its end.
+    static void freeze_timing_at(const Session* session, Frame frame, Song& out) noexcept;
 
     MetronomeDiagnostics diagnostics() const;
 

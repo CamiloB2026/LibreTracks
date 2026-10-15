@@ -274,6 +274,13 @@ export function createSettingsHandlers(deps: SettingsHandlerDeps) {
       );
     },
 
+    handleVampBetweenSongsChange(nextValue: boolean) {
+      persistAudioPatch(
+        { vampBetweenSongs: nextValue },
+        t("transport.status.vampBetweenSongsUpdated"),
+      );
+    },
+
     handleFadeOutStopSecondsChange(nextValue: number) {
       // normalizeAppSettings clamps to 0.1–30 s, so a cleared input is safe.
       persistAudioPatch(

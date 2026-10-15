@@ -98,6 +98,7 @@ type SettingsPanelProps = {
     value: AppSettings["timelinePlayheadFollowMode"],
   ) => void;
   onPauseAtSongEndChange: (value: boolean) => void;
+  onVampBetweenSongsChange: (value: boolean) => void;
   onFadeOutStopSecondsChange: (value: number) => void;
   onImportMergeMatchingTracksChange: (value: boolean) => void;
   onReferenceImportedAudioChange: (value: boolean) => void;
@@ -167,6 +168,7 @@ export function SettingsPanel({
   onTimelineNavigationSchemeChange,
   onTimelinePlayheadFollowModeChange,
   onPauseAtSongEndChange,
+  onVampBetweenSongsChange,
   onFadeOutStopSecondsChange,
   onImportMergeMatchingTracksChange,
   onReferenceImportedAudioChange,
@@ -761,6 +763,21 @@ export function SettingsPanel({
                               "Playback stops when a song ends instead of rolling straight into the next one. Press Play to start the next song. A song jump you queued still happens.",
                           })}
                         </small>
+                      </span>
+                    </label>
+
+                    <label className="lt-settings-toggle">
+                      <input
+                        type="checkbox"
+                        checked={appSettings.vampBetweenSongs}
+                        disabled={isLoading || isSaving}
+                        onChange={(event) =>
+                          onVampBetweenSongsChange(event.target.checked)
+                        }
+                      />
+                      <span className="lt-settings-toggle-copy">
+                        <span>{t("transport.settingsModal.vampBetweenSongs")}</span>
+                        <small>{t("transport.settingsModal.vampBetweenSongsHint")}</small>
                       </span>
                     </label>
 

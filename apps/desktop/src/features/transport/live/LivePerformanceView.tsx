@@ -36,6 +36,7 @@ import {
 } from "./useLiveProgressBars";
 import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import { LiveChartPanel } from "../charts/LiveChartPanel";
+import { SongGapVampToggle } from "./SongGapVampToggle";
 import { SongReorderHandle } from "../songs/SongReorderHandle";
 import {
   SONG_REORDER_ID_ATTRIBUTE,
@@ -94,6 +95,10 @@ type LivePerformanceViewProps = {
   onSongTransitionModeChange: (mode: AppSettings["songTransitionMode"]) => void;
   onVampModeChange: (mode: AppSettings["vampMode"]) => void;
   onVampBarsChange: (bars: number) => void;
+  /** The vamp between songs setting; the toggle shows only with a handler
+   * (not on a network-session guest, which has no settings of its own). */
+  vampBetweenSongs?: boolean;
+  onVampBetweenSongsChange?: (enabled: boolean) => void;
 };
 
 const CHART_OPEN_KEY = "lt.liveView.chartOpen";
@@ -197,6 +202,8 @@ function LivePerformanceViewComponent({
   onSongJumpBarsChange,
   onSongTransitionModeChange,
   onVampModeChange,
+  vampBetweenSongs = false,
+  onVampBetweenSongsChange,
   onVampBarsChange,
 }: LivePerformanceViewProps) {
   const { t } = useTranslation();
@@ -508,9 +515,17 @@ function LivePerformanceViewComponent({
           bars={settings.vampMode === "bars" ? settings.vampBars : undefined}
           onBarsChange={onVampBarsChange}
           action={(
-            <button type="button" className={`lt-live-vamp${isVampActive ? " is-active" : ""}`} aria-pressed={isVampActive} onClick={(event) => { event.preventDefault(); onToggleVamp(); }}>
-              VAMP
-            </button>
+            <span className="lt-live-vamp-actions">
+              {onVampBetweenSongsChange ? (
+                <SongGapVampToggle
+                  enabled={vampBetweenSongs}
+                  onChange={onVampBetweenSongsChange}
+                />
+              ) : null}
+              <button type="button" className={`lt-live-vamp${isVampActive ? " is-active" : ""}`} aria-pressed={isVampActive} onClick={(event) => { event.preventDefault(); onToggleVamp(); }}>
+                VAMP
+              </button>
+            </span>
           )}
         />
       </section>

@@ -1,0 +1,56 @@
+/* Same box as the live VAMP button, so the two read as a pair. */
+.lt-song-gap-vamp {
+  min-height: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.45rem;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 0.3rem;
+  color: #82908c;
+  background: #171a19;
+  font: 750 9px/1 "Space Grotesk", sans-serif;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.lt-song-gap-vamp .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.lt-song-gap-vamp.is-active {
+  border-color: rgb(87 241 219 / 0.4);
+  color: #62f2dc;
+  background: rgb(87 241 219 / 0.12);
+}
+
+/* Holding between songs: the transport looks paused, so say why. */
+.lt-song-gap-vamp.is-holding {
+  border-color: rgb(244 201 93 / 0.75);
+  color: #f4c95d;
+  background: rgb(244 201 93 / 0.14);
+  animation: lt-song-gap-vamp-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes lt-song-gap-vamp-pulse {
+  50% {
+    box-shadow: 0 0 10px rgb(244 201 93 / 0.35);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-song-gap-vamp.is-holding {
+    animation: none;
+  }
+}
+
+@media (max-width: 820px), (max-height: 500px) {
+  .lt-song-gap-vamp {
+    padding-inline: 0.3rem;
+    font-size: 7px;
+  }
+
+  .lt-song-gap-vamp .material-symbols-outlined {
+    font-size: 12px;
+  }
+}

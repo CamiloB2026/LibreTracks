@@ -206,6 +206,13 @@
   font: 750 9px/1 "Space Grotesk", sans-serif;
 }
 
+.lt-live-vamp-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 .lt-live-vamp.is-active {
   border-color: rgb(87 241 219 / 0.4);
   color: #62f2dc;
@@ -751,10 +758,6 @@
     display: none;
   }
 
-  .lt-live-view.has-chart {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .lt-live-heading > .material-symbols-outlined,
   .lt-live-heading small,
   .lt-live-song-metrics span:first-child {
@@ -814,13 +817,22 @@
 
   /* Name and badge on one line: a badge dropping below made the rows of the
      playing and next markers taller than the others. */
+  /* nowrap made the badges overflow the name column and land on the marker
+     time (the vamp "V" sat on top of "0:12"): clip at the column edge. */
   .lt-live-cue-name-line {
     flex-wrap: nowrap;
+    overflow: hidden;
   }
 
   .lt-live-cue-name-line strong {
     flex: 0 1 auto;
     min-width: 2.5rem;
+  }
+
+  /* The playing marker already shows it with its border; when it also carries
+     the vamp badge, AHORA gives up its room so the V fits beside the name. */
+  .lt-live-cue-row.is-vamp .lt-live-cue-name-line em.is-now {
+    display: none;
   }
 
   .lt-live-cue-name-line em.is-vamp {
@@ -904,6 +916,13 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto auto minmax(10rem, 1fr) minmax(14rem, 1.4fr);
     grid-template-areas: "header" "settings" "cues" "chart";
+  }
+
+  /* Same specificity as the rule above: restated after it so the expanded
+     lyrics keep the whole screen. */
+  .lt-live-view.is-chart-expanded {
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: "header" "chart";
   }
 
   .lt-live-settings {

@@ -921,7 +921,7 @@ function CompactSongColumnComponent({
           className="lt-compact-column-resizer-icon material-symbols-outlined"
           aria-hidden="true"
         >
-          drag_handle
+          width
         </span>
       </div>
     </div>

@@ -537,6 +537,9 @@ const en = {
         "Each new track takes a colour from the palette, cycling through it in order, so you can tell them apart at a glance. Turn it off if you prefer colouring by hand. It never repaints tracks you already have.",
       importMergeMatchingTracks: "Merge tracks with the same name on import",
       pauseAtSongEnd: "Pause at the end of each song",
+      vampBetweenSongs: "Vamp between songs (click and pad)",
+      vampBetweenSongsHint:
+        "When each song ends it waits, as with the pause, but the click keeps going at the ended song's tempo and the pad keeps sounding for as long as needed. Press Play to start the next song; Stop ends the click.",
       classicLibrary: "Use the classic library",
       classicLibraryHint:
         "The library shows only the audio imported into the session, with its own folders, instead of the folders of your disk.",
@@ -703,6 +706,8 @@ const en = {
       apply_other: "Apply to {{count}} songs",
       applied_one: "Master adjusted on {{count}} song. Undo with Ctrl+Z.",
       applied_other: "Master adjusted on {{count}} songs. Undo with Ctrl+Z.",
+      appliedMobile_one: "Master adjusted on {{count}} song. Undo it with the Undo button.",
+      appliedMobile_other: "Master adjusted on {{count}} songs. Undo it with the Undo button.",
       cancel: "Cancel",
       close: "Close",
     },
@@ -1168,6 +1173,7 @@ const en = {
       timelinePlayheadFollowModeUpdated: "Playhead follow mode updated.",
       importMergeMatchingTracksUpdated: "Import track behaviour updated.",
       pauseAtSongEndUpdated: "Pause at song end updated.",
+      vampBetweenSongsUpdated: "Vamp between songs updated.",
       fadeOutStopUpdated: "Fade out length updated.",
       midiSettingsUpdated: "MIDI settings updated.",
       referenceImportedAudioUpdated: "Audio import behaviour updated.",
@@ -2189,6 +2195,13 @@ const en = {
       profileDomain: "domain",
       profileNone: "none",
     },
+  },
+  songGapVamp: {
+    label: "Between songs",
+    title:
+      "Vamp between songs: when each song ends the click keeps going at its tempo and the pad keeps sounding until you press Play for the next one.",
+    holding:
+      "Vamp between songs is sounding: press Play to start the next song, or Stop to end the click.",
   },
   liveView: {
     title: "Live View",

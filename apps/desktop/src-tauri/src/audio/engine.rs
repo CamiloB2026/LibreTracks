@@ -2100,6 +2100,9 @@ impl AudioController {
             engine.send_command(&EngineCommand::SetPauseAtSongEnd {
                 enabled: settings.pause_at_song_end,
             })?;
+            engine.send_command(&EngineCommand::SetSongGapVamp {
+                enabled: settings.vamp_between_songs,
+            })?;
             state.settings = settings;
             Ok(())
         })
@@ -2114,6 +2117,14 @@ impl AudioController {
                 elapsed_ms: 0.0,
                 stopped_sinks: 1,
             });
+            Ok(())
+        })
+    }
+
+    /// Silence a holding vamp between songs without playing (user Pause/Stop).
+    pub fn end_song_gap_vamp(&self) -> Result<(), DesktopError> {
+        self.with_engine_state("end_song_gap_vamp", None, |engine, _state| {
+            engine.send_command(&EngineCommand::EndSongGapVamp)?;
             Ok(())
         })
     }
@@ -2596,7 +2607,12 @@ impl AudioController {
             }
             let playing = matches!(snapshot.playback_state, PlaybackState::Playing);
             let suspended = snapshot.device.output_suspended;
-            let idle = !playing && !snapshot.transport_pending_start && !snapshot.pad.enabled;
+            // A vamp between songs is the transport paused on purpose with the
+            // click still going: not idle.
+            let idle = !playing
+                && !snapshot.transport_pending_start
+                && !snapshot.pad.enabled
+                && !snapshot.pitch.mixer_song_gap_vamp_active;
             tick.idle_wake = wake_policy.step(SystemTime::now(), away, idle);
             let request = match idle_policy.step(Instant::now(), backgrounded, idle, suspended) {
                 SuspendAction::None => None,

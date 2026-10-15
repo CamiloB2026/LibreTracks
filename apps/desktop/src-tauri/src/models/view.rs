@@ -42,6 +42,9 @@ pub struct TransportSnapshot {
     pub mix_revision: u64,
     /// A «Fade out y parar» is running: the UI lights its button.
     pub fading_to_stop: bool,
+    /// The vamp between songs is holding: paused on a song end with the click
+    /// still going until Play.
+    pub song_gap_vamp: bool,
     pub song_dir: Option<String>,
     pub song_file_path: Option<String>,
     pub is_native_runtime: bool,

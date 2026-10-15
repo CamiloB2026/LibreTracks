@@ -482,6 +482,12 @@ EngineCommand command_from_json(const std::string& raw) {
     if (type == "SetPauseAtSongEnd")
         return CmdSetPauseAtSongEnd{ j.at("enabled").get<bool>() };
 
+    if (type == "SetSongGapVamp")
+        return CmdSetSongGapVamp{ j.at("enabled").get<bool>() };
+
+    if (type == "EndSongGapVamp")
+        return CmdEndSongGapVamp{};
+
     if (type == "SetLowLatency")
         return CmdSetLowLatency{ j.at("enabled").get<bool>() };
 
@@ -567,6 +573,13 @@ std::string command_to_json(const EngineCommand& cmd) {
         else if constexpr (std::is_same_v<T, CmdSetPauseAtSongEnd>) {
             j["type"] = "SetPauseAtSongEnd";
             j["enabled"] = c.enabled;
+        }
+        else if constexpr (std::is_same_v<T, CmdSetSongGapVamp>) {
+            j["type"] = "SetSongGapVamp";
+            j["enabled"] = c.enabled;
+        }
+        else if constexpr (std::is_same_v<T, CmdEndSongGapVamp>) {
+            j["type"] = "EndSongGapVamp";
         }
         else if constexpr (std::is_same_v<T, CmdLoadPadClip>) {
             j["type"] = "LoadPadClip";

@@ -920,6 +920,7 @@ void Mixer::render_timeline_span(float** output_channels,
                                        output_offset, session.get(), timeline_frame);
     // Same for the jump transition fade: the song fades, the cues do not.
     apply_master_fade_to_tracks(output_channels, num_channels, num_frames, output_offset);
+    capture_region_track_peaks(output_channels, num_channels, num_frames, output_offset);
 
     std::array<float*, 64> shifted_channels{};
     float** metronome_channels = output_channels;
@@ -1000,6 +1001,9 @@ void Mixer::render(float** output_channels,
     begin_master_fade_block();
 
     bool fade_processed_in_split = false;
+    // Where in this block the vamp between songs starts clicking: 0 while it
+    // holds, or the song-end frame in the block that just entered it.
+    int song_gap_vamp_offset = 0;
     if (due_jump) {
         const Frame block_start = clock_->position().frame;
         const int pre_frames = static_cast<int>(std::clamp<Frame>(
@@ -1106,6 +1110,16 @@ void Mixer::render(float** output_channels,
         clock_->pause();
         song_end_pause_count_.fetch_add(1, std::memory_order_relaxed);
         fade_.trigger_crossfade();
+        if (song_gap_vamp_enabled_.load(std::memory_order_relaxed)) {
+            // Freeze the click of the song that just ended (its last frame,
+            // so a tempo change on the next song's first frame is not taken)
+            // and keep it running from the end frame on.
+            MetronomeRenderer::freeze_timing_at(session.get(), *pause_frame - 1,
+                                                song_gap_vamp_timing_);
+            song_gap_vamp_frame_ = *pause_frame;
+            song_gap_vamp_offset = pre_frames;
+            song_gap_vamp_active_.store(true, std::memory_order_release);
+        }
 
         const int post_frames = num_frames - pre_frames;
         std::array<float*, 64> shifted_channels{};
@@ -1386,6 +1400,8 @@ void Mixer::render(float** output_channels,
         // Same for the jump transition fade: the song fades, the cues do not.
         apply_master_fade_to_tracks(output_channels, num_channels, num_frames,
                                     /*output_offset=*/0);
+        capture_region_track_peaks(output_channels, num_channels, num_frames,
+                                   /*output_offset=*/0);
 
         metronome_.render(output_channels, num_channels, num_frames,
                           clock_->sample_rate(), timeline_frame, session.get(),
@@ -1412,7 +1428,20 @@ void Mixer::render(float** output_channels,
     // …unless the user opted into "stop with playback", in which case the pad
     // follows the transport through a gate instead of its enabled switch, so it
     // fades out on stop/pause and returns on play with the switch still on.
-    pad_.set_transport_gate(!pad_.stop_with_transport() ||
+    // The vamp between songs: the transport is parked on the next song's first
+    // frame, the click of the song that ended keeps going until Play.
+    bool song_gap_vamp_holding = false;
+    if (song_gap_vamp_active_.load(std::memory_order_acquire)) {
+        if (clock_->position().state == TransportState::Playing) {
+            song_gap_vamp_active_.store(false, std::memory_order_release);
+        } else {
+            song_gap_vamp_holding = true;
+            render_song_gap_vamp(output_channels, num_channels,
+                                 num_frames - song_gap_vamp_offset, song_gap_vamp_offset);
+        }
+    }
+
+    pad_.set_transport_gate(!pad_.stop_with_transport() || song_gap_vamp_holding ||
                             clock_->position().state == TransportState::Playing);
     pad_.render(output_channels, num_channels, num_frames, clock_->sample_rate(),
                 render_output_channels_.data(), render_output_channel_count_);
@@ -1429,8 +1458,7 @@ void Mixer::render(float** output_channels,
     end_master_fade_block(num_frames);
     apply_output_limiter(output_channels, num_channels, num_frames);
 
-    update_region_meters(output_channels, num_channels, num_frames,
-                         session.get(), timeline_frame);
+    update_region_meters(num_frames, session.get(), timeline_frame);
 
     // Peak meters.
     float peak_l = 0.f, peak_r = 0.f;
@@ -1546,9 +1574,46 @@ void Mixer::set_pause_at_song_end(bool enabled) noexcept {
     pause_at_song_end_.store(enabled, std::memory_order_relaxed);
 }
 
+void Mixer::set_song_gap_vamp(bool enabled) noexcept {
+    song_gap_vamp_enabled_.store(enabled, std::memory_order_relaxed);
+    if (!enabled)
+        end_song_gap_vamp();
+}
+
+void Mixer::end_song_gap_vamp() noexcept {
+    song_gap_vamp_active_.store(false, std::memory_order_release);
+}
+
+bool Mixer::song_gap_vamp_active() const noexcept {
+    return song_gap_vamp_active_.load(std::memory_order_acquire);
+}
+
+void Mixer::render_song_gap_vamp(float** output_channels,
+                                 int num_channels,
+                                 int num_frames,
+                                 int output_offset) noexcept {
+    if (num_frames <= 0 || num_channels <= 0)
+        return;
+    std::array<float*, 64> shifted_channels{};
+    float** channels = output_channels;
+    if (output_offset > 0) {
+        if (num_channels > static_cast<int>(shifted_channels.size()))
+            return;
+        for (int ch = 0; ch < num_channels; ++ch)
+            shifted_channels[static_cast<std::size_t>(ch)] = output_channels[ch] + output_offset;
+        channels = shifted_channels.data();
+    }
+    metronome_.render_song(channels, num_channels, num_frames, clock_->sample_rate(),
+                           song_gap_vamp_frame_, &song_gap_vamp_timing_,
+                           render_output_channels_.data(), render_output_channel_count_);
+    song_gap_vamp_frame_ += num_frames;
+}
+
 std::optional<Frame> Mixer::song_end_pause_frame(const Session* session,
                                                  int num_frames) const noexcept {
-    if (!session || num_frames <= 0 || !pause_at_song_end_.load(std::memory_order_relaxed))
+    if (!session || num_frames <= 0
+        || (!pause_at_song_end_.load(std::memory_order_relaxed)
+            && !song_gap_vamp_enabled_.load(std::memory_order_relaxed)))
         return std::nullopt;
     const auto position = clock_->position();
     if (position.state != TransportState::Playing || clock_->pending_start())
@@ -1709,12 +1774,31 @@ void Mixer::apply_region_master_gain_to_tracks(float** output_channels,
     }
 }
 
-void Mixer::update_region_meters(float** output_channels,
-                                 int num_channels,
-                                 int num_frames,
+void Mixer::capture_region_track_peaks(float** output_channels,
+                                       int num_channels,
+                                       int num_frames,
+                                       int output_offset) noexcept {
+    if (num_channels <= 0 || num_frames <= 0)
+        return;
+    for (int ch = 0; ch < std::min(num_channels, 2); ++ch) {
+        if (!output_channels[ch]) continue;
+        const float* buf = output_channels[ch] + output_offset;
+        float peak = region_block_peaks_[ch];
+        for (int f = 0; f < num_frames; ++f)
+            peak = std::max(peak, std::abs(buf[f]));
+        region_block_peaks_[ch] = peak;
+    }
+    if (num_channels == 1)
+        region_block_peaks_[1] = region_block_peaks_[0];
+}
+
+void Mixer::update_region_meters(int num_frames,
                                  const Session* session,
                                  Frame timeline_frame) noexcept {
-    if (!session || num_channels <= 0 || num_frames <= 0)
+    // Consume this callback's track peaks whatever happens below.
+    const float captured_peaks[2] = {region_block_peaks_[0], region_block_peaks_[1]};
+    region_block_peaks_[0] = region_block_peaks_[1] = 0.f;
+    if (!session || num_frames <= 0)
         return;
 
     // Refresh region-slot mapping. The session pointer can swap atomically
@@ -1737,22 +1821,14 @@ void Mixer::update_region_meters(float** output_channels,
     }
     region_meter_count_.store(region_count, std::memory_order_release);
 
-    // Compute the per-channel peak of the active region from the final output
-    // bus (L, R; a mono bus feeds both) and apply a 200ms release to every
-    // other slot so inactive bars decay smoothly toward zero instead of
-    // snapping off when the playhead crosses a region boundary.
+    // The active region takes the track-bus peak captured before the click,
+    // voice guide and pad were mixed in (L, R; a mono bus feeds both). Every
+    // other slot gets a 200ms release so inactive bars decay smoothly toward
+    // zero instead of snapping off when the playhead crosses a boundary.
     float block_peaks[2] = {0.f, 0.f};
     if (active_index >= 0) {
-        for (int ch = 0; ch < std::min(num_channels, 2); ++ch) {
-            if (!output_channels[ch]) continue;
-            float channel_peak = 0.f;
-            for (int f = 0; f < num_frames; ++f) {
-                const float v = std::abs(output_channels[ch][f]);
-                if (v > channel_peak) channel_peak = v;
-            }
-            block_peaks[ch] = channel_peak;
-        }
-        if (num_channels == 1) block_peaks[1] = block_peaks[0];
+        block_peaks[0] = captured_peaks[0];
+        block_peaks[1] = captured_peaks[1];
     }
 
     const int sr = clock_ ? std::max(1, clock_->sample_rate()) : 48000;

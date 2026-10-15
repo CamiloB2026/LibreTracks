@@ -397,6 +397,9 @@ pub struct DesktopSession {
     /// moves, the mixer paused on a song end by itself ("pause at song end")
     /// and the Rust transport has to follow.
     pub(super) last_native_song_end_pause_count: u64,
+    /// That song-end pause left the vamp between songs holding (click still
+    /// going). Cleared by Play, Pause and Stop.
+    pub(super) song_gap_vamp_holding: bool,
     /// The vamp loop currently programmed in the native scheduler, as
     /// `(start_seconds, end_seconds)` in source time.
     ///
@@ -567,6 +570,7 @@ impl Default for DesktopSession {
             last_transport_pitch_sync_at: None,
             last_native_scheduled_jump_executed_count: 0,
             last_native_song_end_pause_count: 0,
+            song_gap_vamp_holding: false,
             scheduled_native_vamp_loop: None,
             automation: AutomationDocument::default(),
             pending_automation_jump: None,
@@ -1625,9 +1629,10 @@ pub(crate) fn plan_audio_settings_change(
         || previous.voice_guide_lead_bars != next.voice_guide_lead_bars
         || previous.voice_guide_count_in_enabled != next.voice_guide_count_in_enabled;
 
-    // Pure mixer flag, flipped between blocks: goes to the engine, never
-    // reopens the stream.
-    let pause_at_song_end_changed = previous.pause_at_song_end != next.pause_at_song_end;
+    // Pure mixer flags (pause at song end, vamp between songs), flipped
+    // between blocks: go to the engine, never reopen the stream.
+    let pause_at_song_end_changed = previous.pause_at_song_end != next.pause_at_song_end
+        || previous.vamp_between_songs != next.vamp_between_songs;
 
     AudioSettingsChangePlan {
         apply: device_changed
@@ -1932,6 +1937,11 @@ impl DesktopSession {
         }
 
         audio.apply_settings_with_stream_rebuild(next_settings.clone(), plan.rebuild_stream)?;
+        // Turning the vamp between songs off silences a holding one in the
+        // engine (SetSongGapVamp false).
+        if !next_settings.vamp_between_songs {
+            self.song_gap_vamp_holding = false;
+        }
 
         Ok(next_settings)
     }
@@ -1961,6 +1971,8 @@ impl DesktopSession {
             .map(|snapshot| snapshot.pitch.mixer_song_end_pause_count)
             .unwrap_or(self.last_native_song_end_pause_count);
         audio.prepare_song_buffers_async(song_dir.clone(), song.clone());
+        // The engine's Play ends a holding vamp between songs by itself.
+        self.song_gap_vamp_holding = false;
         audio.play(song_dir, song, runtime_position_seconds, start_reason)?;
         self.engine.play()?;
         self.transport_clock
@@ -1982,6 +1994,7 @@ impl DesktopSession {
     pub fn pause(&mut self, audio: &AudioController) -> Result<TransportSnapshot, DesktopError> {
         self.sync_position(audio)?;
         self.cancel_fade_stop(audio)?;
+        self.end_song_gap_vamp(audio)?;
 
         audio.stop()?;
 
@@ -1996,6 +2009,7 @@ impl DesktopSession {
     }
 
     pub fn stop(&mut self, audio: &AudioController) -> Result<TransportSnapshot, DesktopError> {
+        self.end_song_gap_vamp(audio)?;
         audio.stop()?;
         // After the audio stops, so lifting the gain back to 1 is never heard.
         self.cancel_fade_stop(audio)?;
@@ -2990,11 +3004,22 @@ impl DesktopSession {
             source_seconds_at_view(&source_song, snapshot.current_seconds.max(0.0));
         self.engine
             .sync_position_preserving_transport_state(position_seconds)?;
+        // Engine Stop, not EndSongGapVamp: with the vamp between songs on, the
+        // click keeps going over this pause until the user plays or stops.
         audio.stop()?;
         self.engine.pause()?;
         self.transport_clock.pause_at(position_seconds);
         self.release_all_midi_notes();
+        self.song_gap_vamp_holding = snapshot.pitch.mixer_song_gap_vamp_active;
         Ok(true)
+    }
+
+    fn end_song_gap_vamp(&mut self, audio: &AudioController) -> Result<(), DesktopError> {
+        if self.song_gap_vamp_holding {
+            audio.end_song_gap_vamp()?;
+            self.song_gap_vamp_holding = false;
+        }
+        Ok(())
     }
 
     fn sync_native_scheduled_jump_if_needed(
@@ -3282,6 +3307,7 @@ impl DesktopSession {
             project_revision: self.project_revision,
             mix_revision: self.mix_revision,
             fading_to_stop: self.is_fading_to_stop(),
+            song_gap_vamp: self.song_gap_vamp_holding,
             song_dir: self
                 .song_dir
                 .as_ref()

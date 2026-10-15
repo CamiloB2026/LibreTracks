@@ -144,6 +144,15 @@ struct CmdSetPadConfig {
 // scheduled jump due on that same boundary still wins: the user asked for it.
 struct CmdSetPauseAtSongEnd { bool enabled = false; };
 
+// Vamp between songs
+// ---------------------------------------------------------------------------
+// Pauses on a song end like the above, but keeps the click going at the ended
+// song's tempo and meter (and a pad that stops with the transport sounding)
+// until the next Play. CmdEndSongGapVamp silences it without playing: the
+// host sends it for a user Pause/Stop, never for its own mirror of the pause.
+struct CmdSetSongGapVamp { bool enabled = false; };
+struct CmdEndSongGapVamp {};
+
 // Decode a single pad key from disk and hand it to the renderer. Runs the
 // (slow) decode on the command thread; the resulting clip is swapped in
 // realtime-safely. `pads_dir/<pad_id>/<key>.<ext>`.
@@ -394,7 +403,7 @@ using EngineCommand = std::variant<
     CmdSetMetronomeConfig,
     CmdSetVoiceGuideConfig, CmdLoadVoiceGuideBank,
     CmdSetPadConfig, CmdLoadPadClip,
-    CmdSetPauseAtSongEnd,
+    CmdSetPauseAtSongEnd, CmdSetSongGapVamp, CmdEndSongGapVamp,
     CmdSetSongTranspose, CmdSetRegionTranspose, CmdSetRegionWarp, CmdSetRegionMasterGain, CmdSetSongRegions,
     CmdSetSongClips, CmdSetSongMarkers, CmdSetSongTiming, CmdSetSongTimelineWindow,
     CmdUpsertSongTracks, CmdPrepareSources,

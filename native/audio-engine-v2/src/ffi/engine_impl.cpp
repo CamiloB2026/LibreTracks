@@ -1147,6 +1147,7 @@ std::string EngineImpl::get_snapshot() const {
         snap.mixer_scheduled_jump_executed_count =
             mixer_->scheduled_jump_executed_count();
         snap.mixer_song_end_pause_count = mixer_->song_end_pause_count();
+        snap.mixer_song_gap_vamp_active = mixer_->song_gap_vamp_active();
     }
 
     if (prep_queue_) {
@@ -1876,6 +1877,8 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
             // clips were built at LoadSession / SeekAbsolute time, so Play
             // is now a pure clock advance with no pitch-priming work.
             const auto pos = clock_->position();
+            // Play is how the vamp between songs hands over to the next song.
+            if (mixer_) mixer_->end_song_gap_vamp();
             clock_->play();
             // Tell the background decode/cache-write paths to back off the disk
             // so they don't starve the live block-fill stream (see io_throttle.h).
@@ -2193,6 +2196,14 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
         }
         else if constexpr (std::is_same_v<T, CmdSetPauseAtSongEnd>) {
             if (mixer_) mixer_->set_pause_at_song_end(c.enabled);
+            return Result<void>::ok();
+        }
+        else if constexpr (std::is_same_v<T, CmdSetSongGapVamp>) {
+            if (mixer_) mixer_->set_song_gap_vamp(c.enabled);
+            return Result<void>::ok();
+        }
+        else if constexpr (std::is_same_v<T, CmdEndSongGapVamp>) {
+            if (mixer_) mixer_->end_song_gap_vamp();
             return Result<void>::ok();
         }
         else if constexpr (std::is_same_v<T, CmdLoadPadClip>) {

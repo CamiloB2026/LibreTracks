@@ -38,6 +38,19 @@ TEST_CASE("parse SetPauseAtSongEnd in both directions") {
     CHECK_FALSE(std::get<CmdSetPauseAtSongEnd>(off).enabled);
 }
 
+TEST_CASE("parse SetSongGapVamp and EndSongGapVamp") {
+    auto on = command_from_json(R"({"type":"SetSongGapVamp","enabled":true})");
+    REQUIRE(std::holds_alternative<CmdSetSongGapVamp>(on));
+    CHECK(std::get<CmdSetSongGapVamp>(on).enabled);
+
+    auto off = command_from_json(R"({"type":"SetSongGapVamp","enabled":false})");
+    REQUIRE(std::holds_alternative<CmdSetSongGapVamp>(off));
+    CHECK_FALSE(std::get<CmdSetSongGapVamp>(off).enabled);
+
+    auto end = command_from_json(R"({"type":"EndSongGapVamp"})");
+    CHECK(std::holds_alternative<CmdEndSongGapVamp>(end));
+}
+
 TEST_CASE("parse Pause command") {
     auto cmd = command_from_json(R"({"type":"Pause"})");
     CHECK(std::holds_alternative<CmdPause>(cmd));

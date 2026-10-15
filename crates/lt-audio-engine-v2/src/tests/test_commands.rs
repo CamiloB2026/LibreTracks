@@ -571,6 +571,19 @@ fn set_pause_at_song_end_speaks_the_engines_json() {
 }
 
 #[test]
+fn song_gap_vamp_commands_speak_the_engines_json() {
+    // The C++ parser reads {"type":"SetSongGapVamp","enabled":<bool>} and
+    // {"type":"EndSongGapVamp"}.
+    let json = serde_json::to_value(EngineCommand::SetSongGapVamp { enabled: true })
+        .expect("serialize");
+    assert_eq!(json["type"], "SetSongGapVamp");
+    assert_eq!(json["enabled"], true);
+
+    let json = serde_json::to_value(EngineCommand::EndSongGapVamp).expect("serialize");
+    assert_eq!(json["type"], "EndSongGapVamp");
+}
+
+#[test]
 fn set_sample_rate_round_trip() {
     let cmd = EngineCommand::SetSampleRate { sample_rate: 44100 };
     let rt = round_trip(&cmd);

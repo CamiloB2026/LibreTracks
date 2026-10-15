@@ -381,4 +381,8 @@ pub struct PitchSnapshot {
     /// (`EngineCommand::SetPauseAtSongEnd`).
     #[serde(default)]
     pub mixer_song_end_pause_count: u64,
+    /// The vamp between songs is holding: transport parked on a song end, the
+    /// click still going (`EngineCommand::SetSongGapVamp`).
+    #[serde(default)]
+    pub mixer_song_gap_vamp_active: bool,
 }

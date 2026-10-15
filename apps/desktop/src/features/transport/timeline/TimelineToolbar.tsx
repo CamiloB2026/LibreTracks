@@ -19,6 +19,7 @@ import { ViewModeSwitcher } from "./ViewModeSwitcher";
 import { SongMasterMeter } from "../tracks/TrackMeter";
 import { isMobileApp } from "../desktopApi";
 import { TOUR_TARGETS } from "../../tutorial/tourTargets";
+import { SongGapVampToggle } from "../live/SongGapVampToggle";
 
 type RegionMasterFaderProps = {
   regionId: string;
@@ -136,6 +137,9 @@ type TimelineToolbarProps = {
   onSongTransitionModeChange: (mode: SongTransitionMode) => void;
   onVampModeChange: (mode: VampMode) => void;
   onVampBarsChange: (bars: number) => void;
+  /** Optional: the vamp between songs toggle in the vamp popover. */
+  vampBetweenSongs?: boolean;
+  onVampBetweenSongsChange?: (enabled: boolean) => void;
   onToggleVamp: () => void;
   onCancelPendingJump: () => void;
   onSelectedRegionTransposeChange: (nextTransposeSemitones: number) => void;
@@ -274,6 +278,8 @@ export function TimelineToolbar({
   onSongTransitionModeChange,
   onVampModeChange,
   onVampBarsChange,
+  vampBetweenSongs = false,
+  onVampBetweenSongsChange,
   onToggleVamp,
   onCancelPendingJump,
   onSelectedRegionTransposeChange,
@@ -582,6 +588,13 @@ export function TimelineToolbar({
                       </button>
                     </div>
                   </label>
+                ) : null}
+                {onVampBetweenSongsChange ? (
+                  <SongGapVampToggle
+                    enabled={vampBetweenSongs}
+                    onChange={onVampBetweenSongsChange}
+                    disabled={controlsDisabled}
+                  />
                 ) : null}
               </>
             }

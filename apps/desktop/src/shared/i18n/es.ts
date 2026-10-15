@@ -534,6 +534,9 @@ const es = {
         "Cada pista nueva toma un color de la paleta, recorriéndola en orden, para distinguirlas de un vistazo. Desactívalo si prefieres colorearlas a mano. No repinta las pistas que ya tienes.",
       importMergeMatchingTracks: "Unir pistas con el mismo nombre al importar",
       pauseAtSongEnd: "Pausar al terminar cada canción",
+      vampBetweenSongs: "Vamp entre canciones (click y pad)",
+      vampBetweenSongsHint:
+        "Al terminar cada canción espera, como la pausa, pero el click sigue al tempo de la canción que acaba y el pad sigue sonando todo el tiempo que haga falta. Pulsa Play para empezar la siguiente; Stop para el click.",
       classicLibrary: "Usar la biblioteca clásica",
       classicLibraryHint:
         "La biblioteca muestra solo el audio importado a la sesión, con carpetas propias, en lugar de las carpetas de tu disco.",
@@ -716,6 +719,8 @@ const es = {
       apply_other: "Aplicar a {{count}} canciones",
       applied_one: "Ajustado el master de {{count}} canción. Se deshace con Ctrl+Z.",
       applied_other: "Ajustado el master de {{count}} canciones. Se deshace con Ctrl+Z.",
+      appliedMobile_one: "Ajustado el master de {{count}} canción. Se deshace con el botón Deshacer.",
+      appliedMobile_other: "Ajustado el master de {{count}} canciones. Se deshace con el botón Deshacer.",
       cancel: "Cancelar",
       close: "Cerrar",
     },
@@ -1190,6 +1195,7 @@ const es = {
       importMergeMatchingTracksUpdated:
         "Comportamiento de pistas al importar actualizado.",
       pauseAtSongEndUpdated: "Pausa al terminar la canción actualizada.",
+      vampBetweenSongsUpdated: "Vamp entre canciones actualizado.",
       fadeOutStopUpdated: "Duración del fade out actualizada.",
       midiSettingsUpdated: "Ajustes MIDI actualizados.",
       referenceImportedAudioUpdated:
@@ -2218,6 +2224,13 @@ const es = {
       profileDomain: "de dominio",
       profileNone: "ninguna",
     },
+  },
+  songGapVamp: {
+    label: "Entre canciones",
+    title:
+      "Vamp entre canciones: al terminar cada canción el click sigue a su tempo y el pad sigue sonando hasta que pulses Play para la siguiente.",
+    holding:
+      "Vamp entre canciones sonando: pulsa Play para empezar la siguiente canción, o Stop para parar el click.",
   },
   liveView: {
     title: "Vista Live",

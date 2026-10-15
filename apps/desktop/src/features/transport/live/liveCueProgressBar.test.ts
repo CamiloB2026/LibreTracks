@@ -46,7 +46,9 @@ function declaration(selector: string, property: string): string | null {
 }
 
 function mobileDeclaration(selector: string, property: string): string | null {
-  const start = css.lastIndexOf(`${selector} {`);
+  // Anchored to the start of a line: a bare substring search also matches a
+  // longer selector ending the same way (`.x:not(.y) ${selector}`).
+  const start = css.lastIndexOf(`\n  ${selector} {`);
   if (start < 0) return null;
   const open = css.indexOf("{", start);
   const close = css.indexOf("}", open);

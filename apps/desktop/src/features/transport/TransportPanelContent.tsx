@@ -2089,6 +2089,7 @@ export function TransportPanelContent() {
     handleTimelineNavigationSchemeChange,
     handleTimelinePlayheadFollowModeChange,
     handlePauseAtSongEndChange,
+    handleVampBetweenSongsChange,
     handleFadeOutStopSecondsChange,
     handleMidiPlatformSettingsChange,
     handleImportMergeMatchingTracksChange,
@@ -7423,6 +7424,8 @@ export function TransportPanelContent() {
                     onSongTransitionModeChange={handleSongTransitionModeChange}
                     onVampModeChange={handleVampModeChange}
                     onVampBarsChange={handleVampBarsChange}
+                    vampBetweenSongs={appSettings.vampBetweenSongs}
+                    onVampBetweenSongsChange={handleVampBetweenSongsChange}
                     onToggleVamp={() =>
                       void runAction(async () => {
                         await toggleTimelineVamp();
@@ -8047,6 +8050,8 @@ export function TransportPanelContent() {
                       onSongTransitionModeChange={handleSongTransitionModeChange}
                       onVampModeChange={handleVampModeChange}
                       onVampBarsChange={handleVampBarsChange}
+                      vampBetweenSongs={appSettings.vampBetweenSongs}
+                      onVampBetweenSongsChange={handleVampBetweenSongsChange}
                     />
                   ) : null}
                 </section>
@@ -8107,6 +8112,7 @@ export function TransportPanelContent() {
                 handleTimelinePlayheadFollowModeChange
               }
               onPauseAtSongEndChange={handlePauseAtSongEndChange}
+              onVampBetweenSongsChange={handleVampBetweenSongsChange}
               onFadeOutStopSecondsChange={handleFadeOutStopSecondsChange}
               onImportMergeMatchingTracksChange={
                 handleImportMergeMatchingTracksChange

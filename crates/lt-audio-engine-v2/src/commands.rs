@@ -131,6 +131,18 @@ pub enum EngineCommand {
         enabled: bool,
     },
 
+    /// "Vamp between songs": pause on a song end like `SetPauseAtSongEnd`
+    /// (counted in the same snapshot counter), but keep the click going at the
+    /// ended song's tempo and meter, and a pad that stops with the transport
+    /// sounding, until the next `Play`.
+    SetSongGapVamp {
+        enabled: bool,
+    },
+
+    /// Silence a holding vamp between songs without playing: a user Pause or
+    /// Stop. Never sent for the host's own mirror of the song-end pause.
+    EndSongGapVamp,
+
     /// Set the ambient-pad config (enable/volume/route/key). Applied
     /// realtime-safely on the next audio block.
     SetPadConfig {

@@ -662,6 +662,82 @@ TEST_CASE("pause at song end stops on the exact end frame and silences the rest"
     CHECK(mixer.song_end_pause_count() == 1);
 }
 
+// "Vamp between songs": at a song end the transport parks on the next song's
+// first frame, but the click goes on at the ENDED song's tempo, for as long as
+// the band needs, until Play starts the next song.
+TEST_CASE("vamp between songs keeps clicking the ended song until Play") {
+    SourceManager sources;
+    add_source(sources, "source", 0.5f, 48000 * 4);
+    auto session = two_song_session();
+    // Song B is at 60 bpm: the vamp must keep song A's 120.
+    session->songs[0].tempo_markers.push_back(TempoMarker{"tempo-b", 96000, 60.0});
+    TransportClock clock(test::kFixtureSampleRate);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_metronome_config(MetronomeConfig{true, 1.0f, "master", true});
+    mixer.set_song_gap_vamp(true);
+
+    clock.seek(95700);
+    clock.play();
+    clock.clear_pending_start();
+
+    std::vector<float> left(kBlock, 0.0f), right(kBlock, 0.0f);
+    float* out[2] = {left.data(), right.data()};
+    auto render_block = [&] {
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        mixer.render(out, 2, kBlock, clock.sample_rate());
+    };
+
+    render_block();
+    CHECK(clock.position().state == TransportState::Paused);
+    CHECK(clock.position().frame == 96000);
+    CHECK(mixer.song_end_pause_count() == 1);   // the host mirrors it as a pause
+    CHECK(mixer.song_gap_vamp_active());
+
+    // Parked up to virtual frame 191956: beats at 96000, 120000, 144000 and
+    // 168000 at song A's 120 bpm (only 96000 and 144000 at song B's 60).
+    for (int block = 1; block < 188; ++block)
+        render_block();
+    CHECK(clock.position().frame == 96000);       // song B never started
+    CHECK(mixer.metronome_diagnostics().rendered_clicks_count == 4);
+    CHECK(mixer.song_gap_vamp_active());
+
+    // Play hands over to song B from its first frame.
+    clock.play();
+    clock.clear_pending_start();
+    render_block();
+    CHECK(!mixer.song_gap_vamp_active());
+    CHECK(clock.position().state == TransportState::Playing);
+    CHECK(clock.position().frame == 96000 + kBlock);
+}
+
+TEST_CASE("ending the vamp between songs silences the click without playing") {
+    SourceManager sources;
+    add_source(sources, "source", 0.5f, 48000 * 4);
+    auto session = two_song_session();
+    TransportClock clock(test::kFixtureSampleRate);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_metronome_config(MetronomeConfig{true, 1.0f, "master", true});
+    mixer.set_song_gap_vamp(true);
+
+    clock.seek(95700);
+    clock.play();
+    clock.clear_pending_start();
+
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 1, left, right);
+    REQUIRE(mixer.song_gap_vamp_active());
+
+    mixer.end_song_gap_vamp();   // the user's Pause / Stop
+    const auto clicks = mixer.metronome_diagnostics().rendered_clicks_count;
+    render_blocks(mixer, clock, 200, left, right);
+    CHECK(!mixer.song_gap_vamp_active());
+    CHECK(mixer.metronome_diagnostics().rendered_clicks_count == clicks);
+    CHECK(clock.position().state == TransportState::Paused);
+}
+
 TEST_CASE("pause at song end yields to a jump scheduled on the same boundary") {
     SourceManager sources;
     add_source(sources, "source", 0.5f, 48000 * 4);
@@ -934,6 +1010,72 @@ TEST_CASE("metronome clicks while playing an empty song") {
     render_blocks(mixer, clock, 200, left, right);   // ~2.1s at 48k/512
 
     CHECK(mixer.metronome_diagnostics().rendered_clicks_count > 0);
+}
+
+// Repro: the song master meter (one per region) read the final output bus,
+// after the metronome, voice guide and pad had been mixed in. A song with
+// nothing playing still showed the click on its master, and "Level songs"
+// users read that bar as the song's own level. The song master gain never
+// touched those cues; now its meter does not count them either.
+TEST_CASE("the song master meter ignores the metronome") {
+    SourceManager sources;
+    auto session = std::make_shared<Session>();
+    session->id = "session";
+    session->sample_rate = test::kFixtureSampleRate;
+    Song song;
+    song.id = "song";
+    song.start_frame = 0;
+    song.end_frame = 0;      // no audio at all: only the click can sound
+    song.bpm = 120.0;
+    song.beats_per_bar = 4;
+    song.beat_unit = 4;
+    Track track;
+    track.id = "empty-track";
+    song.tracks.push_back(track);
+    song.regions.push_back(Region{"region-a", "A", 0, 48000 * 4, 0});
+    session->songs.push_back(song);
+
+    TransportClock clock(test::kFixtureSampleRate);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_metronome_config(MetronomeConfig{true, 1.0f, "master", true});
+    clock.play();
+
+    std::vector<float> left(kBlock, 0.0f), right(kBlock, 0.0f);
+    float* out[2] = {left.data(), right.data()};
+    float loudest = 0.0f;
+    float meter_max = 0.0f;
+    for (int block = 0; block < 200; ++block) {   // ~2.1 s at 48k/512
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        mixer.render(out, 2, kBlock, clock.sample_rate());
+        loudest = std::max(loudest, peak(left));
+        const auto meters = mixer.region_meters();
+        REQUIRE(meters.size() == 1);
+        meter_max = std::max(meter_max, meters[0].peak);
+    }
+
+    CHECK(loudest > 0.01f);              // the click does reach the output…
+    CHECK(meter_max < 1.0e-6f);          // …but not the song's master meter
+}
+
+TEST_CASE("the song master meter still shows the song's tracks") {
+    SourceManager sources;
+    add_source(sources, "source", 0.5f, 48000 * 4);
+    auto session = std::make_shared<Session>(one_track_session(0, 48000 * 4));
+    session->songs[0].regions.push_back(Region{"region-a", "A", 0, 48000 * 4, 0});
+
+    TransportClock clock(test::kFixtureSampleRate);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    clock.play();
+
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 20, left, right);
+
+    const auto meters = mixer.region_meters();
+    REQUIRE(meters.size() == 1);
+    CHECK(meters[0].peak > 0.1f);
 }
 
 // Repro: the mixer's renderer pool was a fixed std::array of 64, and both

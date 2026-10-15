@@ -329,6 +329,12 @@ pub struct AppSettings {
     /// user queued for that boundary still happens.
     #[serde(default)]
     pub pause_at_song_end: bool,
+    /// "Vamp between songs": at the end of each song the transport waits as
+    /// with `pause_at_song_end`, but the click keeps going at that song's tempo
+    /// and the pad keeps sounding until the user plays the next song. Off by
+    /// default.
+    #[serde(default)]
+    pub vamp_between_songs: bool,
     #[serde(default = "default_timeline_navigation_scheme")]
     pub timeline_navigation_scheme: String,
     #[serde(default = "default_timeline_playhead_follow_mode")]
@@ -474,6 +480,7 @@ impl Default for AppSettings {
             vamp_mode: default_vamp_mode(),
             vamp_bars: default_vamp_bars(),
             pause_at_song_end: false,
+            vamp_between_songs: false,
             timeline_navigation_scheme: default_timeline_navigation_scheme(),
             timeline_playhead_follow_mode: default_timeline_playhead_follow_mode(),
             import_merge_matching_tracks: default_import_merge_matching_tracks(),

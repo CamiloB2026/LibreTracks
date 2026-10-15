@@ -145,7 +145,7 @@ describe("CompactView touch context menu", () => {
     expect(resizeSlot?.previousElementSibling?.classList.contains("lt-compact-song-column")).toBe(true);
     expect(resizeGrip.closest(".lt-compact-song-header")).toBeNull();
     expect(resizeGrip.querySelector(".lt-compact-column-resizer-icon")?.textContent)
-      .toBe("drag_handle");
+      .toBe("width");
   });
 
   it("keeps reorder grips mounted while a column is being resized", () => {

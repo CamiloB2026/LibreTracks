@@ -6,6 +6,7 @@ import { gainToDb } from "@libretracks/shared/faderScale";
 import {
   cancelMeasureSongLoudness,
   getSettings,
+  isMobileApp,
   listenToLevelSongsProgress,
   measureSongLoudness,
   updateSongRegionMasterGains,
@@ -423,7 +424,12 @@ function LevelSongsDialog({ song, cueRoutes, onClose, onApplied }: DialogProps) 
         {phase.kind === "applied" ? (
           <div className="lt-settings-modal-body lt-render-modal-body" aria-live="polite">
             <p className="lt-render-status">
-              {t("transport.levelSongs.applied", { count: phase.count })}
+              {t(
+                isMobileApp
+                  ? "transport.levelSongs.appliedMobile"
+                  : "transport.levelSongs.applied",
+                { count: phase.count },
+              )}
             </p>
           </div>
         ) : null}

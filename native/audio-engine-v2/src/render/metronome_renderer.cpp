@@ -362,6 +362,31 @@ void MetronomeRenderer::render(float** output_channels,
                                const Session* session,
                                const int* active_output_channels,
                                int active_output_channel_count) noexcept {
+    render_song(output_channels, num_channels, num_frames, sample_rate, timeline_frame,
+                active_song(session, timeline_frame),
+                active_output_channels, active_output_channel_count);
+}
+
+void MetronomeRenderer::freeze_timing_at(const Session* session,
+                                         Frame frame,
+                                         Song& out) noexcept {
+    const Song* song = active_song(session, frame);
+    out.start_frame = timing_segment_start(song, frame);
+    out.end_frame = out.start_frame;
+    out.bpm = bpm_at(song, frame);
+    const auto [beats_per_bar, beat_unit] = signature_at(song, frame);
+    out.beats_per_bar = beats_per_bar;
+    out.beat_unit = beat_unit;
+}
+
+void MetronomeRenderer::render_song(float** output_channels,
+                                    int num_channels,
+                                    int num_frames,
+                                    double sample_rate,
+                                    Frame timeline_frame,
+                                    const Song* song,
+                                    const int* active_output_channels,
+                                    int active_output_channel_count) noexcept {
     if (num_channels <= 0 || num_frames <= 0 || sample_rate <= 0.0) return;
 
     if (last_render_end_ >= 0 && timeline_frame != last_render_end_)
@@ -380,7 +405,6 @@ void MetronomeRenderer::render(float** output_channels,
         return;
     }
 
-    const Song* song = active_song(session, timeline_frame);
     if (!song) {
         copy_text(muted_reason_, "no_active_song");
         return;

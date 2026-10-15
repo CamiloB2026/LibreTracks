@@ -982,6 +982,9 @@ export type TransportSnapshot = {
   mixRevision?: number;
   /** A «Fade out y parar» is running. Optional for older backends. */
   fadingToStop?: boolean;
+  /** The vamp between songs is holding: paused on a song end with the click
+   * still going until Play. Optional for older backends. */
+  songGapVamp?: boolean;
   songDir?: string | null;
   songFilePath?: string | null;
   isNativeRuntime: boolean;
@@ -1349,6 +1352,12 @@ export type AppSettings = {
    * queued for that boundary still happens.
    */
   pauseAtSongEnd: boolean;
+  /**
+   * "Vamp between songs": at the end of each song the transport waits as with
+   * `pauseAtSongEnd`, but the click keeps going at that song's tempo and the
+   * pad keeps sounding until Play starts the next song. Off by default.
+   */
+  vampBetweenSongs: boolean;
   timelineNavigationScheme: "ableton" | "libretracks";
   timelinePlayheadFollowMode: "ahead" | "center";
   /**
@@ -1472,6 +1481,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   vampMode: "section",
   vampBars: 4,
   pauseAtSongEnd: false,
+  vampBetweenSongs: false,
   timelineNavigationScheme: "ableton",
   timelinePlayheadFollowMode: "ahead",
   importMergeMatchingTracks: true,
@@ -1722,6 +1732,7 @@ export function normalizeAppSettings(settings: AppSettings): AppSettings {
       DEFAULT_APP_SETTINGS.vampBars,
     ),
     pauseAtSongEnd: Boolean(settings.pauseAtSongEnd),
+    vampBetweenSongs: Boolean(settings.vampBetweenSongs),
     timelineNavigationScheme,
     timelinePlayheadFollowMode,
     // Defaults to true when absent (older settings files) so existing users
