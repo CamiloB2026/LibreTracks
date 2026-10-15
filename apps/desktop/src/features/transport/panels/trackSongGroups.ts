@@ -41,11 +41,22 @@ function clipSpans(song: SongView): ClipSpan[] {
   return spans;
 }
 
+/**
+ * Shortest overlap that puts a clip inside a song. Song bounds and clip ends
+ * are float seconds computed apart: a clip ending exactly where the next song
+ * starts can overlap it by 1e-12 s, and the whole song's tracks then showed up
+ * in the next song too (seen on a real session).
+ */
+const MIN_SONG_OVERLAP_SECONDS = 0.01;
+
 function spanTouchesRegion(span: ClipSpan, region: SongRegionSummary) {
   if (span.start === span.end) {
     return span.start >= region.startSeconds && span.start < region.endSeconds;
   }
-  return span.start < region.endSeconds && span.end > region.startSeconds;
+  return (
+    Math.max(span.start, region.startSeconds) + MIN_SONG_OVERLAP_SECONDS <
+    Math.min(span.end, region.endSeconds)
+  );
 }
 
 /** Ids de las canciones (en orden de timeline) en las que suena cada pista. */

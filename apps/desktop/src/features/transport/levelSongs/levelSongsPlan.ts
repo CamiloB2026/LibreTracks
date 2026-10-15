@@ -107,7 +107,20 @@ export function levelableTracks(
     });
 }
 
-export type LevelTarget = { kind: "median" } | { kind: "song"; regionId: string };
+/**
+ * - `noClip` (default): the loudest level EVERY song can reach without its
+ *   peaks passing the ceiling. On real multitracks the stems summed at unity
+ *   already peak near or over 0 dBFS, so boosts are rarely possible and the
+ *   median left the quiet songs short (measured: 1.6 LU apart after levelling
+ *   vs 0.2 LU with this). Levelling down is free live: the desk gain comes up
+ *   once at soundcheck.
+ * - `median`: moves the setlist as little as possible.
+ * - `song`: match one song the user trusts.
+ */
+export type LevelTarget =
+  | { kind: "noClip" }
+  | { kind: "median" }
+  | { kind: "song"; regionId: string };
 
 export type SongProposal = {
   regionId: string;
@@ -127,6 +140,8 @@ export type SongProposal = {
 export type LevelPlan = {
   /** Loud-parts loudness every song is brought to, or null if none measured. */
   targetLufs: number | null;
+  /** The setlist median, to say how far below it the target sits. */
+  medianLufs: number | null;
   songs: SongProposal[];
 };
 
@@ -138,9 +153,21 @@ function median(values: number[]): number | null {
 }
 
 /**
- * The master each song needs to sit at the target. The median is the default
- * target: it moves the setlist as little as possible, so the desk gain set at
- * soundcheck stays right. Boosts stop where a song's peak would pass
+ * The most a song's master can be: up to where its peak meets the ceiling,
+ * never below what it has now (a song is not forced down for peaking high
+ * already), never past the fader. In dB, relative to unity.
+ */
+function maxMasterDb(measurement: SongLoudness, currentGain: number): number {
+  const room =
+    measurement.samplePeak > 0
+      ? PEAK_CEILING_DBFS - gainToDb(measurement.samplePeak)
+      : Number.POSITIVE_INFINITY;
+  return Math.min(gainToDb(MAX_SONG_MASTER_GAIN), Math.max(gainToDb(currentGain), room));
+}
+
+/**
+ * The master each song needs to sit at the target (see {@link LevelTarget}
+ * for how the target is chosen). Boosts stop where a song's peak would pass
  * {@link PEAK_CEILING_DBFS} — but a song never has to come DOWN just because
  * it already peaks high at its current master.
  */
@@ -152,12 +179,18 @@ export function planLevels(
   const byRegion = new Map(measurements.map((m) => [m.regionId, m]));
   const measured = measurements.filter((m) => m.hasSignal);
 
+  const gainOf = (regionId: string) =>
+    regions.find((region) => region.id === regionId)?.master?.gain ?? 1;
+  const medianLufs = median(measured.map((m) => m.loudLufs));
   let targetLufs: number | null;
   if (target.kind === "song") {
     const reference = byRegion.get(target.regionId);
     targetLufs = reference?.hasSignal ? reference.loudLufs : null;
+  } else if (target.kind === "median") {
+    targetLufs = medianLufs;
   } else {
-    targetLufs = median(measured.map((m) => m.loudLufs));
+    const reachable = measured.map((m) => m.loudLufs + maxMasterDb(m, gainOf(m.regionId)));
+    targetLufs = reachable.length > 0 ? Math.min(...reachable) : null;
   }
 
   const ceiling = dbToGain(PEAK_CEILING_DBFS);
@@ -196,7 +229,7 @@ export function planLevels(
     return [proposal];
   });
 
-  return { targetLufs, songs };
+  return { targetLufs, medianLufs, songs };
 }
 
 /**

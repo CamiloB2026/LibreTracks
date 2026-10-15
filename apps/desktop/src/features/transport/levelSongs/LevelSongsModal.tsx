@@ -115,7 +115,7 @@ function LevelSongsDialog({ song, cueRoutes, onClose, onApplied }: DialogProps) 
     new Set(tracks.filter((track) => track.exclusion === null).map((track) => track.id));
   const [selected, setSelected] = useState<Set<string>>(defaultSelection);
   const [phase, setPhase] = useState<Phase>({ kind: "setup", notice: null });
-  const [target, setTarget] = useState<LevelTarget>({ kind: "median" });
+  const [target, setTarget] = useState<LevelTarget>({ kind: "noClip" });
   const [toApply, setToApply] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
@@ -186,9 +186,9 @@ function LevelSongsDialog({ song, cueRoutes, onClose, onApplied }: DialogProps) 
         setPhase({ kind: "setup", notice: t("transport.levelSongs.cancelled") });
         return;
       }
-      setTarget({ kind: "median" });
+      setTarget({ kind: "noClip" });
       setToApply(
-        defaultSongsToApply(planLevels(regions, result.songs, { kind: "median" })),
+        defaultSongsToApply(planLevels(regions, result.songs, { kind: "noClip" })),
       );
       setPhase({ kind: "review", result });
     } catch (error) {
@@ -329,16 +329,18 @@ function LevelSongsDialog({ song, cueRoutes, onClose, onApplied }: DialogProps) 
             <label className="lt-settings-field">
               <span className="lt-settings-field-label">{t("transport.levelSongs.target")}</span>
               <select
-                value={target.kind === "song" ? target.regionId : ""}
-                onChange={(event) =>
+                value={target.kind === "song" ? target.regionId : target.kind}
+                onChange={(event) => {
+                  const value = event.target.value;
                   changeTarget(
-                    event.target.value
-                      ? { kind: "song", regionId: event.target.value }
-                      : { kind: "median" },
-                  )
-                }
+                    value === "noClip" || value === "median"
+                      ? { kind: value }
+                      : { kind: "song", regionId: value },
+                  );
+                }}
               >
-                <option value="">{t("transport.levelSongs.targetMedian")}</option>
+                <option value="noClip">{t("transport.levelSongs.targetNoClip")}</option>
+                <option value="median">{t("transport.levelSongs.targetMedian")}</option>
                 {plan.songs
                   .filter((entry) => entry.measurement?.hasSignal)
                   .map((entry) => (
@@ -350,6 +352,11 @@ function LevelSongsDialog({ song, cueRoutes, onClose, onApplied }: DialogProps) 
               {plan.targetLufs !== null ? (
                 <span className="lt-render-hint">
                   {t("transport.levelSongs.targetValue", { lufs: formatLufs(plan.targetLufs) })}
+                  {plan.medianLufs !== null && plan.medianLufs - plan.targetLufs >= 0.5
+                    ? ` · ${t("transport.levelSongs.belowMedian", {
+                        db: (plan.medianLufs - plan.targetLufs).toFixed(1),
+                      })}`
+                    : ""}
                 </span>
               ) : null}
             </label>

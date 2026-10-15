@@ -171,6 +171,12 @@ pub(crate) fn song_at_unity_masters(song: &libretracks_core::Song) -> libretrack
     song
 }
 
+/// Shortest overlap that puts a clip inside a song. Song bounds and clip ends
+/// are float seconds computed separately: a clip that ends exactly where the
+/// next song starts can overlap it by 1e-12 s and would count there too
+/// (seen on a real session: every track of a song leaked into the next one).
+pub(crate) const MIN_SONG_OVERLAP_SECONDS: f64 = 0.01;
+
 /// Chosen tracks with a clip sounding inside [start, end), in session order.
 /// Folders among the chosen ids count through their children.
 pub(crate) fn tracks_with_audio(
@@ -200,8 +206,9 @@ pub(crate) fn tracks_with_audio(
         .filter(|track| {
             song.clips.iter().any(|clip| {
                 clip.track_id == track.id
-                    && clip.timeline_start_seconds < end_seconds
-                    && clip.timeline_start_seconds + clip.duration_seconds > start_seconds
+                    && clip.timeline_start_seconds.max(start_seconds)
+                        + MIN_SONG_OVERLAP_SECONDS
+                        < (clip.timeline_start_seconds + clip.duration_seconds).min(end_seconds)
             })
         })
         .map(|track| track.id.clone())
@@ -537,6 +544,11 @@ mod tests {
         assert_eq!(tracks_with_audio(&song, &chosen, 0.0, 60.0), vec!["drums", "keys"]);
         // The drums stop at 60 s: the second song has none.
         assert_eq!(tracks_with_audio(&song, &chosen, 60.0, 120.0), vec!["keys"]);
+        // A song starting a hair before the drums end (float noise) still has none.
+        assert_eq!(
+            tracks_with_audio(&song, &chosen, 60.0 - 1e-9, 120.0),
+            vec!["keys"]
+        );
     }
 
     #[test]

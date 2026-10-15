@@ -62,6 +62,17 @@ describe("groupTracksBySong", () => {
     expect(ids(song).at(-1)).toEqual({ song: null, tracks: ["empty"] });
   });
 
+  it("ignores float noise where one song ends and the next starts", () => {
+    // Real session: the clips end at 1018.909805839 and the next song starts
+    // at 1018.909805839002, so every track also "sounded" in the next song.
+    const song = session();
+    song.regions[1].endSeconds = 100.000000000002;
+    song.regions[0].startSeconds = 100.000000000002;
+    song.clips[0].durationSeconds = 100.000000000003;
+    expect(ids(song)[0]).toEqual({ song: "Oceans", tracks: ["drums-a", "click"] });
+    expect(ids(song)[1]).toEqual({ song: "Way Maker", tracks: ["drums-b", "click"] });
+  });
+
   it("places MIDI clips by their start", () => {
     const song = session();
     song.midiClips = [

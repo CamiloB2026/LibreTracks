@@ -126,9 +126,15 @@ describe("LevelSongsModal", () => {
   });
 
   it("applies the proposed masters of the ticked songs in one call", async () => {
+    // Real multitracks: summed at unity they already peak at 0 dBFS, so no
+    // song can come up and the default target is the quietest one (-16).
+    const peaking = (regionId: string, lufs: number) => ({
+      ...loudness(regionId, lufs),
+      samplePeak: 1,
+    });
     measureSongLoudness.mockResolvedValue({
       cancelled: false,
-      songs: [loudness("a", -10), loudness("b", -14), loudness("c", -16)],
+      songs: [peaking("a", -10), peaking("b", -14), peaking("c", -16)],
       missingFiles: [],
     });
     const snapshot = { marker: "after" } as unknown as TransportSnapshot;
@@ -138,20 +144,43 @@ describe("LevelSongsModal", () => {
 
     await screen.findByRole("checkbox", { name: /Click/ });
     fireEvent.click(screen.getByText("transport.levelSongs.measure"));
-    // Median is -14: "Second" is already there and stays unticked.
-    const second = await screen.findByRole("checkbox", { name: "Second" });
-    expect((second as HTMLInputElement).checked).toBe(false);
-    // Leave "Third" out too.
-    fireEvent.click(screen.getByRole("checkbox", { name: "Third" }));
+    // "Third" is the quietest: it is the target and stays unticked.
+    const third = await screen.findByRole("checkbox", { name: "Third" });
+    expect((third as HTMLInputElement).checked).toBe(false);
+    // Leave "Second" out.
+    fireEvent.click(screen.getByRole("checkbox", { name: "Second" }));
     fireEvent.click(screen.getByText(/transport.levelSongs.apply/));
 
     await waitFor(() => expect(updateSongRegionMasterGains).toHaveBeenCalledTimes(1));
     const gains = updateSongRegionMasterGains.mock.calls[0][0];
     expect(gains).toHaveLength(1);
     expect(gains[0].regionId).toBe("a");
-    expect(gains[0].masterGain).toBeCloseTo(10 ** (-4 / 20));
+    expect(gains[0].masterGain).toBeCloseTo(10 ** (-6 / 20));
     expect(onApplied).toHaveBeenCalledWith(snapshot);
     await screen.findByText(/transport.levelSongs.applied/);
+  });
+
+  it("the median is still one choice away", async () => {
+    measureSongLoudness.mockResolvedValue({
+      cancelled: false,
+      songs: [loudness("a", -10), loudness("b", -14), loudness("c", -16)].map((m) => ({
+        ...m,
+        samplePeak: 1,
+      })),
+      missingFiles: [],
+    });
+    updateSongRegionMasterGains.mockResolvedValue({} as TransportSnapshot);
+    render(<LevelSongsModal onApplied={() => {}} />);
+    await screen.findByRole("checkbox", { name: /Click/ });
+    fireEvent.click(screen.getByText("transport.levelSongs.measure"));
+    const select = await screen.findByDisplayValue("transport.levelSongs.targetNoClip");
+    fireEvent.change(select, { target: { value: "median" } });
+    fireEvent.click(screen.getByText(/transport.levelSongs.apply/));
+    await waitFor(() => expect(updateSongRegionMasterGains).toHaveBeenCalledTimes(1));
+    // Median -14: "First" comes down 4 dB; the others cannot come up.
+    expect(updateSongRegionMasterGains.mock.calls[0][0]).toEqual([
+      { regionId: "a", masterGain: expect.closeTo(10 ** (-4 / 20), 5) },
+    ]);
   });
 
   it("folds each song's tracks under its name and a song's box ticks them all", async () => {

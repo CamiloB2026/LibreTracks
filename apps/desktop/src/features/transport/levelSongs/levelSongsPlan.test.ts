@@ -9,8 +9,10 @@ import {
   isCueTrackName,
   levelableTracks,
   planLevels,
+  type LevelTarget,
   type LevelTrack,
 } from "./levelSongsPlan";
+import { gainToDb } from "@libretracks/shared/faderScale";
 
 const track = (id: string, name: string, extra: Record<string, unknown> = {}) =>
   ({
@@ -208,6 +210,40 @@ describe("planLevels", () => {
       { kind: "median" },
     );
     expect(plan.songs.find((s) => s.regionId === "d")?.proposedGain).toBeNull();
+  });
+
+  it("without clipping: every song meets at the loudest level all can reach", () => {
+    // The real setlist measured 2026-10-15 (loud parts, peak at unity):
+    // nobody had room to come up, so the median left two songs 1.4 and
+    // 0.9 LU short; this target brings all five within 0.2 LU.
+    const real = [
+      measured("dios", -12.79, { samplePeak: 1.0808 }),
+      measured("habita", -14.15, { samplePeak: 0.9125 }),
+      measured("digno", -10.32, { samplePeak: 1.5957 }),
+      measured("rindo", -13.9, { samplePeak: 1.039 }),
+      measured("construire", -12.58, { samplePeak: 1.271 }),
+    ];
+    const regions = real.map((m) => region(m.regionId));
+    const spread = (target: LevelTarget) => {
+      const plan = planLevels(regions, real, target);
+      const levels = plan.songs.map(
+        (s) => (s.measurement as SongLoudness).loudLufs + gainToDb(s.proposedGain as number),
+      );
+      return Math.max(...levels) - Math.min(...levels);
+    };
+    expect(spread({ kind: "median" })).toBeGreaterThan(1.3);
+    expect(spread({ kind: "noClip" })).toBeLessThan(0.25);
+    const plan = planLevels(regions, real, { kind: "noClip" });
+    expect(plan.targetLufs).toBeCloseTo(-14.15, 1);
+    expect(plan.medianLufs).toBeCloseTo(-12.79);
+    // Room to come up counts: a song with headroom can lift the target.
+    const roomy = planLevels(
+      [region("a"), region("b")],
+      [measured("a", -10, { samplePeak: 0.9 }), measured("b", -14, { samplePeak: 0.25 })],
+      { kind: "noClip" },
+    );
+    // b can come up 11 dB by its peak but the fader stops it at +6.
+    expect(roomy.targetLufs).toBeCloseTo(-10, 0);
   });
 
   it("ticks by default only songs that change audibly and are not silenced on purpose", () => {
