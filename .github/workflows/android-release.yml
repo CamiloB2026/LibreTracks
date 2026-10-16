@@ -1,0 +1,312 @@
+name: Android Release (signed Play build)
+
+# Builds the AAB that goes to Google Play (plus an APK for direct device
+# testing) and optionally uploads it. Deliberately its own workflow rather than
+# a job inside release.yml, mirroring ios-release.yml: the desktop release must
+# not wait for the NDK build or be blocked by a Play credential, and this one
+# must be runnable on its own whenever a build is rejected and has to be
+# resubmitted.
+#
+# Secrets:
+#   ANDROID_KEYSTORE_BASE64, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS,
+#   ANDROID_KEY_PASSWORD  - upload key that signs the AAB/APK (required).
+#   PLAY_SERVICE_ACCOUNT_JSON - key of the service account
+#     github-play-upload@libretracks.iam.gserviceaccount.com, invited in Play
+#     Console with release permissions. Needed to upload; when present the
+#     versionCode is also checked against Play before building.
+
+env:
+  BUNGEE_VERSION: v2.4.24
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Google Play track to upload to (none = build only). Production lands as a draft."
+        type: choice
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+          - none
+        default: internal
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never cancel in progress: an upload interrupted halfway leaves an open
+  # edit in Play Console.
+  group: android-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Fail EARLY when the run depends on a missing secret, instead of after the
+  # 20-minute NDK build.
+  preflight:
+    name: Check signing credentials
+    runs-on: ubuntu-latest
+    outputs:
+      play-key: ${{ steps.check.outputs.play-key }}
+    steps:
+      - name: Check Android and Play credentials
+        id: check
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          TRACK: ${{ inputs.track }}
+        run: |
+          set -euo pipefail
+          for required in ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD                           ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!required:-}" ]; then
+              echo "::error::$required is not set; cannot sign a distributable AAB."
+              exit 1
+            fi
+          done
+          if [ -n "${PLAY_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "play-key=true" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$TRACK" != "none" ]; then
+              echo "::error::track=$TRACK but PLAY_SERVICE_ACCOUNT_JSON is not set."
+              exit 1
+            fi
+            echo "::notice::PLAY_SERVICE_ACCOUNT_JSON not set; skipping the versionCode check."
+            echo "play-key=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "Credentials present. track=$TRACK"
+
+  build:
+    name: Build Android Play bundle + APK
+    needs: preflight
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    env:
+      ANDROID_ABI: arm64-v8a
+      ANDROID_TARGET: aarch64
+      # r28+ emits 16 KiB-aligned ELF segments by default (required by Play).
+      NDK_VERSION: 28.2.13676358
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Before the NDK build: Play only rejects a duplicate versionCode at
+      # upload time, and the pin in tauri.android.conf.json does not follow the
+      # version string, so a forgotten bump would otherwise cost the whole build.
+      # Runs whenever the key is available, uploading or not, so a plain
+      # artifact build also tells you the AAB would be accepted.
+      - name: Check the versionCode against Google Play
+        if: needs.preflight.outputs.play-key == 'true'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node scripts/google-play.mjs check
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Add Android Rust target
+        run: rustup target add aarch64-linux-android
+
+      - name: Setup Java (for Gradle)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK + NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install NDK + build tools
+        run: |
+          sdkmanager --install "ndk;${NDK_VERSION}" "cmake;3.22.1" "platforms;android-36" "build-tools;36.0.0"
+          echo "ANDROID_NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_SDK_ROOT/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Restore Rust cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      # Bungee ships no Android binary, so build it from source (same tag as
+      # desktop) as a static PIC lib for the NDK. Cached by version — the tag
+      # is pinned, so this only rebuilds when BUNGEE_VERSION changes.
+      - name: Cache Bungee Android build
+        id: bungee-cache
+        uses: actions/cache@v4
+        with:
+          path: bungee-android-sdk
+          key: bungee-android-${{ env.BUNGEE_VERSION }}-${{ env.ANDROID_ABI }}-ndk${{ env.NDK_VERSION }}
+
+      - name: Build Bungee for Android
+        if: steps.bungee-cache.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch "$BUNGEE_VERSION" --recurse-submodules \
+            https://github.com/bungee-audio-stretch/bungee.git bungee-src
+          NINJA="$ANDROID_SDK_ROOT/cmake/3.22.1/bin/ninja"
+          TOOLCHAIN="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+          cmake -S bungee-src -B bungee-src/build-android -G Ninja \
+            -DCMAKE_MAKE_PROGRAM="$NINJA" \
+            -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+            -DANDROID_ABI="$ANDROID_ABI" -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release -DBUNGEE_BUILD_SHARED_LIBRARY=OFF \
+            -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+            -DBUNGEE_VERSION="${BUNGEE_VERSION#v}"
+          cmake --build bungee-src/build-android --target bungee_library pffft
+          mkdir -p "bungee-android-sdk/include/bungee" "bungee-android-sdk/android-${ANDROID_ABI}"
+          cp bungee-src/bungee/*.h "bungee-android-sdk/include/bungee/"
+          cp bungee-src/build-android/libbungee.a bungee-src/build-android/libpffft.a \
+            "bungee-android-sdk/android-${ANDROID_ABI}/"
+
+      - name: Build the native engine for Android (NDK)
+        run: |
+          set -euo pipefail
+          NINJA="$ANDROID_SDK_ROOT/cmake/3.22.1/bin/ninja"
+          TOOLCHAIN="$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+          BUNGEE_DIR="$PWD/bungee-android-sdk"
+          # CRITICAL: the build dir name must match what build.rs looks for at
+          # LINK time — it keys off CARGO_CFG_TARGET_ARCH (aarch64 →
+          # `build-android-arm64`), NOT the ABI. Building into a different dir
+          # (e.g. `build-android`) means build.rs never finds the .so, never
+          # emits the `lt_engine_android_link` cfg, and the APK silently ships
+          # the no-op STUB engine (no audio, no waveforms, empty device list).
+          # See crates/lt-audio-engine-v2/build.rs.
+          ENGINE_BUILD_DIR="native/audio-engine-v2/build-android-arm64"
+          cmake -S native/audio-engine-v2 -B "$ENGINE_BUILD_DIR" \
+            -G Ninja -DCMAKE_MAKE_PROGRAM="$NINJA" \
+            -DCMAKE_TOOLCHAIN_FILE="$TOOLCHAIN" \
+            -DANDROID_ABI="$ANDROID_ABI" -DANDROID_PLATFORM=android-24 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLT_ENGINE_USE_JUCE=OFF -DLT_ENGINE_USE_OBOE=ON \
+            -DLT_ENGINE_USE_FFMPEG=OFF -DLT_ENGINE_USE_LIBSNDFILE=ON \
+            -DLT_ENGINE_USE_BUNGEE=ON -DLT_BUNGEE_DIR="$BUNGEE_DIR"
+          cmake --build "$ENGINE_BUILD_DIR" --target lt_audio_engine_v2
+          # JUCE must stay out of a Play Store binary: its AGPLv3 licensing
+          # option is incompatible with store distribution terms, and Android
+          # gets its audio from Oboe anyway. Same guard as the iOS smoke build.
+          grep -q 'LT_ENGINE_USE_JUCE:BOOL=OFF' "$ENGINE_BUILD_DIR/CMakeCache.txt"
+          JNI_DIR="apps/desktop/src-tauri/gen/android/app/src/main/jniLibs/${ANDROID_ABI}"
+          mkdir -p "$JNI_DIR"
+          cp "$ENGINE_BUILD_DIR/liblt_audio_engine_v2.so" "$JNI_DIR/"
+
+      # Materialize the release keystore from secrets so the APK and AAB are signed with
+      # the real key (build.gradle reads keystore.properties → falls back to
+      # debug signing when absent).
+      - name: Prepare release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 secret is not set — cannot sign a distributable APK."
+            exit 1
+          fi
+          KS_DIR="apps/desktop/src-tauri/gen/android"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$KS_DIR/release.jks"
+          cat > "$KS_DIR/keystore.properties" <<EOF
+          storeFile=$PWD/$KS_DIR/release.jks
+          storePassword=$STORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+
+      - name: Build signed Play bundle and release APK
+        # Fail loudly if the NDK engine .so isn't where build.rs links it from
+        # (see crates/lt-audio-engine-v2/build.rs) instead of silently shipping
+        # the no-op stub engine — an APK with no audio, waveforms, or devices.
+        env:
+          LT_ENGINE_ANDROID_REQUIRE_LINK: "1"
+        run: npx tauri android build --aab --apk --target "$ANDROID_TARGET" --ci
+        working-directory: apps/desktop
+
+      - name: Verify Android artifacts
+        run: |
+          set -euo pipefail
+          APK=$(find apps/desktop/src-tauri/gen/android -path '*release*' -name '*.apk' -print -quit)
+          AAB=$(find apps/desktop/src-tauri/gen/android -path '*release*' -name '*.aab' -print -quit)
+          test -n "$APK" || { echo "::error::Release APK was not produced"; exit 1; }
+          test -n "$AAB" || { echo "::error::Play Store AAB was not produced"; exit 1; }
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/* | sort -V | tail -1)
+          "$BT/apksigner" verify --print-certs "$APK" | grep -q "CN=LibreTracks" \
+            || { echo "::error::APK not signed with the LibreTracks key"; exit 1; }
+          keytool '-J-Duser.language=en' -printcert -jarfile "$AAB" | grep -q "Owner: CN=LibreTracks" \
+            || { echo "::error::AAB not signed with the LibreTracks upload key"; exit 1; }
+          if "$BT/aapt" dump badging "$APK" | grep -q "application-debuggable"; then
+            echo "::error::release APK is debuggable"; exit 1
+          fi
+          "$BT/zipalign" -c -P 16 -v 4 "$APK" >/dev/null \
+            || { echo "::error::APK is not 16 KiB ZIP-aligned"; exit 1; }
+
+          # Check every packaged native library, including the Rust/Tauri core
+          # and the separately built C++ audio engine, not just the ZIP layout.
+          AAB_DIR=$(mktemp -d)
+          unzip -q "$AAB" 'base/lib/*/*.so' -d "$AAB_DIR"
+          READELF="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-readelf"
+          SO_COUNT=0
+          while IFS= read -r -d '' SO; do
+            ((SO_COUNT += 1))
+            LOAD_COUNT=0
+            while read -r ALIGNMENT; do
+              ((LOAD_COUNT += 1))
+              if (( ALIGNMENT < 0x4000 )); then
+                echo "::error file=$SO::ELF LOAD alignment is $ALIGNMENT; expected at least 0x4000"
+                exit 1
+              fi
+            done < <("$READELF" -lW "$SO" | awk '$1 == "LOAD" { print $NF }')
+            if (( LOAD_COUNT == 0 )); then
+              echo "::error file=$SO::Could not inspect ELF LOAD segments"
+              exit 1
+            fi
+          done < <(find "$AAB_DIR" -name '*.so' -print0)
+          if (( SO_COUNT == 0 )); then
+            echo "::error::AAB contains no native libraries"
+            exit 1
+          fi
+
+          # Rename to clear, versioned assets. Neither one is attached to the
+          # GitHub Release: Android ships through Google Play only. The AAB is
+          # what goes to Play Console and the APK is for direct device testing;
+          # both live as workflow artifacts.
+          VER=$(node -p "require('./apps/desktop/src-tauri/tauri.conf.json').version")
+          cp "$APK" "LibreTracks-${VER}-android-arm64.apk"
+          cp "$AAB" "LibreTracks-${VER}-play-store.aab"
+
+      - name: Upload release assets
+        uses: actions/upload-artifact@v4
+        with:
+          name: libretracks-android-assets
+          path: |
+            LibreTracks-*-android-arm64.apk
+            LibreTracks-*-play-store.aab
+          if-no-files-found: error
+
+      # After the artifact upload, so a rejected bundle is still downloadable.
+      - name: Upload to Google Play
+        if: inputs.track != 'none'
+        env:
+          PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          PLAY_TRACK: ${{ inputs.track }}
+        run: node scripts/google-play.mjs upload LibreTracks-*-play-store.aab "$PLAY_TRACK"
+
+      - name: Scrub keystore
+        if: always()
+        run: rm -f apps/desktop/src-tauri/gen/android/release.jks apps/desktop/src-tauri/gen/android/keystore.properties
+
+      - name: Report the skipped upload
+        if: inputs.track == 'none'
+        run: |
+          echo "::notice::Signed AAB/APK built and kept as workflow artifacts but NOT uploaded to Google Play. Re-run with a track to upload."

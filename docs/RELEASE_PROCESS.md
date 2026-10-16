@@ -190,6 +190,11 @@ It reads as major · 1000000 + minor · 1000 + a counter: `1.11.1` shipped as
 `1011002`, so `1.12.0` goes out as `1012000`. The only hard rule is that it
 must strictly increase.
 
+`android-release.yml` checks it against Play (`node scripts/google-play.mjs check`)
+before the NDK build, so a forgotten bump fails in the first minute instead of
+at upload. Locally the same check runs with the service-account key in
+`PLAY_SERVICE_ACCOUNT_JSON`.
+
 ### iOS needs nothing here
 
 `tauri.ios.conf.json` carries no version: `CFBundleShortVersionString` comes
@@ -455,7 +460,7 @@ fix it, or drop it from the release, before you tag.
 
 `cargo check --all-targets` on desktop does **not** compile anything behind
 `#[cfg(target_os = "android")]` (`platform/android_audio_devices.rs`,
-`platform/mobile_files.rs`), and `build-android` only runs on a tag push. So an
+`platform/mobile_files.rs`), and `android-release.yml` only runs by hand. So an
 Android-only compile error is invisible until you are mid-release.
 
 v1.10.0 hit exactly this: a field added to `DeviceInfo` was wired into the JUCE
@@ -568,7 +573,6 @@ Jobs and what each one gates (as of v1.10.0):
 | `test` | Yes — unit suites (JS + Rust + native ctest) on all three OSes. |
 | `e2e-windows` | **Disabled** (`if: false`) — see below. |
 | `build-release-assets` | Yes, except the `macos-15-intel` leg (`publish: false`). |
-| `build-android` | No — opt-in from `workflow_dispatch`; it produces signed Play artifacts but does not gate a desktop release. |
 | `publish-release` | Needs `test` and the publishable `build-release-assets` legs green. |
 
 `e2e-windows` is a **separate job on purpose**. It used to be two steps at the
@@ -1142,10 +1146,18 @@ minimized, Lightning adapter for video) and leave out Android-only ones.
 
 **Mobile before desktop.** When the apps go to review before the desktop
 release (review takes days), push `main` WITHOUT the tag and build the store
-artifacts by hand: *Release* (`release.yml`, `workflow_dispatch`) with
-`build_android` gives the signed AAB (no `publish-release` without a tag), and
-*iOS Release* (`ios-release.yml`) with `upload` sends the IPA to TestFlight.
-Submitting for review in Play Console / App Store Connect is done by hand.
+artifacts by hand: *Android Release* (`android-release.yml`) builds the signed
+AAB and sends it to the chosen Play `track`, and *iOS Release*
+(`ios-release.yml`) with `upload` sends the IPA to TestFlight. Neither is part
+of `release.yml`, so the desktop release never waits for them.
+
+The Play upload goes through `scripts/google-play.mjs` (service account
+`github-play-upload@libretracks.iam.gserviceaccount.com`, secret
+`PLAY_SERVICE_ACCOUNT_JSON`). Testing tracks (`internal`, `alpha`, `beta`) roll
+out at once; `production` lands as a **draft**. The API upload carries no
+release notes: paste `play-release-notes.txt` into the release in Play Console
+before rolling it out or promoting it. Submitting for review in Play Console /
+App Store Connect is done by hand.
 When desktop ships, tag that same commit `v<NEW>` so the three platforms carry
 the same build.
 
