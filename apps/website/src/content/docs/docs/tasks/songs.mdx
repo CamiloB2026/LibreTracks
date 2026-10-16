@@ -102,6 +102,8 @@ its menu (right-click):
 - **Change Original BPM**: the tempo the audio was recorded at, used by warp.
 - **Song Fades ▸**: fade in and fade out. See
   [below](#fade-in-and-fade-out).
+- **Arrangement**: repeat, remove or reorder the song's sections without
+  touching the audio. See [Song arrangements](/docs/arrangements/).
 
 ## Fade in and fade out
 
@@ -134,6 +136,44 @@ already has a fade. If you'd rather type the seconds, right-click the song ›
 - To end a song **live** at any moment, use
   [Fade out and stop](/docs/interface/main-screen/#fade-out-and-stop).
 
+## Levelling the songs' volume
+
+Every multitrack comes mixed its own way, and live you can tell: one song
+reaches the desk louder than the one before. **Level song volumes…** measures
+how loud each song is in its loud parts (the chorus, not the quiet bridge) and
+suggests a **master** for each one so they all arrive at the same level. It is
+in the **File** menu (on mobile, in the side bar's file menu), because it
+affects the whole setlist.
+
+![Level songs: the tracks that count and the Measure button](/guide/desktop-en/level-songs-setup.png)
+
+<Legend>
+
+1. **Tracks that count**: only what goes to the PA, grouped by song.
+   LibreTracks leaves out the click, the cues, whatever goes to the in-ears
+   and muted tracks, and tells you why; you can change the selection.
+2. **Measure**: measures every song. It takes a few seconds per song.
+
+</Legend>
+
+![Measurement result with the suggested master for each song](/guide/desktop-en/level-songs-result.png)
+
+<Legend>
+
+1. **Target level**: *Without clipping (recommended)* brings every song to the
+   highest level they can all reach without clipping. You can also match them
+   to the setlist median or to a specific song.
+2. **The proposal**: each song's measured loudness, current master, suggested
+   master and change.
+3. **Apply**: sets the songs' masters in one go. Undo it with
+   <kbd>Ctrl</kbd>+<kbd>Z</kbd> (on mobile, with the Undo button).
+
+</Legend>
+
+The proposal usually turns songs down rather than up: that is expected, and
+you make up for it once with the desk's gain. The master does not affect the
+metronome or the voice guide.
+
 ## Reordering the setlist
 
 - In the **DAW view**, move the songs along the ruler (see above).
@@ -151,6 +191,24 @@ By default, when a song ends playback carries on with the next one. If you
 would rather stop between songs (to speak, for example), turn on **Pause at
 the end of each song** in Settings › General: playback stops right on the last
 frame of each song, and *Play* starts the next one.
+
+If you would rather the band not be left without a reference between songs,
+turn on **Vamp between songs**: when each song ends playback waits just like
+with the pause, but the **click keeps going at the tempo of the song that
+ended** and the **pad keeps sounding** for as long as needed. *Play* starts
+the next one; *Stop* stops the click. Turn it on with the **Between songs**
+button in the [Live View](/docs/live-view/), in the Vamp panel of the toolbar,
+or in Settings › General › **Vamp between songs (click and pad)**.
+
+![Between songs button next to VAMP in the Live View](/guide/desktop-en/live-vamp-between-songs.png)
+
+<Legend>
+
+1. **Between songs**: turns on vamp between songs. While it is holding, the
+   button pulses so you know why the next song has not started.
+2. **VAMP**: the usual vamp, inside a song.
+
+</Legend>
 
 To jump to another song: the **Previous** and **Next** buttons,
 <kbd>Shift</kbd>+number (<kbd>Shift</kbd>+<kbd>0</kbd> is the first song),

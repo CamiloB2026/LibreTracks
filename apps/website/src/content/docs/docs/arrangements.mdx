@@ -1,0 +1,132 @@
+---
+title: Song arrangements
+description: "How to build song arrangements in LibreTracks: repeat, remove or reorder sections without touching the audio, keep several arrangements and go back to the original, on a computer, phone and tablet."
+---
+
+import Legend from "../../../components/guide/Legend.astro";
+import Clip from "../../../components/guide/Clip.astro";
+
+An **arrangement** changes the shape of a song without setting up jumps: two
+more choruses at the end, drop the bridge, repeat the verse. LibreTracks
+**writes it onto the timeline as it is**: if you repeat the verse, you see the
+verse twice, and the songs after it move along on their own. That is why the
+voice guide, the Remote, rendering and exported songs follow it with nothing
+else to do.
+
+You can keep **several arrangements** of the same song (Sunday's, the short
+one, the acoustic one) and go back to the original whenever you like.
+
+## Before you start: the sections
+
+An arrangement is built from the song's **sections**: Intro, Verse, Chorus…
+Mark them in the sections row of the ruler, as usual (see
+[Markers](/docs/tasks/markers/)). You need at least two. Cue markers (Build,
+Drums in…) do not split sections: they travel with the section they sit in.
+
+## Saving the original
+
+Right-click the song on the ruler and choose **Arrangement** (on mobile,
+long-press the song). In the Compact view it is in the song's menu. The
+arrangement editor opens at the bottom, over the timeline.
+
+![First step of the arrangement editor: the detected sections and Save as original](/guide/desktop-en/arrangement-capture.png)
+
+<Legend>
+
+1. **Detected sections**: the ones LibreTracks found in the song, with their
+   color and length in bars.
+2. **Save as original**: saves the song as it is, so you can build any
+   arrangement and come back to it whenever you like.
+
+</Legend>
+
+If a marker does not fall on the first beat of a bar, the editor warns you
+(repeating that section would put it out of step) and offers **Snap to bar**.
+
+## Building an arrangement
+
+<Clip
+  src="/guide/desktop-en/arrangement-build.mp4"
+  poster="/guide/desktop-en/arrangement-build.webp"
+  caption="Click Chorus twice to add it at the end, then Apply: the song grows on the timeline."
+/>
+
+![Arrangement editor with its zones numbered](/guide/desktop-en/arrangement-editor.png)
+
+<Legend>
+
+1. **Saved arrangement**: the picker with your arrangements. The first one is
+   always **Original**.
+2. **New**, **Rename**, **Delete** and **Save the original again**. *New*
+   starts an arrangement from the original.
+3. **Sections**: the palette with the song's sections. **Click** one to add it
+   at the end; **drag** it onto the strip below to insert it where you drop it.
+4. **Order**: the arrangement's blocks, in the order they will play. Drag them
+   to move them around. With a block selected, <kbd>Del</kbd> removes it and
+   <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates it. The total length in bars is
+   shown underneath.
+5. **Apply**: writes the arrangement onto the timeline. Until you press it,
+   the changes live only in the editor (*Unapplied changes* says so).
+
+</Legend>
+
+When it is applied, the following songs line up behind it, on their bar. With
+an arrangement applied, the song carries its name on the ruler (`⇄ Sunday`),
+and the ruler slightly shades the sections that are repeats.
+
+![A song with an arrangement applied on the ruler](/guide/desktop-en/arrangement-ruler.png)
+
+- To **go back to the original**, choose *Original* in the picker and press
+  **Apply**. Your arrangements are not deleted.
+- The original cannot be deleted or renamed. If you change its blocks, a new
+  arrangement is created from it.
+- If you saved the original by mistake (a marker was missing, a section was
+  in the wrong place), fix the song on the timeline and use **Save the
+  original again**.
+
+## Editing a song with an arrangement
+
+Track volume, mute, pan and outputs change as usual. To move, trim or add
+**clips or markers**, LibreTracks asks first: *This song has an arrangement*.
+**Edit original** takes the song back to the original (the arrangement is
+kept), you edit whatever you need and, when you press **Apply** again, the
+arrangement is rebuilt on the edited song. If you removed a section that an
+arrangement used, it tells you which arrangements it was removed from.
+
+## Where the arrangement shows
+
+- In the **Compact view**, the song header shows the applied arrangement;
+  press it to open the editor.
+- In the [Live View](/docs/live-view/) and on the [Remote](/docs/remote-control/),
+  the song in the setlist carries its arrangement's name.
+- Arrangements travel in exported songs (`.ltpkg`) and sessions (`.ltset`),
+  and [rendering](/docs/tasks/songs/#exporting-rendering-and-deleting) outputs
+  the song as it sounds with its arrangement.
+
+If you open the session with an older version of LibreTracks, you will see the
+arrangement written on the timeline and it will sound the same, but saving
+from that version loses the arrangement's original.
+
+## On phones and tablets
+
+Long-press the song and choose **Arrangement**: the editor takes the whole
+screen. The first time, press **Save as original**, as on the computer.
+
+![Arrangement editor on the phone](/guide/mobile-en/arrangement-editor.png)
+
+<Legend>
+
+1. **Saved arrangement**: the arrangement picker and the one that is applied.
+2. **The arrangement's blocks**, in the order they will play. Drag by the
+   handle to reorder, swipe a block left to remove it and long-press to
+   duplicate it. After removing a section you have a few seconds to **Undo**.
+3. **+**: opens the palette to insert sections at that point. At the end of
+   the list, **Add section** adds them after everything. In the palette, tap a
+   section to add it (as many times as you like) and press **Done**.
+4. **More options**: New, Rename, Delete and Save the original again.
+
+</Legend>
+
+![The phone's section palette](/guide/mobile-en/arrangement-add-sheet.png)
+
+When the arrangement is the way you want it, press **Apply**.

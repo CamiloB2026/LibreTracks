@@ -102,6 +102,8 @@ o usa su menú (clic derecho):
 - **Cambiar BPM original**: el tempo al que se grabó el audio, que usa el warp.
 - **Fades de la canción ▸**: fundido de entrada y de salida. Ver
   [abajo](#fade-de-entrada-y-de-salida).
+- **Arreglo**: repetir, quitar o reordenar secciones de la canción sin tocar
+  los audios. Ver [Arreglos de canción](/es/docs/arrangements/).
 
 ## Fade de entrada y de salida
 
@@ -134,6 +136,44 @@ usa clic derecho en la canción › **Fades de la canción**:
 - Para cortar una canción **en directo** en cualquier momento, usa
   [Fade out y parar](/es/docs/interface/main-screen/#fade-out-y-parar).
 
+## Nivelar el volumen de las canciones
+
+Cada multitrack viene mezclado a su manera, y en directo se nota: una canción
+llega a la mesa más fuerte que la anterior. **Nivelar volumen de canciones…**
+mide lo fuerte que suena cada canción en sus partes fuertes (el coro, no el
+puente suave) y propone el **master** de cada una para que todas lleguen al
+mismo nivel. Está en el menú **Archivo** (en el móvil, en el menú de archivo de
+la barra lateral), porque afecta a todo el repertorio.
+
+![Nivelar canciones: las pistas que cuentan y el botón Medir](/guide/desktop/level-songs-setup.png)
+
+<Legend>
+
+1. **Pistas que cuentan**: solo lo que va a la PA, agrupado por canción.
+   LibreTracks deja fuera el click, los cues, lo que va a los in-ears y las
+   pistas silenciadas, y te dice por qué; puedes cambiar la selección.
+2. **Medir**: mide todas las canciones. Tarda unos segundos por canción.
+
+</Legend>
+
+![Resultado de la medición con el master propuesto para cada canción](/guide/desktop/level-songs-result.png)
+
+<Legend>
+
+1. **Nivel objetivo**: *Sin saturar (recomendado)* lleva todas las canciones al
+   nivel más alto que todas alcanzan sin saturar. También puedes igualarlas a
+   la mediana del repertorio o a una canción concreta.
+2. **La propuesta**: la sonoridad medida, el master actual, el propuesto y el
+   cambio de cada canción.
+3. **Aplicar**: ajusta el master de las canciones de un golpe. Se deshace con
+   <kbd>Ctrl</kbd>+<kbd>Z</kbd> (en el móvil, con el botón Deshacer).
+
+</Legend>
+
+Normalmente la propuesta baja canciones en vez de subirlas: es lo esperado, y
+se compensa una sola vez con la ganancia de la mesa. El master no afecta al
+metrónomo ni a la voz guía.
+
 ## Reordenar el repertorio
 
 - En la **vista DAW**, mueve las canciones por la regla (ver arriba).
@@ -151,6 +191,25 @@ Por defecto, al terminar una canción la reproducción sigue con la siguiente.
 Si prefieres parar entre canciones (para hablar, por ejemplo), activa **Pausar
 al terminar cada canción** en Configuración › General: la reproducción se para
 justo en el último fotograma de cada canción, y *Play* empieza la siguiente.
+
+Si prefieres que la banda no se quede sin referencia entre canciones, activa el
+**Vamp entre canciones**: al terminar cada canción la reproducción espera igual
+que con la pausa, pero el **click sigue al tempo de la canción que acaba** y el
+**pad sigue sonando** todo el tiempo que haga falta. *Play* empieza la
+siguiente; *Stop* para el click. Se activa con el botón **Entre canciones** de
+la [Vista Live](/es/docs/live-view/), en el panel de Vamp de la barra de
+herramientas o en Configuración › General › **Vamp entre canciones (click y
+pad)**.
+
+![Botón Entre canciones junto a VAMP en la Vista Live](/guide/desktop/live-vamp-between-songs.png)
+
+<Legend>
+
+1. **Entre canciones**: activa el vamp entre canciones. Mientras está
+   sonando, el botón late para que sepas por qué no ha empezado la siguiente.
+2. **VAMP**: el vamp de siempre, dentro de una canción.
+
+</Legend>
 
 Para saltar a otra canción: los botones **Anterior** y **Siguiente**,
 <kbd>Mayús</kbd>+número (<kbd>Mayús</kbd>+<kbd>0</kbd> es la primera canción),

@@ -316,19 +316,61 @@ const steps: Record<string, () => Promise<void>> = {
 
   async longPressSong() {
     await longPress(".lt-region-hotspot", { nth: 0 });
-    // Song arrangements are in the build but not announced yet (2026-10):
-    // keep "Arreglo" out of the published capture until the feature ships.
-    await run((label: string) => {
-      document.querySelectorAll<HTMLElement>(".lt-context-menu button").forEach((el) => {
-        if ((el.textContent ?? "").trim() === label) el.style.display = "none";
-      });
-    }, L("Arreglo"));
     await sleep(300);
     await shot("song-sheet");
     await back();
     await longPress(".lt-marker-hotspot", { nth: 0 });
     await shot("marker-sheet");
     await back();
+  },
+
+  /** Song arrangements (1.14.0): long-press the song → "Arreglo". */
+  async arrangement() {
+    // A run that died inside the editor leaves it open over the timeline.
+    if (await rectOf(".lt-structure-mobile")) {
+      await tap(".lt-structure-mobile-header .lt-structure-icon-button", { nth: 0, settle: 1200 });
+      if (await rectOf("button", { text: L("Descartar") })) await tap("button", { text: L("Descartar"), settle: 1200 });
+    }
+    await longPress(".lt-region-hotspot", { nth: 0 });
+    await sleep(500);
+    await tap(".lt-context-menu button", { text: L("Arreglo") });
+    await waitFor(".lt-structure-mobile", { timeout: 10_000 });
+    await sleep(800);
+    if (await rectOf(".lt-structure-capture-button")) {
+      await annotatedShot("arrangement-capture", [
+        { selector: ".lt-structure-detected", n: 1, pad: 4 },
+        { selector: ".lt-structure-capture-button", n: 2, pad: 3 },
+      ]);
+      await tap(".lt-structure-capture-button");
+      await sleep(1500);
+    }
+    await annotatedShot("arrangement-editor", [
+      { selector: ".lt-structure-mobile-picker", n: 1, pad: 3 },
+      { selector: ".lt-structure-mobile-list", n: 2, pad: 3 },
+      { selector: ".lt-structure-gap", n: 3, pad: 3 },
+      { selector: ".lt-structure-mobile-header .lt-structure-icon-button", nth: 1, n: 4, pad: 3 },
+    ]);
+    // Below the fold on a phone: bring it up before tapping it.
+    await run(() => document.querySelector(".lt-structure-add-row")?.scrollIntoView({ block: "center" }));
+    await sleep(600);
+    await tap(".lt-structure-add-row");
+    await waitFor(".lt-structure-tap-palette", { timeout: 5_000 });
+    await sleep(600);
+    await tap(".lt-structure-tap-row", { nth: 1 });
+    await sleep(500);
+    await shot("arrangement-add-sheet");
+    await tap(".lt-structure-sheet-footer .is-primary");
+    await sleep(800);
+    if (await rectOf(".lt-structure-mobile .is-primary.is-attention")) {
+      await tap(".lt-structure-mobile .is-primary.is-attention");
+      await sleep(2000);
+    }
+    // Applying closes the editor and shows the song with its arrangement.
+    await shot("arrangement-applied");
+    if (await rectOf(".lt-structure-mobile")) {
+      await tap(".lt-structure-mobile-header .lt-structure-icon-button", { nth: 0 });
+      await sleep(1200);
+    }
   },
 
   async panels() {

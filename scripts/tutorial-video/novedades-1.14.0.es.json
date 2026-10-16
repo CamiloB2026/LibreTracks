@@ -1,0 +1,83 @@
+{
+  "title": "Novedades de LibreTracks 1.14",
+  "voice": "es-ES-AlvaroNeural",
+  "rate": "+5%",
+  "scenes": [
+    {
+      "id": "01-intro",
+      "text": "LibreTracks 1.14 viene cargado: arreglos de canción, vamp entre canciones, nivelar el volumen del repertorio, la nueva biblioteca de carpetas, y en el móvil, MIDI y vídeo."
+    },
+    {
+      "id": "02-abrir",
+      "text": "Para montar un arreglo, la canción tiene que tener sus secciones marcadas: Intro, Verso, Coro. Haz clic derecho sobre la canción, en la regla, y elige Arreglo."
+    },
+    {
+      "id": "03-original",
+      "text": "La primera vez, pulsa Guardar como original. LibreTracks guarda la canción tal cual, para que siempre puedas volver a ella."
+    },
+    {
+      "id": "04-montar",
+      "text": "Ahora monta el arreglo. Pulsa Nuevo, y haz clic en una sección para añadirla al final, o arrástrala para meterla donde quieras. Aquí, dos coros más al final."
+    },
+    {
+      "id": "05-aplicar",
+      "text": "Pulsa Aplicar. El arreglo se escribe en la línea de tiempo, y las canciones siguientes se desplazan solas. Puedes guardar varios arreglos, y volver al original cuando quieras."
+    },
+    {
+      "id": "06-vamp",
+      "text": "La vista Live ahora tiñe cada marca con su color, y reparte las marcas en tantas columnas como quepan. Y para el directo, llega el vamp entre canciones: actívalo con el botón Entre canciones. Al acabar cada canción, el click sigue a su tempo y el pad sigue sonando, hasta que pulses Play para la siguiente."
+    },
+    {
+      "id": "07-fade",
+      "text": "Cada canción puede tener su propio fade de entrada y de salida: arrastra las esquinas de la canción en la regla. Y el nuevo botón Fade out y parar, junto al transporte, apaga la canción poco a poco. Si lo pulsas otra vez, para en seco."
+    },
+    {
+      "id": "08-nivelar",
+      "text": "Para que todas las canciones lleguen a la mesa al mismo nivel, abre Archivo, Nivelar volumen de canciones. Pulsa Medir: LibreTracks mide cada canción y propone su master. Revisa la propuesta, y pulsa Aplicar."
+    },
+    {
+      "id": "09-biblioteca",
+      "text": "La biblioteca ahora muestra las carpetas de tu disco, como los lugares de Ableton, también en el móvil. Pulsa Añadir carpeta, elige la de tus multitracks, y arrastra un audio, o una carpeta entera, a la línea de tiempo. Mientras arrastras, ves dónde va a caer."
+    },
+    {
+      "id": "10-organizar",
+      "text": "Si prefieres la biblioteca clásica, actívala en Configuración, General. Ahora tiene un botón nuevo: Organizar por canción. Crea una carpeta por canción, y mete en ella los audios sueltos que usa."
+    },
+    {
+      "id": "11-mezcla",
+      "text": "Los faders son ahora de estilo consola, con vúmetros estéreo en cada pista, en el mezclador y en el master de cada canción. Y una pista convertida a mono muestra un solo canal."
+    },
+    {
+      "id": "12-marcas",
+      "text": "La voz guía tiene avisos nuevos. En las secciones: Solo Batería, Solo Bajo y Solo Guitarra. Y en los avisos: Sube Tempo y Baja Tempo."
+    },
+    {
+      "id": "13-movil",
+      "text": "Y en el móvil y la tablet, también hay novedades."
+    },
+    {
+      "id": "14-movil-arreglo",
+      "text": "Los arreglos funcionan igual: mantén pulsada la canción y elige Arreglo. Guarda el original, toca Añadir sección para sumar bloques, y pulsa Aplicar."
+    },
+    {
+      "id": "15-movil-midi-pista",
+      "text": "El móvil ya habla MIDI, y puedes preparar los mensajes aunque todavía no tengas el aparato conectado. Selecciona una pista, abre Más acciones, y elige Añadir pista MIDI. Después selecciona la pista MIDI, toca Añadir MIDI aquí, y añade notas, controles o cambios de programa."
+    },
+    {
+      "id": "16-movil-midi",
+      "text": "Para controlar LibreTracks con una pedalera o un controlador, por cable o por Bluetooth, ve a Configuración, MIDI. Pulsa Buscar dispositivos Bluetooth, y en MIDI Learn asignas cada botón."
+    },
+    {
+      "id": "17-movil-video",
+      "text": "Y el vídeo llega al móvil. Añádelo desde Añadir: vídeo de la galería, o de archivos. Conecta el proyector con un cable USB-C a HDMI, y en Configuración, Vídeo, elige la pantalla."
+    },
+    {
+      "id": "18-movil-nivelar",
+      "text": "Nivelar canciones también está en el móvil: en el menú de archivo de la barra lateral, Nivelar volumen de canciones."
+    },
+    {
+      "id": "19-final",
+      "text": "Descarga LibreTracks gratis en libretracks punto com."
+    }
+  ]
+}

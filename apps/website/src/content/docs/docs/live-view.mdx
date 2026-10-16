@@ -11,11 +11,11 @@ import Legend from "../../../components/guide/Legend.astro";
 
 <Legend>
 
-1. **Header**: the song that is playing, its BPM and its key.
+1. **Header**: the song that is playing, its BPM, its key and its progress.
 2. **Performance settings**: marker jump, song jump and Vamp.
 3. **Live markers**: a big button per marker.
-4. **Setlist**: the current song with what is left of it, and the rest of the
-   songs.
+4. **Setlist**: the session's songs in a strip, with the current one
+   highlighted.
 
 </Legend>
 
@@ -25,7 +25,7 @@ Switch views with the three buttons on the bar (`view_timeline` for the DAW view
 
 ### Header
 
-Shows the song that is playing with its elapsed time, its effective BPM and its key, at a size you can read from a distance.
+Shows the song that is playing with its effective BPM, its key and a bar with the time elapsed and what is left, at a size you can read from a distance.
 
 ### Performance settings
 
@@ -34,6 +34,7 @@ The three settings you change on the fly are always visible, with no menus:
 - `Marker jump`: `Immediate`, `After bars` (with its count) or `Next marker`.
 - `Song jump`: `Immediate`, `Song end`, `After bars` or `Next marker`, with the transition set to `Clean` or `Fade`.
 - `Vamp type`: repeat the current `Section` or a number of `Bars`, with the `VAMP` button next to it to enter and leave the loop.
+  Next to `VAMP`, the `Between songs` button turns on [vamp between songs](/docs/tasks/songs/#going-from-one-song-to-the-next-live): when each song ends the click keeps going at its tempo and the pad keeps sounding until you press Play.
 
 These are the same settings as [Live control](/docs/live-control-flow/): changing them here changes them everywhere in the app.
 
@@ -50,7 +51,7 @@ Every marker in the selected song is a large numbered button, **tinted with the 
 
 ### Setlist
 
-The setlist column shows the current song with its progress and the time remaining, and below it the rest of the songs in the session with their play button. Selecting a song shows its markers without jumping to it, so you can line up the next number while the current one plays.
+The setlist is the strip of songs in the header: each song with its number, its name and its play button, and the one playing highlighted. Selecting a song shows its markers without jumping to it, so you can line up the next number while the current one plays. If a song has an [arrangement](/docs/arrangements/) applied, it carries its name (`Arrangement: Sunday`).
 
 To change the order of the setlist, drag a song by its **handle** (the six
 dots on its left): the others move aside to show you where it will land. The

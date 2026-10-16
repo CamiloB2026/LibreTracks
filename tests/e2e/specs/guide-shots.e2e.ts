@@ -167,6 +167,16 @@ async function ensureSession() {
   await AppPage.reopenSessionUntil(session, (s) => s.tracks.length >= 5, 180_000);
   await AppPage.resetShell();
   await browser.pause(5000);
+  await dismissVideoNotice();
+}
+
+/** «Ahora no» on the "this session has video" notice, if it is up. */
+async function dismissVideoNotice() {
+  await runInPage(() => {
+    const notice = document.querySelector(".lt-video-setup-notice");
+    const buttons = notice ? Array.from(notice.querySelectorAll("button")) : [];
+    (buttons[buttons.length - 1] as HTMLButtonElement | undefined)?.click();
+  });
 }
 
 /** Like tagByText, but the trimmed text must equal `text` ("Coro", not "Pre Coro"). */
@@ -228,12 +238,13 @@ async function rightClick(selector: string, at: { fx?: number; fy?: number } = {
 
 /**
  * Menu entries for features that exist in the build but are not announced
- * yet (song arrangements, 2026-10). Hidden from the guide captures until the
- * feature is public; remove an entry here when it ships.
+ * yet. Hidden from the guide captures until the feature is public; remove an
+ * entry here when it ships (song arrangements shipped in 1.14.0).
  */
-const UNANNOUNCED_MENU_ITEMS = [L("Arreglo")];
+const UNANNOUNCED_MENU_ITEMS: string[] = [];
 
 async function hideUnannouncedMenuItems() {
+  if (!UNANNOUNCED_MENU_ITEMS.length) return;
   await runInPage((labels: string[]) => {
     document.querySelectorAll<HTMLElement>(".lt-context-menu button").forEach((el) => {
       if (labels.includes((el.textContent ?? "").trim())) el.style.display = "none";
@@ -295,7 +306,12 @@ describe("user guide screenshots", function () {
       restoreLocale = await useAppLocale("en");
       await AppPage.waitUntilBooted();
     }
-    await browser.setWindowSize(1940, 1140);
+    // As big as the screen allows, and never past it: with one 1080p monitor
+    // Windows did NOT clamp a 1940x1140 window, and every pointer action
+    // beyond the screen edge was lost (menus that never opened, drags that
+    // never landed).
+    const avail = await runInPage(() => ({ w: window.screen.availWidth, h: window.screen.availHeight }));
+    await browser.setWindowRect(0, 0, Math.min(1940, avail.w), Math.min(1140, avail.h));
     // Windows clamps the window to the screen, so the real viewport is a bit
     // shorter than 1080. The emulated one must match it exactly: if it is
     // larger the page is scaled to fit and every pointer action lands a few
@@ -313,7 +329,17 @@ describe("user guide screenshots", function () {
   });
 
   // The real mouse over the window breaks the synthetic drags (osCursor.ts).
-  beforeEach(() => parkOsCursor());
+  // A step that died mid-drag leaves the synthetic button held down, and
+  // every right-click after it opened nothing: release it before each step.
+  beforeEach(async function () {
+    await browser.releaseActions().catch(() => undefined);
+    await browser.keys(["Escape"]).catch(() => undefined);
+    await parkOsCursor();
+    // The shots session carries a video track, so with no projector set up
+    // the app offers to configure one: keep that notice out of every shot
+    // except the video step's own («Ahora no» only hides it in memory).
+    if (!/video/i.test(this.currentTest?.title ?? "")) await dismissVideoNotice();
+  });
 
   after(async () => {
     await restoreLocale?.();
@@ -706,7 +732,9 @@ describe("user guide screenshots", function () {
     // empty timeline after the last song.
     const lanes = await rectOf(".lt-track-layers");
     if (!lanes) throw new Error("no lanes");
-    await setTimelineView({ zoomLevel: 0.0625 });
+    // Ask for less than the minimum: the app clamps to its own floor, which
+    // depends on the session length and the window width.
+    await setTimelineView({ zoomLevel: 0.01, cameraX: 0 });
     await browser.pause(800);
     // Drop right after the last song as it is drawn NOW: the app clamps the
     // scroll when everything fits, so a computed position can be wrong.
@@ -715,6 +743,9 @@ describe("user guide screenshots", function () {
         ...Array.from(document.querySelectorAll(".lt-region-hotspot")).map((el) => el.getBoundingClientRect().right),
       ),
     );
+    if (lastRight > lanes.x + lanes.w - 60) {
+      throw new Error(`library-folder-to-song: no empty timeline after the last song (ends at ${lastRight}, lanes end ${lanes.x + lanes.w})`);
+    }
     const dropX = Math.min(lanes.x + lanes.w - 30, lastRight + 14);
     console.log(`[guideshots] folder drop at x=${dropX} (last song ends at ${lastRight}, lanes end ${lanes.x + lanes.w})`);
     const vp = await viewport();
@@ -1278,10 +1309,11 @@ describe("user guide screenshots", function () {
     await (await $(viewBtn(3))).click();
     await browser.pause(2500);
     await annotatedShot("live-view", [
-      { selector: ".lt-live-header", n: 1, pad: 2 },
+      // Since 1.14 the setlist is a strip in the header, not a column.
+      { selector: ".lt-live-heading", n: 1, pad: 2 },
       { selector: ".lt-live-settings", n: 2, pad: 2 },
       { selector: ".lt-live-cue-panel", n: 3, pad: 2 },
-      { selector: ".lt-live-setlist", n: 4, pad: 2 },
+      { selector: ".lt-live-region-buttons", n: 4, pad: 2 },
     ]);
     await (await $(viewBtn(1))).click();
     await browser.pause(1200);
@@ -1342,7 +1374,7 @@ describe("user guide screenshots", function () {
         await browser.pause(400);
         await rightClick(asset);
         const toRoot = await tagByText(".lt-context-menu button", L("Mover a la ra"), "menu-root").catch(() => null);
-        if (toRoot) {
+        if (toRoot && (await (await $(toRoot)).isClickable().catch(() => false))) {
           await (await $(toRoot)).click();
           await browser.pause(1200);
         } else {
@@ -1700,5 +1732,155 @@ describe("user guide screenshots", function () {
     } else {
       console.log("[guideshots] SKIPPED video-audio-prompt: not asked (choice remembered in settings?)");
     }
+  });
+
+  // Novedades de 1.14.0: arreglos de canción, «Nivelar volumen de
+  // canciones…» y «Vamp entre canciones». Last on purpose: applying an
+  // arrangement lengthens the song and shifts the rest of the set. Lanzar
+  // solo esto con --mochaOpts.grep "1.14".
+  it("novedades 1.14: arrangements, level songs, vamp between songs", async () => {
+    await ensureSession();
+    await AppPage.resetShell();
+    await setTimelineView({ zoomLevel: 1, cameraX: 0 });
+
+    // Arrangement editor, from the song menu. The first song of the shots
+    // session has its sections marked (Intro, Verso, Coro…).
+    const band = await tag(".lt-region-hotspot", "arr-song");
+    // Near the start of the band: at zoom 1 the song is wider than the page.
+    const bandBox = await rectOf(band);
+    if (!bandBox) throw new Error("no song band");
+    await rightClickAt(Math.max(bandBox.x, 0) + 160, bandBox.y + bandBox.h / 2);
+    await (await $(await tagByExactText(".lt-context-menu button", L("Arreglo"), "menu-arr"))).click();
+    await browser.pause(1200);
+    if (!(await rectOf(".lt-structure-panel"))) throw new Error("arrangement panel did not open");
+    if (await rectOf(".lt-structure-capture-button")) {
+      await annotatedShot(
+        "arrangement-capture",
+        [
+          { selector: ".lt-structure-detected", n: 1, pad: 4 },
+          { selector: ".lt-structure-capture-button", n: 2, pad: 3 },
+        ],
+        { crop: { selector: ".lt-structure-panel", margin: 10 } },
+      );
+      await (await $(".lt-structure-capture-button")).click();
+      await browser.pause(1500);
+    }
+    await (await $(await tagByExactText(".lt-structure-toolbar button", L("Nuevo"), "arr-new"))).click();
+    await browser.pause(800);
+
+    // Two more choruses at the end: click the chorus in the palette twice.
+    // A clip shows it, then the still with every zone numbered.
+    const chorus = await tagByText(".lt-structure-palette .lt-structure-chip", "Coro", "arr-chorus").catch(() =>
+      tag(".lt-structure-palette .lt-structure-chip", "arr-chorus", 2),
+    );
+    const panel = await rectOf(".lt-structure-panel");
+    if (!panel) throw new Error("no arrangement panel");
+    const rec = new Recorder(
+      cdp,
+      "arrangement-build",
+      { x: Math.max(0, panel.x - 10), y: Math.max(0, panel.y - 260), w: Math.min(1900, panel.w + 20), h: panel.h + 270 },
+      outDir,
+    );
+    await rec.hold(0.8);
+    await rec.click(chorus);
+    await rec.hold(0.8);
+    await rec.click(chorus);
+    await rec.hold(1.2);
+    await rec.click(".lt-structure-footer .is-primary");
+    await rec.hold(2.5);
+    await rec.encode();
+
+    await annotatedShot(
+      "arrangement-editor",
+      [
+        { selector: ".lt-structure-select", n: 1, pad: 3, badge: "above" },
+        { selector: ".lt-structure-toolbar > button", nth: 0, n: 2, pad: 3, badge: "above" },
+        { selector: ".lt-structure-toolbar > button", nth: 1, pad: 3 },
+        { selector: ".lt-structure-toolbar > button", nth: 2, pad: 3 },
+        { selector: ".lt-structure-toolbar > button", nth: 3, pad: 3 },
+        { selector: ".lt-structure-palette", n: 3, pad: 4 },
+        { selector: ".lt-structure-strip-wrap", n: 4, pad: 4 },
+        { selector: ".lt-structure-footer .is-primary", n: 5, pad: 3 },
+      ],
+      { crop: { selector: ".lt-structure-panel", margin: 10 } },
+    );
+    await (await $(".lt-structure-close")).click();
+    await browser.pause(1000);
+
+    // The song in the ruler carries the arrangement's name. Zoom so the whole
+    // (now longer) song fits in ~1100 px, then crop to its band and markers.
+    const arranged = [...((await AppPage.songView())?.regions ?? [])].sort((a, b) => a.startSeconds - b.startSeconds)[0];
+    if (arranged) {
+      const zoom = 1100 / ((arranged.endSeconds - arranged.startSeconds) * 18);
+      await setTimelineView({ zoomLevel: zoom, cameraX: arranged.startSeconds * zoom * 18 });
+    }
+    const songBand = await tag(".lt-region-hotspot", "arr-song-fit");
+    const songBox = await rectOf(songBand);
+    if (!songBox) throw new Error("no arranged song band");
+    await annotatedShot("arrangement-ruler", [{ selector: songBand, n: 1, pad: 3 }], {
+      crop: { x: Math.max(0, songBox.x - 30), y: Math.max(0, songBox.y - 30), w: Math.min(songBox.w + 60, 1900), h: 170 },
+    });
+
+    // Level song volumes: a set-wide action, so it lives in the File menu.
+    await (await $(`${tour("topbar-file-menu")} .lt-top-menu-trigger`)).click();
+    await browser.pause(500);
+    await (await $(await tagByText(".lt-top-menu-dropdown button", L("Nivelar volumen de canciones"), "menu-level"))).click();
+    await browser.pause(1500);
+    await annotatedShot(
+      "level-songs-setup",
+      [
+        { selector: ".lt-level-songs-groups", n: 1, pad: 4 },
+        { selector: ".lt-level-songs-modal .lt-export-modal-actions .is-primary", n: 2, pad: 3 },
+      ],
+      { crop: { selector: ".lt-level-songs-modal", margin: 12 } },
+    );
+    await (await $(".lt-level-songs-modal .lt-export-modal-actions .is-primary")).click();
+    let measured = false;
+    for (let i = 0; i < 300 && !measured; i++) {
+      await browser.pause(1000);
+      measured = Boolean(await rectOf(".lt-level-songs-table"));
+    }
+    if (measured) {
+      await browser.pause(800);
+      await annotatedShot(
+        "level-songs-result",
+        [
+          { selector: ".lt-level-songs-modal .lt-settings-field", n: 1, pad: 4 },
+          { selector: ".lt-level-songs-table-wrap", n: 2, pad: 4 },
+          { selector: ".lt-level-songs-modal .lt-export-modal-actions .is-primary", n: 3, pad: 3 },
+        ],
+        { crop: { selector: ".lt-level-songs-modal", margin: 12 } },
+      );
+    } else {
+      console.log("[guideshots] SKIPPED level-songs-result: measuring did not finish in 5 minutes");
+    }
+    // On the result screen the secondary button is «Volver» (back to the
+    // setup), not close, and Escape does not close it: a click on the
+    // backdrop, outside the dialog, does.
+    for (let i = 0; i < 3 && (await rectOf(".lt-level-songs-modal")); i++) {
+      await browser
+        .action("pointer", { id: "guide-mouse", parameters: { pointerType: "mouse" } })
+        .move({ x: 24, y: 300 })
+        .down({ button: 0 })
+        .up({ button: 0 })
+        .perform();
+      await browser.pause(700);
+    }
+    if (await rectOf(".lt-level-songs-modal")) throw new Error("level songs modal did not close");
+
+    // «Entre canciones» next to VAMP in the Live View.
+    const viewBtn = (n: number) => `${tour("view-mode-switcher")} button:nth-of-type(${n})`;
+    await (await $(viewBtn(3))).click();
+    await browser.pause(2500);
+    await annotatedShot(
+      "live-vamp-between-songs",
+      [
+        { selector: ".lt-song-gap-vamp", n: 1, pad: 3 },
+        { selector: ".lt-live-vamp", n: 2, pad: 3 },
+      ],
+      { crop: { selector: ".lt-live-settings", margin: 12 } },
+    );
+    await (await $(viewBtn(1))).click();
+    await browser.pause(1200);
   });
 });

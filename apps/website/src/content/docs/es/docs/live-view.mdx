@@ -11,10 +11,10 @@ La **Vista Live** es la tercera proyección del mismo proyecto, pensada para el 
 
 <Legend>
 
-1. **Cabecera**: la canción que suena, su BPM y su tonalidad.
+1. **Cabecera**: la canción que suena, su BPM, su tonalidad y su progreso.
 2. **Ajustes de directo**: salto de marca, salto de canción y Vamp.
 3. **Marcas del directo**: un botón grande por marca.
-4. **Repertorio**: la canción actual con lo que queda, y el resto de canciones.
+4. **Repertorio**: las canciones de la sesión en una tira, con la actual resaltada.
 
 </Legend>
 
@@ -24,7 +24,7 @@ Cambia de vista con los tres botones de la barra (`view_timeline` para la vista 
 
 ### Cabecera
 
-Muestra la canción que está sonando con su tiempo transcurrido, su BPM efectivo y su tonalidad, de un vistazo y a tamaño legible desde lejos.
+Muestra la canción que está sonando con su BPM efectivo, su tonalidad y una barra con el tiempo transcurrido y lo que queda, de un vistazo y a tamaño legible desde lejos.
 
 ### Ajustes de directo
 
@@ -33,6 +33,7 @@ Los tres ajustes que se cambian sobre la marcha están siempre visibles, sin men
 - `Salto de marca`: `Inmediato`, `Tras compases` (con su número) o `Siguiente marca`.
 - `Salto de canción`: `Inmediato`, `Final de canción`, `Tras compases` o `Siguiente marca`, con la transición en `Limpio` o `Fade`.
 - `Tipo de vamp`: repetir la `Sección` actual o un número de `Compases`, con el botón `VAMP` al lado para entrar y salir del bucle.
+  Junto a `VAMP`, el botón `Entre canciones` activa el [vamp entre canciones](/es/docs/tasks/songs/#pasar-de-una-canción-a-otra-en-directo): al acabar cada canción el click sigue a su tempo y el pad sigue sonando hasta que pulses Play.
 
 Son los mismos ajustes de [Control en vivo](/es/docs/live-control-flow/): cambiarlos aquí los cambia en toda la app.
 
@@ -49,7 +50,7 @@ Cada marca de la canción seleccionada es un botón grande y numerado, **teñido
 
 ### Repertorio
 
-La columna de repertorio muestra la canción actual con su progreso y el tiempo que queda, y debajo el resto de canciones de la sesión con su botón de play. Seleccionar una canción muestra sus marcas sin saltar a ella, así puedes preparar el siguiente tema mientras suena el actual.
+El repertorio es la tira de canciones de la cabecera: cada canción con su número, su nombre y su botón de play, y la que suena resaltada. Seleccionar una canción muestra sus marcas sin saltar a ella, así puedes preparar el siguiente tema mientras suena el actual. Si una canción tiene un [arreglo](/es/docs/arrangements/) aplicado, lleva su nombre (`Arreglo: Domingo`).
 
 Para cambiar el orden del repertorio, arrastra una canción por su **asa** (los
 seis puntos a su izquierda): el resto se aparta para enseñarte dónde va a caer.

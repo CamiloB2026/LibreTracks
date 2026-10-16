@@ -1,0 +1,137 @@
+---
+title: Arreglos de canción
+description: "Cómo montar arreglos de una canción en LibreTracks: repetir, quitar o reordenar secciones sin tocar los audios, guardar varios arreglos y volver al original, en el ordenador, el móvil y la tablet."
+---
+
+import Legend from "../../../../components/guide/Legend.astro";
+import Clip from "../../../../components/guide/Clip.astro";
+
+Un **arreglo** cambia la forma de una canción sin montar saltos: dos coros más
+al final, quitar el puente, repetir el verso. LibreTracks lo **escribe en la
+línea de tiempo tal cual**: si repites el verso, ves el verso dos veces, y las
+canciones de después se desplazan solas. Por eso la voz guía, el Remote, el
+render y las canciones exportadas lo siguen sin hacer nada más.
+
+Puedes guardar **varios arreglos** de la misma canción (el del domingo, el
+corto, el acústico) y volver al original cuando quieras.
+
+## Antes de empezar: las secciones
+
+Un arreglo se monta con las **secciones** de la canción: Intro, Verso, Coro…
+Márcalas en la fila de secciones de la regla, como siempre (ver
+[Marcas](/es/docs/tasks/markers/)). Hacen falta al menos dos. Las marcas de
+aviso (Build, Entra batería…) no cortan secciones: viajan con la sección en la
+que están.
+
+## Guardar el original
+
+Haz clic derecho sobre la canción en la regla y elige **Arreglo** (en el móvil,
+mantén pulsada la canción). En la Vista Compacta está en el menú de la
+canción. Se abre el editor de arreglos, abajo, sobre la línea de tiempo.
+
+![Primer paso del editor de arreglos: las secciones detectadas y Guardar como original](/guide/desktop/arrangement-capture.png)
+
+<Legend>
+
+1. **Secciones detectadas**: las que LibreTracks ha encontrado en la canción,
+   con su color y sus compases.
+2. **Guardar como original**: guarda la canción tal como está, para poder
+   montar cualquier arreglo y volver a ella cuando quieras.
+
+</Legend>
+
+Si alguna marca no cae en el primer tiempo de un compás, el editor te avisa (al
+repetir esa sección quedaría desfasada) y te ofrece **Ajustar al compás**.
+
+## Montar un arreglo
+
+<Clip
+  src="/guide/desktop/arrangement-build.mp4"
+  poster="/guide/desktop/arrangement-build.webp"
+  caption="Clic en Coro dos veces para añadirlo al final, y Aplicar: la canción crece en la línea de tiempo."
+/>
+
+![Editor de arreglos con sus zonas numeradas](/guide/desktop/arrangement-editor.png)
+
+<Legend>
+
+1. **Arreglo guardado**: el selector con tus arreglos. El primero es siempre
+   **Original**.
+2. **Nuevo**, **Renombrar**, **Eliminar** y **Volver a guardar el original**.
+   *Nuevo* empieza un arreglo a partir del original.
+3. **Secciones**: la paleta con las secciones de la canción. **Clic** en una
+   la añade al final; **arrástrala** a la tira de abajo para meterla donde la
+   sueltes.
+4. **Orden**: los bloques del arreglo, en el orden en que van a sonar.
+   Arrástralos para cambiarlos de sitio. Con un bloque seleccionado,
+   <kbd>Supr</kbd> lo quita y <kbd>Ctrl</kbd>+<kbd>D</kbd> lo duplica. Debajo
+   ves los compases en total.
+5. **Aplicar**: escribe el arreglo en la línea de tiempo. Hasta que no lo
+   pulsas, los cambios son solo del editor (lo indica *Cambios sin aplicar*).
+
+</Legend>
+
+Al aplicar, las canciones siguientes se colocan detrás, en su compás. Con un
+arreglo aplicado, la canción lleva su nombre en la regla (`⇄ Domingo`), y la
+regla sombrea un poco las secciones que son repeticiones.
+
+![Canción con un arreglo aplicado en la regla](/guide/desktop/arrangement-ruler.png)
+
+- Para **volver al original**, elige *Original* en el selector y pulsa
+  **Aplicar**. Tus arreglos no se borran.
+- El original no se puede borrar ni renombrar. Si cambias sus bloques, se crea
+  un arreglo nuevo a partir de él.
+- Si te equivocaste al guardar el original (faltaba una marca, una sección
+  estaba mal puesta), corrige la canción en la línea de tiempo y usa **Volver
+  a guardar el original**.
+
+## Editar una canción con arreglo
+
+El volumen, el mute, el pan o las salidas de las pistas se cambian como
+siempre. Para mover, recortar o añadir **clips o marcas**, LibreTracks te
+pregunta antes: *Esta canción tiene un arreglo*. **Editar original** devuelve
+la canción al original (el arreglo se guarda), editas lo que quieras y, al
+volver a pulsar **Aplicar**, el arreglo se monta sobre la canción editada. Si
+quitaste una sección que usaba algún arreglo, te dice de qué arreglos la ha
+quitado.
+
+## Dónde se ve el arreglo
+
+- En la **Vista Compacta**, la cabecera de la canción muestra el arreglo
+  aplicado; púlsalo para abrir el editor.
+- En la [Vista Live](/es/docs/live-view/) y en el [Remote](/es/docs/remote-control/),
+  la canción del repertorio lleva el nombre de su arreglo.
+- Los arreglos viajan en las canciones exportadas (`.ltpkg`) y en las sesiones
+  (`.ltset`), y el [render](/es/docs/tasks/songs/#exportar-renderizar-y-borrar)
+  saca la canción tal como suena con su arreglo.
+
+Si abres la sesión con una versión anterior de LibreTracks, verás el arreglo
+escrito en la línea de tiempo y sonará igual, pero si guardas desde esa versión
+se pierde el original del arreglo.
+
+## En el móvil y la tablet
+
+Mantén pulsada la canción y elige **Arreglo**: el editor ocupa toda la
+pantalla. La primera vez, pulsa **Guardar como original**, como en el
+ordenador.
+
+![Editor de arreglos en el móvil](/guide/mobile/arrangement-editor.png)
+
+<Legend>
+
+1. **Arreglo guardado**: el selector de arreglos y el que está aplicado.
+2. **Los bloques del arreglo**, en el orden en que van a sonar. Arrastra por
+   el asa para reordenar, desliza un bloque a la izquierda para quitarlo y
+   mantén pulsado para duplicarlo. Al quitar una sección tienes unos segundos
+   para **Deshacer**.
+3. **+**: abre la paleta para insertar secciones en ese punto. Al final de la
+   lista, **Añadir sección** las añade detrás de todo. En la paleta, toca una
+   sección para añadirla (cuántas veces quieras) y pulsa **Listo**.
+4. **Más opciones**: Nuevo, Renombrar, Eliminar y Volver a guardar el
+   original.
+
+</Legend>
+
+![Paleta de secciones del móvil](/guide/mobile/arrangement-add-sheet.png)
+
+Cuando el arreglo esté como quieres, pulsa **Aplicar**.

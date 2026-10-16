@@ -139,6 +139,7 @@ export default defineConfig({
           items: [
             { slug: "docs/tasks/library" },
             { slug: "docs/tasks/songs" },
+            { slug: "docs/arrangements" },
             { slug: "docs/tasks/markers" },
             { slug: "docs/tasks/clips-tracks" },
             { slug: "docs/tasks/tempo" },
