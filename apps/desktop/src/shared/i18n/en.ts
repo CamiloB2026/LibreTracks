@@ -2200,6 +2200,7 @@ const en = {
   },
   songGapVamp: {
     label: "Between songs",
+    shortLabel: "Songs",
     title:
       "Vamp between songs: when each song ends the click keeps going at its tempo and the pad keeps sounding until you press Play for the next one.",
     holding:

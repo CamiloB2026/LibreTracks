@@ -123,6 +123,15 @@ describe("createTrackHandlers", () => {
     expect(deps.createTrack).not.toHaveBeenCalled();
   });
 
+  // A new MIDI track used to offer the audio track's default name.
+  it("each kind of track proposes its own default name", async () => {
+    const { handlers, deps } = setup();
+    await handlers.handleCreateTrack("midi", null);
+    await handlers.handleCreateTrack("audio", null);
+    expect(deps.prompt).toHaveBeenNthCalledWith(1, "transport.prompt.trackName", "transport.midi.trackDefaultName");
+    expect(deps.prompt).toHaveBeenNthCalledWith(2, "transport.prompt.trackName", "transport.defaults.audioTrackName");
+  });
+
   it("create track skips the waveform payload and records the revision", async () => {
     const { handlers, deps } = setup();
     await handlers.handleCreateTrack("folder", track("anchor"));

@@ -39,7 +39,9 @@ export function SongGapVampToggle({
       }}
     >
       <span className="material-symbols-outlined" aria-hidden="true">all_inclusive</span>
-      <span>{t("songGapVamp.label")}</span>
+      <span className="lt-song-gap-vamp-label">{t("songGapVamp.label")}</span>
+      {/* Phones: the short label, so the live settings row keeps its room. */}
+      <span className="lt-song-gap-vamp-short">{t("songGapVamp.shortLabel")}</span>
     </button>
   );
 }

@@ -96,6 +96,8 @@ vi.mock("../features/transport/desktopApi", async (importOriginal) => {
     listenToWaveformReady: vi.fn(testDesktopApiMock.listenToWaveformReady),
     listenToWaveformProgress: vi.fn(testDesktopApiMock.listenToWaveformProgress),
     listenToSettingsUpdated: vi.fn(testDesktopApiMock.listenToSettingsUpdated),
+    listenToAudioIdleWake: vi.fn(testDesktopApiMock.listenToAudioIdleWake),
+    takeAudioIdleWake: vi.fn(testDesktopApiMock.takeAudioIdleWake),
     listenToMidiRawMessage: vi.fn(testDesktopApiMock.listenToMidiRawMessage),
     // Cerrar la app: la X no existe en los tests y salir no debe matar vitest.
     listenToAppCloseRequested: vi.fn(async () => () => {}),

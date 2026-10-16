@@ -18,6 +18,10 @@
   font-size: 14px;
 }
 
+.lt-song-gap-vamp-short {
+  display: none;
+}
+
 .lt-song-gap-vamp.is-active {
   border-color: rgb(87 241 219 / 0.4);
   color: #62f2dc;
@@ -52,5 +56,13 @@
 
   .lt-song-gap-vamp .material-symbols-outlined {
     font-size: 12px;
+  }
+
+  .lt-song-gap-vamp-label {
+    display: none;
+  }
+
+  .lt-song-gap-vamp-short {
+    display: inline;
   }
 }

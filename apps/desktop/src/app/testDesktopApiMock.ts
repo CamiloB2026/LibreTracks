@@ -1014,6 +1014,11 @@ export const testDesktopApiMock = {
   // así que el hueco está siempre vacío y nadie emite el evento.
   listenToOpenWithFile: async (_handler: (file: OpenWithFile) => void) => () => {},
   takePendingOpenWithFile: async (): Promise<OpenWithFile | null> => null,
+  // "Reanudar" tras un reposo largo: en los tests el audio nunca se duerme.
+  // Sin esto el AudioIdleWakePrompt llamaba al listen real de Tauri y dejaba
+  // decenas de promesas rechazadas sin manejar, que hacían fallar la suite.
+  listenToAudioIdleWake: async (_handler: () => void) => () => {},
+  takeAudioIdleWake: async (): Promise<boolean> => false,
   listenToMidiRawMessage:
     async (
       _handler: (message: {

@@ -774,6 +774,10 @@
   }
 
   .lt-live-settings {
+    /* Each card as wide as its options: equal thirds clipped «Siguiente
+       marca» off the song-jump card, which carries four options plus the
+       transition, while the vamp card had room to spare. */
+    grid-template-columns: repeat(3, auto);
     gap: 0.2rem;
     padding: 0.2rem;
   }
