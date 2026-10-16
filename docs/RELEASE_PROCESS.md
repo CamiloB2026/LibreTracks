@@ -1153,10 +1153,11 @@ of `release.yml`, so the desktop release never waits for them.
 
 The Play upload goes through `scripts/google-play.mjs` (service account
 `github-play-upload@libretracks.iam.gserviceaccount.com`, secret
-`PLAY_SERVICE_ACCOUNT_JSON`). Testing tracks (`internal`, `alpha`, `beta`) roll
-out at once; `production` lands as a **draft**. The API upload carries no
-release notes: paste `play-release-notes.txt` into the release in Play Console
-before rolling it out or promoting it. Submitting for review in Play Console /
+`PLAY_SERVICE_ACCOUNT_JSON`). The default `track: library` only uploads the
+AAB: create the production release by hand in Play Console (*Production →
+Create new release → Add from library*) and paste `play-release-notes.txt`
+there. A testing track (`internal`, `alpha`, `beta`) also creates a release
+that rolls out at once; `production` creates it as a **draft**. Submitting for review in Play Console /
 App Store Connect is done by hand.
 When desktop ships, tag that same commit `v<NEW>` so the three platforms carry
 the same build.

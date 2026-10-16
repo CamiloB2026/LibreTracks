@@ -22,15 +22,16 @@ on:
   workflow_dispatch:
     inputs:
       track:
-        description: "Google Play track to upload to (none = build only). Production lands as a draft."
+        description: "library = upload the AAB only and build the release by hand in Play Console; a track also assigns it (production as a draft); none = build only"
         type: choice
         options:
+          - library
           - internal
           - alpha
           - beta
           - production
           - none
-        default: internal
+        default: library
 
 permissions:
   contents: read

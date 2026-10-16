@@ -9,10 +9,12 @@
 //     forgotten bump would otherwise cost the whole build to find out.
 //
 //   node scripts/google-play.mjs upload <file.aab> <track>
-//     Uploads the bundle and assigns it to the track (internal, alpha, beta,
-//     production) in one edit. Testing tracks roll out at once; production is
-//     left as a DRAFT so sending it to review stays a decision made by hand in
-//     Play Console, as with the App Store.
+//     Uploads the bundle in one edit. With `library` it is only uploaded: no
+//     release is created, and the production release is put together by hand
+//     in Play Console (Create release -> Add from library). With a track
+//     (internal, alpha, beta, production) it is also assigned to it; testing
+//     tracks roll out at once, production is left as a DRAFT so sending it to
+//     review stays a decision made by hand, as with the App Store.
 //
 // Credentials come from PLAY_SERVICE_ACCOUNT_JSON (the whole key file of the
 // github-play-upload service account, invited in Play Console with release
@@ -27,7 +29,7 @@ import { fileURLToPath } from "node:url";
 const PACKAGE_NAME = "com.libretracks.app";
 const API = `https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE_NAME}`;
 const UPLOAD_API = `https://androidpublisher.googleapis.com/upload/androidpublisher/v3/applications/${PACKAGE_NAME}`;
-const TRACKS = ["internal", "alpha", "beta", "production"];
+const TRACKS = ["library", "internal", "alpha", "beta", "production"];
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -143,10 +145,17 @@ const upload = async (call, aabPath, track) => {
       data: readFileSync(aabPath),
       contentType: "application/octet-stream",
     });
-    const status = track === "production" ? "draft" : "completed";
     const versionName = JSON.parse(
       readFileSync(path.join(repoRoot, "apps/desktop/src-tauri/tauri.conf.json"), "utf8"),
     ).version;
+    if (track === "library") {
+      await call("POST", `${API}/edits/${edit.id}:commit`);
+      committed = true;
+      console.log(`Uploaded versionCode ${bundle.versionCode} (${versionName}) to the bundle library, no release created.`);
+      console.log("In Play Console: Production -> Create new release -> Add from library.");
+      return;
+    }
+    const status = track === "production" ? "draft" : "completed";
     await call("PUT", `${API}/edits/${edit.id}/tracks/${track}`, {
       json: {
         track,
