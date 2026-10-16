@@ -4,6 +4,14 @@
 // .srt for YouTube).
 //
 //   node scripts/tutorial-video/compose.mjs scripts/tutorial-video/primeros-pasos.es.json <tutorialDir> <out.mp4>
+//
+// Optional, in the script JSON:
+// - "display": { "spoken form": "written form" } — the voice reads the text as
+//   written for it ("Libre Tracks uno punto catorce punto cero") and the
+//   subtitles show it as it is written ("LibreTracks 1.14.0").
+// - per scene "subtitles": "top" puts that scene's subtitles at the top of
+//   the picture (a panel at the bottom of the app), "mobile" puts them in the
+//   black band above a letterboxed phone recording, clear of the app.
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -106,17 +114,71 @@ for (const scene of script.scenes) {
   for (const block of readFileSync(srt, "utf8").replace(/\r/g, "").trim().split(/\n\n+/)) {
     const lines = block.split("\n");
     const [a, b] = lines[1].split(" --> ");
-    cues.push({ start: clock + LEAD + toSeconds(a), end: clock + LEAD + toSeconds(b), text: lines.slice(2).join("\n") });
+    let text = lines.slice(2).join("\n");
+    for (const [spoken, written] of Object.entries(script.display ?? {})) {
+      text = text.split(spoken).join(written);
+    }
+    cues.push({
+      start: clock + LEAD + toSeconds(a),
+      end: clock + LEAD + toSeconds(b),
+      text,
+      place: scene.subtitles ?? "bottom",
+    });
   }
   parts.push(part);
   console.log(`${scene.id}: ${len.toFixed(1)} s`);
   clock += len;
 }
 
+// The .srt for YouTube is plain. What gets burnt in is an .ass with one style
+// per place: ffmpeg's SRT decoder keeps {\an8} but drops \pos, so per-cue
+// positions do not survive an SRT. Same 384x288 canvas as SRT's default, so
+// the look matches the old force_style.
 const srtOut = outFile.replace(/\.mp4$/, ".srt");
 writeFileSync(
   srtOut,
   cues.map((c, i) => `${i + 1}\n${toStamp(c.start)} --> ${toStamp(c.end)}\n${c.text}\n`).join("\n"),
+);
+const assTime = (t) => {
+  const cs = Math.round(t * 100);
+  const h = Math.floor(cs / 360000);
+  const m = Math.floor((cs % 360000) / 6000);
+  const sec = Math.floor((cs % 6000) / 100);
+  const c = cs % 100;
+  return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}.${String(c).padStart(2, "0")}`;
+};
+const STYLE_FIELDS =
+  "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, " +
+  "Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding";
+const style = (name, size, align, marginV) =>
+  `Style: ${name},Inter,${size},&H00FFFFFF,&H00FFFFFF,&H00000000,&H99000000,0,0,0,0,100,100,0,0,4,0,0,${align},10,10,${marginV},1`;
+// "mobile": the phone is letterboxed 20:9 in 16:9, a 108 px (28.8 units) band
+// above it; a small font and a 2-unit margin keep two lines inside it.
+const PLACE_STYLE = { bottom: "Bottom", top: "Top", mobile: "Mobile" };
+const burnAss = outFile.replace(/\.mp4$/, ".burn.ass");
+writeFileSync(
+  burnAss,
+  [
+    "[Script Info]",
+    "ScriptType: v4.00+",
+    "PlayResX: 384",
+    "PlayResY: 288",
+    "WrapStyle: 0",
+    "",
+    "[V4+ Styles]",
+    STYLE_FIELDS,
+    style("Bottom", 13, 2, 28),
+    style("Top", 13, 8, 28),
+    style("Mobile", 10, 8, 2),
+    "",
+    "[Events]",
+    "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text",
+    ...cues.map(
+      (c) =>
+        `Dialogue: 0,${assTime(c.start)},${assTime(c.end)},${PLACE_STYLE[c.place] ?? "Bottom"},,0,0,0,,${c.text.replace(/\n/g, "\\N")}`,
+    ),
+    "",
+  ].join("\n"),
 );
 const list = path.join(work, "list.txt");
 writeFileSync(list, parts.map((p) => `file '${p.replace(/\\/g, "/")}'`).join("\n"));
@@ -124,16 +186,13 @@ const joined = path.join(work, "joined.mp4");
 ff(["-f", "concat", "-safe", "0", "-i", list, "-c", "copy", joined]);
 
 // Burn the subtitles in. The subtitles filter wants a path relative to the
-// working directory without a drive letter, so run ffmpeg from the srt's dir.
-const style =
-  "FontName=Inter,FontSize=13,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000," +
-  "BackColour=&H99000000,BorderStyle=4,Outline=0,Shadow=0,MarginV=28,Alignment=2";
+// working directory without a drive letter, so run ffmpeg from the file's dir.
 execFileSync(
   "ffmpeg",
   [
     "-y", "-loglevel", "error",
     "-i", path.resolve(joined),
-    "-vf", `subtitles=${path.basename(srtOut)}:force_style='${style}'`,
+    "-vf", `subtitles=${path.basename(burnAss)}`,
     "-c:v", "libx264", "-preset", "slow", "-crf", "20", "-pix_fmt", "yuv420p",
     "-c:a", "copy", "-movflags", "+faststart",
     path.resolve(outFile),

@@ -749,6 +749,25 @@ node scripts/tutorial-video/tighten.mjs marketing/video-<NEW>/novedades-<NEW>.mp
 Both recorders write into the same `marketing/video-<NEW>/scenes/`, so one
 script and one `compose.mjs` run produce the whole video in order.
 
+Two things in the script JSON keep the voice and the subtitles right:
+
+- **"display"**: write names and versions the way the voice should say them
+  and map them back for the subtitles, e.g.
+  `"display": { "Libre Tracks": "LibreTracks", "uno punto catorce punto cero": "1.14.0" }`.
+  The voice mangles "LibreTracks" and reads "1.14" as "una catorce"; the
+  version is always said and shown in full (1.14.0).
+- **per scene "subtitles"**: `"top"` when the scene shows a panel at the
+  bottom of the app (the arrangement editor), `"mobile"` for every phone
+  scene, which puts them in the black band above the letterboxed phone instead
+  of over its bottom bar.
+
+Recorder traps already paid for: a pause after a click (`settleMs`) records no
+frames, so a menu that must be read needs `rec.hold()`; a WebDriver click on a
+menu item that opens a submenu can land on the submenu's first item (use a
+plain DOM click); handles that capture the pointer (song fades, song edges)
+need `rec.dragToCdp`; and a song with an arrangement applied refuses edits, so
+demo other edits on a song without one.
+
 A scene that waits for something slow (measuring songs, loading audio) still
 records the whole wait, which is moving (a progress bar) and so survives
 `tighten.mjs`. Trim that scene's MP4 by hand before `compose.mjs` (keep the

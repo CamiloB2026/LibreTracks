@@ -1,27 +1,36 @@
 {
-  "title": "Novedades de LibreTracks 1.14",
+  "title": "Novedades de LibreTracks 1.14.0",
   "voice": "es-ES-AlvaroNeural",
   "rate": "+5%",
+  "display": {
+    "Libre Tracks": "LibreTracks",
+    "uno punto catorce punto cero": "1.14.0",
+    "libretracks punto com": "libretracks.com"
+  },
   "scenes": [
     {
       "id": "01-intro",
-      "text": "LibreTracks 1.14 viene cargado: arreglos de canción, vamp entre canciones, nivelar el volumen del repertorio, la nueva biblioteca de carpetas, y en el móvil, MIDI y vídeo."
+      "text": "Libre Tracks uno punto catorce punto cero viene cargado: arreglos de canción, vamp entre canciones, nivelar el volumen del repertorio, la nueva biblioteca de carpetas, y en el móvil, MIDI y vídeo."
     },
     {
       "id": "02-abrir",
-      "text": "Para montar un arreglo, la canción tiene que tener sus secciones marcadas: Intro, Verso, Coro. Haz clic derecho sobre la canción, en la regla, y elige Arreglo."
+      "text": "Para montar un arreglo, la canción tiene que tener sus secciones marcadas: Intro, Verso, Coro. Haz clic derecho sobre la canción, en la regla, y elige Arreglo.",
+      "subtitles": "top"
     },
     {
       "id": "03-original",
-      "text": "La primera vez, pulsa Guardar como original. LibreTracks guarda la canción tal cual, para que siempre puedas volver a ella."
+      "text": "La primera vez, pulsa Guardar como original. Libre Tracks guarda la canción tal cual, para que siempre puedas volver a ella.",
+      "subtitles": "top"
     },
     {
       "id": "04-montar",
-      "text": "Ahora monta el arreglo. Pulsa Nuevo, y haz clic en una sección para añadirla al final, o arrástrala para meterla donde quieras. Aquí, dos coros más al final."
+      "text": "Ahora monta el arreglo. Pulsa Nuevo, y haz clic en una sección para añadirla al final, o arrástrala para meterla donde quieras. Aquí, dos coros más al final.",
+      "subtitles": "top"
     },
     {
       "id": "05-aplicar",
-      "text": "Pulsa Aplicar. El arreglo se escribe en la línea de tiempo, y las canciones siguientes se desplazan solas. Puedes guardar varios arreglos, y volver al original cuando quieras."
+      "text": "Pulsa Aplicar. El arreglo se escribe en la línea de tiempo, y las canciones siguientes se desplazan solas. Puedes guardar varios arreglos, y volver al original cuando quieras.",
+      "subtitles": "top"
     },
     {
       "id": "06-vamp",
@@ -33,7 +42,7 @@
     },
     {
       "id": "08-nivelar",
-      "text": "Para que todas las canciones lleguen a la mesa al mismo nivel, abre Archivo, Nivelar volumen de canciones. Pulsa Medir: LibreTracks mide cada canción y propone su master. Revisa la propuesta, y pulsa Aplicar."
+      "text": "Para que todas las canciones lleguen a la mesa al mismo nivel, abre Archivo, Nivelar volumen de canciones. Pulsa Medir: Libre Tracks mide cada canción y propone su master. Revisa la propuesta, y pulsa Aplicar."
     },
     {
       "id": "09-biblioteca",
@@ -53,31 +62,37 @@
     },
     {
       "id": "13-movil",
-      "text": "Y en el móvil y la tablet, también hay novedades."
+      "text": "Y en el móvil y la tablet, también hay novedades.",
+      "subtitles": "mobile"
     },
     {
       "id": "14-movil-arreglo",
-      "text": "Los arreglos funcionan igual: mantén pulsada la canción y elige Arreglo. Guarda el original, toca Añadir sección para sumar bloques, y pulsa Aplicar."
+      "text": "Los arreglos funcionan igual: mantén pulsada la canción y elige Arreglo. Guarda el original, toca Añadir sección para sumar bloques, y pulsa Aplicar.",
+      "subtitles": "mobile"
     },
     {
       "id": "15-movil-midi-pista",
-      "text": "El móvil ya habla MIDI, y puedes preparar los mensajes aunque todavía no tengas el aparato conectado. Selecciona una pista, abre Más acciones, y elige Añadir pista MIDI. Después selecciona la pista MIDI, toca Añadir MIDI aquí, y añade notas, controles o cambios de programa."
+      "text": "El móvil ya habla MIDI, y puedes preparar los mensajes aunque todavía no tengas el aparato conectado. Selecciona una pista, abre Más acciones, y elige Añadir pista MIDI. Después selecciona la pista MIDI, toca Añadir MIDI aquí, y añade notas, controles o cambios de programa.",
+      "subtitles": "mobile"
     },
     {
       "id": "16-movil-midi",
-      "text": "Para controlar LibreTracks con una pedalera o un controlador, por cable o por Bluetooth, ve a Configuración, MIDI. Pulsa Buscar dispositivos Bluetooth, y en MIDI Learn asignas cada botón."
+      "text": "Para controlar Libre Tracks con una pedalera o un controlador, por cable o por Bluetooth, ve a Configuración, MIDI. Pulsa Buscar dispositivos Bluetooth, y en MIDI Learn asignas cada botón.",
+      "subtitles": "mobile"
     },
     {
       "id": "17-movil-video",
-      "text": "Y el vídeo llega al móvil. Añádelo desde Añadir: vídeo de la galería, o de archivos. Conecta el proyector con un cable USB-C a HDMI, y en Configuración, Vídeo, elige la pantalla."
+      "text": "Y el vídeo llega al móvil. Añádelo desde Añadir: vídeo de la galería, o de archivos. Conecta el proyector con un cable USB-C a HDMI, y en Configuración, Vídeo, elige la pantalla.",
+      "subtitles": "mobile"
     },
     {
       "id": "18-movil-nivelar",
-      "text": "Nivelar canciones también está en el móvil: en el menú de archivo de la barra lateral, Nivelar volumen de canciones."
+      "text": "Nivelar canciones también está en el móvil: en el menú de archivo de la barra lateral, Nivelar volumen de canciones.",
+      "subtitles": "mobile"
     },
     {
       "id": "19-final",
-      "text": "Descarga LibreTracks gratis en libretracks punto com."
+      "text": "Descarga Libre Tracks gratis en libretracks punto com."
     }
   ]
 }

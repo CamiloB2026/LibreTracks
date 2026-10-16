@@ -39,7 +39,7 @@ const PLACE = "C:\\Shows\\Multitracks";
 const PLACE_SONG = "Fiel";
 const PLACE_STEMS = ["Bateria.wav", "BajoSnt.wav", "Piano.wav", "Vocales.wav", "Click.wav", "Guia.wav"];
 const TITLES = {
-  intro: ["Novedades de LibreTracks 1.14", "Arreglos de canción y más control en directo"],
+  intro: ["Novedades de LibreTracks 1.14.0", "Arreglos, vamp entre canciones, nivelar, biblioteca, MIDI y vídeo en el móvil"],
 };
 
 const tour = (id: string) => `[data-lt-tour="${id}"]`;
@@ -270,9 +270,16 @@ describe("release video (desktop scenes)", function () {
     {
       const { rec, done } = scene("03-original");
       await rec.zoomTo(".lt-structure-panel", { margin: 40, maxZoom: 1.6 });
+      await rec.hold(1.5);
       if (await rectOf(".lt-structure-capture-button")) {
-        await rec.hold(1.5);
-        await rec.click(".lt-structure-capture-button", 1200);
+        // Below the fold of the panel, under the detected sections.
+        await runInPage(() =>
+          document.querySelector(".lt-structure-capture-button")?.scrollIntoView({ block: "center", behavior: "smooth" }),
+        );
+        for (let i = 0; i < 12; i++) await rec.frame(1 / 15);
+        await rec.hold(0.8);
+        await rec.click(".lt-structure-capture-button", 400);
+        await rec.hold(1.2);
       }
       await done();
     }
@@ -338,23 +345,62 @@ describe("release video (desktop scenes)", function () {
     }
 
     // 07 — song fades from the corners of the song, then «Fade out y parar».
+    // On the SECOND song: the first one carries the arrangement applied in
+    // 05, and the arrangement guard turns down edits to it.
     {
       const { rec, done } = scene("07-fade");
       await rec.key("Tab", 1200);
-      const song = (await regions())[0];
-      // The whole song in ~1100 px, and selected so its corner handles show.
-      const zoom = 1100 / ((song.endSeconds - song.startSeconds) * 18);
-      await setTimelineView({ zoomLevel: zoom, cameraX: Math.max(0, song.startSeconds * zoom * 18 - 60) });
-      await (await $(songBar)).click();
+      const song = (await regions())[1] ?? (await regions())[0];
+      const length = song.endSeconds - song.startSeconds;
+      // The whole song in ~1100 px, with some room before it.
+      const zoom = 1100 / (length * 18);
+      await setTimelineView({ zoomLevel: zoom, cameraX: Math.max(0, song.startSeconds * zoom * 18 - 160) });
+      // The playhead sits on a song's top-left corner, right over the fade-in
+      // handle: park it in the middle of the song first.
+      await invoke("seek_transport", { positionSeconds: song.startSeconds + length / 2 });
       await browser.pause(600);
+      const bandSel = `.lt-region-hotspot[data-region-id="${song.id}"]`;
+      const bandBox = await rectOf(bandSel);
+      if (!bandBox) throw new Error("07-fade: no band for the second song");
+      await browser
+        .action("pointer", { id: "guide-mouse", parameters: { pointerType: "mouse" } })
+        .move({ x: Math.round(bandBox.x + bandBox.w * 0.35), y: Math.round(bandBox.y + bandBox.h / 2) })
+        .down({ button: 0 })
+        .up({ button: 0 })
+        .perform();
+      await browser.pause(700);
       const fadeRuler = await rectOf(tour("timeline-ruler"));
-      if (fadeRuler) await rec.zoomTo({ x: fadeRuler.x, y: fadeRuler.y - 30, w: 1300, h: 420 }, { margin: 20 });
-      const band = await rectOf(songBar);
-      if (band && (await rectOf(".lt-song-fade-handle.is-in"))) {
-        await rec.dragTo({ x: band.x + band.w * 0.16, y: band.y + 4 }, 1300, { from: ".lt-song-fade-handle.is-in" });
-        await rec.hold(0.8);
-        await rec.dragTo({ x: band.x + band.w * 0.8, y: band.y + 4 }, 1300, { from: ".lt-song-fade-handle.is-out" });
-        await rec.hold(1);
+      if (fadeRuler) await rec.zoomTo({ x: fadeRuler.x, y: fadeRuler.y - 30, w: 1400, h: 420 }, { margin: 20 });
+      const band = await rectOf(bandSel);
+      const inHandle = `${bandSel} .lt-song-fade-handle.is-in`;
+      const outHandle = `${bandSel} .lt-song-fade-handle.is-out`;
+      if (band && (await rectOf(inHandle)) && (await rectOf(outHandle))) {
+        // CDP, not WebDriver actions: the handles capture the pointer, and a
+        // captured drag ignores WebDriver's synthetic moves (dragToCdp).
+        await rec.dragToCdp({ x: band.x + band.w * 0.16, y: band.y + 4 }, 1300, { from: inHandle });
+        await rec.hold(0.6);
+        await rec.dragToCdp({ x: band.x + band.w * 0.8, y: band.y + 4 }, 1300, { from: outHandle });
+        await rec.hold(0.4);
+        // What the drags actually left, against what they showed.
+        const after = (await regions()).find((r) => r.id === song.id) as
+          | { fadeInSeconds?: number | null; fadeOutSeconds?: number | null }
+          | undefined;
+        const fadeIn = after?.fadeInSeconds ?? 0;
+        const fadeOut = after?.fadeOutSeconds ?? 0;
+        console.log(`[release-video] 07-fade: drags left in=${fadeIn.toFixed(1)}s out=${fadeOut.toFixed(1)}s of ${length.toFixed(1)}s`);
+        const wantIn = length * 0.16;
+        const wantOut = length * 0.2;
+        if (Math.abs(fadeIn - wantIn) > length * 0.04 || Math.abs(fadeOut - wantOut) > length * 0.04) {
+          const fixed = await invoke<{ __error?: string }>("update_song_region_fades", {
+            regionId: song.id,
+            fadeInSeconds: wantIn,
+            fadeOutSeconds: wantOut,
+          });
+          console.log(`[release-video] 07-fade: set to in=${wantIn.toFixed(1)}s out=${wantOut.toFixed(1)}s ${fixed?.__error ?? "ok"}`);
+        }
+        await rec.hold(1.5);
+      } else {
+        console.log("[release-video] 07-fade: no fade handles on the second song");
       }
       await rec.zoomOut(600);
       await invoke("seek_transport", { positionSeconds: song.startSeconds + (song.endSeconds - song.startSeconds) / 3 });
@@ -423,6 +469,17 @@ describe("release video (desktop scenes)", function () {
         );
         const folder = await tagByText(".lt-folder-library-row.is-folder", PLACE_SONG, "place-folder");
         await rec.dragTo({ x: Math.min(lanes.x + lanes.w - 40, lastBand + 80), y: lanes.y + 160 }, 1800, { from: folder });
+        await rec.hold(2);
+        // The new song's tracks land at the bottom of the track list: scroll
+        // down to them so its audio is seen.
+        await runInPage(() => {
+          const rows = Array.from(document.querySelectorAll<HTMLElement>(".lt-track-header-row"));
+          const last = rows[rows.length - 1];
+          let scroller: HTMLElement | null = last?.parentElement ?? null;
+          while (scroller && scroller.scrollHeight <= scroller.clientHeight + 4) scroller = scroller.parentElement;
+          scroller?.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+        });
+        for (let i = 0; i < 24; i++) await rec.frame(1 / 15);
         await rec.hold(3);
       }
       await done();
@@ -482,13 +539,31 @@ describe("release video (desktop scenes)", function () {
       const ruler = await rectOf(tour("timeline-ruler"));
       if (!ruler) throw new Error("12-marcas: no ruler");
       await rec.zoomTo({ x: ruler.x, y: ruler.y - 20, w: 1000, h: 560 }, { margin: 10, maxZoom: 1.8 });
+      const plainClick = async (selector: string) => {
+        await rec.moveTo(selector, 500);
+        await runInPage((sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click(), selector);
+        await browser.pause(400);
+      };
       for (const group of [L("Secciones"), L("Avisos")]) {
         await rec.rightClick({ x: ruler.x + 330, y: ruler.y + 40 });
-        await rec.click(await tagByText(".lt-context-menu button", L("Crear Marca"), "mi-mark"), 700);
-        await rec.click(await tagByText(".lt-context-menu button", group, "mi-group"), 2600);
+        await rec.hold(0.6);
+        await plainClick(await tagByText(".lt-context-menu button", L("Crear Marca"), "mi-mark"));
+        await rec.hold(0.8);
+        await plainClick(await tagByText(".lt-context-menu button", group, "mi-group"));
+        await rec.hold(2);
+        // The new cues are at the end of a long list: bring them into view.
+        const newest = group === L("Avisos") ? L("Sube Tempo") : L("Solo Guitarra");
+        await runInPage((needle: string) => {
+          const item = Array.from(document.querySelectorAll(".lt-context-menu button")).find((b) =>
+            (b.textContent ?? "").includes(needle),
+          );
+          item?.scrollIntoView({ block: "center", behavior: "smooth" });
+        }, newest);
+        for (let i = 0; i < 12; i++) await rec.frame(1 / 15);
+        await rec.hold(2.5);
         await browser.keys(["Escape"]);
         await browser.pause(300);
-        await browser.keys(["Escape"]);
+        if (await rectOf(".lt-context-menu")) await browser.keys(["Escape"]);
         await rec.hold(0.4);
       }
       await rec.zoomOut(600);
