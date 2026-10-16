@@ -1,6 +1,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
+
 import i18n from "../../shared/i18n";
 import type {
   NetworkGuestStatus,
@@ -190,7 +192,8 @@ describe("NetworkSessionBadge", () => {
     expect(container.textContent).toBe("");
   });
 
-  it("shows host, guest and lost states", () => {
+  // Behind a compile-time flag: off, the badge never renders (checked above).
+  (FEATURE_FLAGS.networkSessions ? it : it.skip)("shows host, guest and lost states", () => {
     useNetworkSessionStore.setState({ host: hosting() });
     const { rerender } = render(<NetworkSessionBadge />);
     expect(screen.getByRole("button").textContent).toContain("Anfitrión · 1");
