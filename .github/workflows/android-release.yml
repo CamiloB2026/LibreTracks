@@ -124,8 +124,14 @@ jobs:
           distribution: temurin
           java-version: 17
 
+      # The action's default package list is "tools platform-tools", and the
+      # legacy `tools` package is gone from Google's repository (sdkmanager:
+      # "Failed to find package 'tools'", exit 1). cmdline-tools replaced it;
+      # everything else is installed explicitly in the next step.
       - name: Setup Android SDK + NDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install NDK + build tools
         run: |
