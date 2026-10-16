@@ -737,10 +737,31 @@ LT_TUTORIAL_DIR=marketing/video-<NEW> node tests/android/release-video/record.ts
 # 4. Join scenes + voice + app audio + subtitles:
 node scripts/tutorial-video/compose.mjs scripts/tutorial-video/novedades-<NEW>.es.json \
   marketing/video-<NEW> marketing/video-<NEW>/novedades-<NEW>.mp4
+# 5. Take out the dead air (mandatory): the recordings pad every scene to its
+#    narration and hold after clicks and loads, which adds up to a minute of
+#    silent, still picture. This cuts only where there is no sound AND nothing
+#    moves, so no sentence or app sound is split. The .tight.mp4 is the one
+#    that gets published.
+node scripts/tutorial-video/tighten.mjs marketing/video-<NEW>/novedades-<NEW>.mp4 \
+  marketing/video-<NEW>/novedades-<NEW>.tight.mp4
 ```
 
 Both recorders write into the same `marketing/video-<NEW>/scenes/`, so one
 script and one `compose.mjs` run produce the whole video in order.
+
+A scene that waits for something slow (measuring songs, loading audio) still
+records the whole wait, which is moving (a progress bar) and so survives
+`tighten.mjs`. Trim that scene's MP4 by hand before `compose.mjs` (keep the
+start and the result, drop the middle). In 1.14.0, «Nivelar canciones» went
+from 97 s to 17 s that way.
+
+**What the video covers.** Every user-visible novelty of the release, not
+just the headline: go through the release notes bullet by bullet. A feature
+that exists on desktop AND mobile is shown once (desktop) unless the mobile
+gesture is genuinely different; mobile-only features get their own mobile
+scene. For a mobile feature that is only a menu away, a short scene saying
+where it is beats walking through the whole flow. 1.14.0 ended at ~4 min
+after the dead air was cut; that is fine for a release with many features.
 
 The two recorders are **rewritten every release** for that release's feature
 (git history keeps the previous ones). Build them from the tutorial
@@ -1057,6 +1078,57 @@ button, and it does not necessarily interpret markdown pasted into it — you ca
 end up with literal `**` on screen. `--plain` emits the same text without the
 emphasis for that case; the default output is for the markdown editor. Look at
 the preview before submitting, either way.
+
+## 14. Hand back the store release notes (Google Play and App Store)
+
+Every release that goes to the stores needs its "What's new" text for both,
+in Spanish and English. They go in `marketing/stores-<NEW>/` (gitignored) and
+are handed back in the reply, ready to paste. They are NOT the release notes:
+only what reaches phones and tablets (no Windows/macOS/Linux-only items, no
+installer or desktop window changes) and much shorter.
+
+**Google Play.** Limit **500 characters per language**, counted on the text
+inside the tags. Play Console takes every language in one paste with its
+locale tags, so hand it back in exactly this shape
+(`marketing/stores-<NEW>/play-release-notes.txt`):
+
+```
+<es-ES>
+Novedades de la <NEW>:
+• ...
+</es-ES>
+<en-US>
+What's new in <NEW>:
+• ...
+</en-US>
+```
+
+- One line per item, starting with `•`; no emojis, no markdown (Play shows it
+  as plain text).
+- The new features first, with the gesture when it is a menu away
+  (`Mantén pulsada la canción → "Arreglo"`), labels exactly as the app shows
+  them.
+- Check the length before handing it back:
+  `node -e "console.log([...require('fs').readFileSync(f,'utf8').trim()].length)"`
+  on each language's text. A note over 500 is rejected by the console.
+- If the listing gets more languages, add their block with Play's locale code
+  (`<pt-BR>`, `<fr-FR>`…); a language without a block falls back to the
+  default one.
+
+**App Store.** Limit 4000 characters per language, entered separately per
+localization in App Store Connect ("What's New in This Version"), so no tags:
+`appstore-es.txt` and `appstore-en.txt`. There is room for one short paragraph
+per feature with its "how"; mention iOS-specific changes (keeps playing when
+minimized, Lightning adapter for video) and leave out Android-only ones.
+
+**Mobile before desktop.** When the apps go to review before the desktop
+release (review takes days), push `main` WITHOUT the tag and build the store
+artifacts by hand: *Release* (`release.yml`, `workflow_dispatch`) with
+`build_android` gives the signed AAB (no `publish-release` without a tag), and
+*iOS Release* (`ios-release.yml`) with `upload` sends the IPA to TestFlight.
+Submitting for review in Play Console / App Store Connect is done by hand.
+When desktop ships, tag that same commit `v<NEW>` so the three platforms carry
+the same build.
 
 ---
 
