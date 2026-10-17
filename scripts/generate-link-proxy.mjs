@@ -83,7 +83,8 @@ function camel(name) {
 function parseCommand(name) {
   const modulePath = handlerPaths.get(name);
   if (!modulePath) throw new Error(`${name} is not registered in generate_handler!`);
-  const source = readFileSync(moduleFile(modulePath), "utf8");
+  // A CRLF working copy (core.autocrlf) must not put "\r" in the output.
+  const source = readFileSync(moduleFile(modulePath), "utf8").replace(/\r\n/g, "\n");
   const header = new RegExp(
     `(#\\[tauri::command[^\\]]*\\]\\s*(?:#\\[[^\\]]*\\]\\s*)*)pub\\s+(async\\s+)?fn\\s+${name}\\s*(<[^>]*>)?\\s*\\(`,
   );
