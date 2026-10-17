@@ -5714,3 +5714,102 @@ fn changing_the_output_device_reopens_the_stream() {
     assert!(plan.apply);
     assert!(plan.rebuild_stream);
 }
+
+fn song_with_intro_chorus_bridge() -> Song {
+    let mut song = demo_song();
+    for (id, name, start_seconds, digit) in [
+        ("intro", "Intro", 0.0, 1),
+        ("chorus", "Coro", 4.0, 2),
+        ("bridge", "Puente", 8.0, 3),
+    ] {
+        song.section_markers.push(Marker {
+            id: id.into(),
+            name: name.into(),
+            start_seconds,
+            digit: Some(digit),
+            kind: MarkerKind::Custom,
+            variant: None,
+            color: None,
+            category_override: None,
+        });
+    }
+    song
+}
+
+fn mute_cue_at(at_seconds: f64) -> crate::audio::automation::AutomationCue {
+    crate::audio::automation::AutomationCue {
+        id: "mute_before_chorus".into(),
+        name: "Mute".into(),
+        at_seconds,
+        enabled: true,
+        max_runs: None,
+        actions: vec![crate::audio::automation::AutomationAction::SetTrackMute {
+            track_id: "track_1".into(),
+            muted: true,
+        }],
+    }
+}
+
+/// Field report: a mute cue right before the chorus, vamp on the chorus, then
+/// a jump back to the intro. The playhead crosses the cue again on its way to
+/// the vamp, so the cue has to be armed even though the vamp is still on.
+#[test]
+fn jumping_back_with_a_vamp_on_rearms_the_cues_before_the_vamp() {
+    let mut session = session_with_song_dir("vamp-automation", song_with_intro_chorus_bridge());
+    session.automation.cues = vec![mute_cue_at(3.0)];
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(5.0, &audio).expect("seek should succeed");
+    session
+        .toggle_vamp(libretracks_audio::VampMode::Section, &audio)
+        .expect("vamp should toggle on");
+    assert!(session.engine.active_vamp().is_some());
+
+    session
+        .schedule_marker_jump(
+            "intro",
+            JumpTrigger::Immediate,
+            TransitionType::Instant,
+            &audio,
+        )
+        .expect("jump should succeed");
+
+    assert!(session.engine.active_vamp().is_some());
+    assert!(session.engine.position_seconds() < 3.0);
+    let job = session
+        .active_automation_job
+        .as_ref()
+        .expect("the cue before the vamp should be armed");
+    assert_eq!(job.cue_id, "mute_before_chorus");
+    // The vamp owns the native scheduler: nothing is armed as a jump.
+    assert!(session.pending_automation_jump.is_none());
+}
+
+#[test]
+fn a_vamp_does_not_arm_cues_past_its_end() {
+    let mut session = session_with_song_dir("vamp-automation-end", song_with_intro_chorus_bridge());
+    session.automation.cues = vec![mute_cue_at(9.0)];
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(5.0, &audio).expect("seek should succeed");
+    session
+        .toggle_vamp(libretracks_audio::VampMode::Section, &audio)
+        .expect("vamp should toggle on");
+
+    assert!(session.active_automation_job.is_none());
+
+    session
+        .toggle_vamp(libretracks_audio::VampMode::Section, &audio)
+        .expect("vamp should toggle off");
+    assert!(session.engine.active_vamp().is_none());
+    assert_eq!(
+        session
+            .active_automation_job
+            .as_ref()
+            .map(|job| job.cue_id.as_str()),
+        Some("mute_before_chorus"),
+        "turning the vamp off re-arms the cue ahead"
+    );
+}

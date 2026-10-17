@@ -2151,6 +2151,9 @@ impl DesktopSession {
                 self.current_position(),
                 self.engine.position_seconds(),
             );
+            // Nothing else re-arms automation after an immediate jump: without
+            // this a jump back left the cues it plays through again unarmed.
+            self.rearm_automation_after_user_jump(audio)?;
         } else if matches!(
             transition,
             TransitionType::Instant | TransitionType::FadeOut { .. }
@@ -2219,6 +2222,9 @@ impl DesktopSession {
                 self.current_position(),
                 self.engine.position_seconds(),
             );
+            // Nothing else re-arms automation after an immediate jump: without
+            // this a jump back left the cues it plays through again unarmed.
+            self.rearm_automation_after_user_jump(audio)?;
         } else if trigger == JumpTrigger::RegionEnd
             && matches!(
                 transition,
@@ -2313,6 +2319,10 @@ impl DesktopSession {
                 self.schedule_native_vamp_jump(audio, &source_song, &active_vamp)?;
             }
         }
+        // Both ways: with the vamp on, the cues before its end still fire;
+        // with it off, the next cue ahead has to be armed again or automation
+        // stays silent until the next seek.
+        self.schedule_next_automation_jump(audio)?;
         Ok(self.snapshot())
     }
 
@@ -2861,6 +2871,11 @@ impl DesktopSession {
                 // cancel and re-enqueue the wrap on every tick, which is what
                 // made vamp wraps miss their sample-exact trigger frame.
                 self.schedule_native_vamp_jump(audio, &source_song, &active_vamp)?;
+                // The cues before the vamp's end are armed without their jump
+                // (see schedule_next_automation_jump); their mix actions still
+                // fire as the playhead crosses them.
+                self.advance_automation_job_actions(audio)?;
+                self.advance_mix_ramps(audio)?;
                 return Ok(());
             }
             if self.engine.pending_marker_jump().is_some() {
@@ -2914,6 +2929,7 @@ impl DesktopSession {
                     audio.start_master_fade(1.0, duration_seconds)?;
                     self.transport_clock
                         .note_jump_while_playing(target_position);
+                    self.rearm_automation_after_user_jump(audio)?;
                     // A jump is a discontinuity: re-anchor MIDI at the landing
                     // point so events between here and there don't all fire.
                     self.reset_midi_cursor(target_position);
@@ -2948,6 +2964,8 @@ impl DesktopSession {
                 // trigger frame we already passed. Drop the guard so the next
                 // tick re-arms the loop from the new position.
                 self.scheduled_native_vamp_loop = None;
+                self.active_automation_job = None;
+                self.schedule_next_automation_jump(audio)?;
             }
         }
 
@@ -3078,6 +3096,10 @@ impl DesktopSession {
                 // the vamp only ever loops once.
                 self.scheduled_native_vamp_loop = None;
                 self.schedule_native_vamp_jump(audio, &source_song, &active_vamp)?;
+                // The playhead is back at the vamp's start: arm the cues
+                // inside the loop again for this pass.
+                self.active_automation_job = None;
+                self.schedule_next_automation_jump(audio)?;
                 return Ok(true);
             }
 
@@ -3166,7 +3188,7 @@ impl DesktopSession {
             runtime_source_position,
             runtime_source_position,
         );
-        self.schedule_next_automation_jump(audio)?;
+        self.rearm_automation_after_user_jump(audio)?;
         Ok(true)
     }
 

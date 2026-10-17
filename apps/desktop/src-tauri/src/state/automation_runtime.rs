@@ -363,6 +363,20 @@ impl DesktopSession {
         }
     }
 
+    /// Re-arm automation after the user moved the playhead with a jump: like a
+    /// seek, cues at/after the landing point get their full quota back and the
+    /// job that was in flight is dropped for the next one ahead.
+    pub(super) fn rearm_automation_after_user_jump(
+        &mut self,
+        audio: &AudioController,
+    ) -> Result<(), DesktopError> {
+        self.reset_automation_run_counts(Some(self.engine.position_seconds()));
+        self.active_mix_ramps.clear();
+        self.pending_automation_jump = None;
+        self.active_automation_job = None;
+        self.schedule_next_automation_jump(audio)
+    }
+
     /// Arm the next automation cue (job). The terminal jump — if the job has one
     /// — is scheduled sample-exact in the native engine at its effective time
     /// (`at_seconds + Σ pre-jump waits`); the job's pre-jump mix actions fire as
@@ -379,9 +393,18 @@ impl DesktopSession {
         if !self.automation.track_enabled {
             return Ok(());
         }
-        if self.engine.pending_marker_jump().is_some() || self.engine.active_vamp().is_some() {
+        if self.engine.pending_marker_jump().is_some() {
             return Ok(());
         }
+        // With a vamp on, the loop owns the native jump scheduler (arming
+        // anything else would cancel its wrap) and the playhead never gets past
+        // the vamp's end. Cues before that end still have to fire — a jump back
+        // in front of the vamp plays through them again — so they are armed as
+        // timeline-driven jobs with their own jump left out.
+        let vamp_end_seconds = self
+            .engine
+            .active_vamp()
+            .map(|active_vamp| active_vamp.end_seconds);
 
         let source_song = self
             .engine
@@ -406,6 +429,7 @@ impl DesktopSession {
                     // a "jump back" loop fires only the configured number of
                     // times and then the playhead passes through.
                     && self.cue_has_runs_left(cue)
+                    && vamp_end_seconds.map_or(true, |end_seconds| cue.at_seconds < end_seconds)
             })
             .min_by(|left, right| {
                 left.at_seconds
@@ -421,11 +445,16 @@ impl DesktopSession {
 
         let timed_actions = cue.timed_pre_jump_actions();
 
+        let jump_action = if vamp_end_seconds.is_some() {
+            None
+        } else {
+            cue.jump_action().cloned()
+        };
         let Some(AutomationAction::Jump {
             target,
             transition,
             mix_scene_id,
-        }) = cue.jump_action().cloned()
+        }) = jump_action
         else {
             // Pure mix/scene/wait job: nothing to schedule natively. Track it so
             // the per-tick advance fires its actions on time.

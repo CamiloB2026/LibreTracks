@@ -132,6 +132,16 @@ describe("useTimelineUIStore", () => {
       get().setTrackHeight((h) => h - 30);
       expect(get().trackHeight).toBe(70);
     });
+
+    it("remembers the track height across restarts", async () => {
+      get().setTrackHeight(120);
+      expect(window.localStorage.getItem("lt.timeline.trackHeight")).toBe("120");
+
+      vi.resetModules();
+      const reloaded = await import("./uiStore");
+      expect(reloaded.useTimelineUIStore.getState().trackHeight).toBe(120);
+      window.localStorage.removeItem("lt.timeline.trackHeight");
+    });
   });
 
   describe("selection is mutually exclusive across tracks/clips/sections", () => {
