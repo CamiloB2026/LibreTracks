@@ -95,6 +95,10 @@ export function FolderLibraryPanel({
   const [drag, setDrag] = useState<PendingDrag | null>(null);
   const dragRef = useRef<PendingDrag | null>(null);
   dragRef.current = drag;
+  // Anchor of Shift+click ranges, and the file whose plain press must collapse
+  // a multi-selection to itself on click (unless the press turned into a drag).
+  const anchorRef = useRef<string | null>(null);
+  const collapseOnClickRef = useRef<string | null>(null);
 
   const handleAddPlace = useCallback(async () => {
     const picked = await pickLibraryPlace();
@@ -147,6 +151,7 @@ export function FolderLibraryPanel({
       setDrag(null);
       browserDrop.clearPreview();
       if (!current?.dragging) return;
+      collapseOnClickRef.current = null;
       const { item } = current;
       if (item.kind === "files") {
         browserDrop.dropPathsAt(item.paths, event.clientX, event.clientY);
@@ -213,18 +218,57 @@ export function FolderLibraryPanel({
     });
   };
 
+  /** Files in the order they are drawn, for Shift+click ranges. */
+  const visibleFiles = (): string[] => {
+    const out: string[] = [];
+    const walk = (path: string) => {
+      const listing = tree.listings.get(path);
+      if (listing?.status !== "ready") return;
+      const matches = new Set(filterEntries(listing.entries, query));
+      for (const entry of listing.entries) {
+        if (entry.kind === "folder") {
+          if (tree.expanded.has(entry.path)) walk(entry.path);
+        } else if (matches.has(entry)) {
+          out.push(entry.path);
+        }
+      }
+    };
+    for (const place of settings.places) {
+      if (tree.expanded.has(place)) walk(place);
+    }
+    return out;
+  };
+
   const pressFile = (event: ReactPointerEvent, entry: LibraryDirEntry) => {
     if (isMobileApp) return;
-    // Ctrl/Cmd adds to the selection; a plain press on an unselected file
-    // selects just it. Dragging a selected file drags the whole selection.
+    // Ctrl/Cmd toggles, Shift selects the range from the anchor, a plain press
+    // on an unselected file selects just it. Dragging a selected file drags the
+    // whole selection; a plain click on one of several collapses to it (click).
     let nextSelected: ReadonlySet<string> = selected;
-    if (event.ctrlKey || event.metaKey) {
+    collapseOnClickRef.current = null;
+    if (event.shiftKey && anchorRef.current) {
+      const files = visibleFiles();
+      const from = files.indexOf(anchorRef.current);
+      const to = files.indexOf(entry.path);
+      if (from >= 0 && to >= 0) {
+        const [start, end] = from <= to ? [from, to] : [to, from];
+        nextSelected = new Set(files.slice(start, end + 1));
+      } else {
+        nextSelected = new Set([entry.path]);
+        anchorRef.current = entry.path;
+      }
+    } else if (event.ctrlKey || event.metaKey) {
       const next = new Set(selected);
       if (next.has(entry.path)) next.delete(entry.path);
       else next.add(entry.path);
       nextSelected = next;
+      anchorRef.current = entry.path;
     } else if (!selected.has(entry.path)) {
       nextSelected = new Set([entry.path]);
+      anchorRef.current = entry.path;
+    } else {
+      anchorRef.current = entry.path;
+      if (selected.size > 1) collapseOnClickRef.current = entry.path;
     }
     setSelected(nextSelected);
     const paths = nextSelected.has(entry.path) ? [...nextSelected] : [entry.path];
@@ -236,6 +280,17 @@ export function FolderLibraryPanel({
           ? entry.name
           : t("library.dragGhostMultiple", { count: paths.length }),
     });
+  };
+
+  const clickFile = (entry: LibraryDirEntry) => {
+    if (isMobileApp) {
+      tapFile(entry);
+      return;
+    }
+    if (collapseOnClickRef.current === entry.path) {
+      collapseOnClickRef.current = null;
+      setSelected(new Set([entry.path]));
+    }
   };
 
   const renderListing = (path: string, depth: number): ReactNode => {
@@ -312,7 +367,7 @@ export function FolderLibraryPanel({
         style={{ ...indent, paddingLeft: `${depth * 0.9 + 1.6}rem` }}
         title={entry.name}
         onPointerDown={(event) => pressFile(event, entry)}
-        onClick={isMobileApp ? () => tapFile(entry) : undefined}
+        onClick={() => clickFile(entry)}
       >
         <span className="material-symbols-outlined" aria-hidden="true">
           {ENTRY_ICONS[entry.kind]}

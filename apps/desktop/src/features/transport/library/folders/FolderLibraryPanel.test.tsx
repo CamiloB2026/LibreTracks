@@ -87,6 +87,53 @@ describe("FolderLibraryPanel", () => {
     expect(screen.getByText("Oceans")).toBeTruthy();
   });
 
+  describe("selection with the mouse", () => {
+    const press = (el: Element, init: MouseEventInit = {}) => {
+      fireEvent(el, new MouseEvent("pointerdown", { bubbles: true, button: 0, ...init }));
+      fireEvent(el, new MouseEvent("pointerup", { bubbles: true, button: 0, ...init }));
+      fireEvent.click(el, init);
+    };
+    const row = (name: string) => screen.getByText(name).closest("[role=treeitem]")!;
+
+    async function open() {
+      listLibraryDir.mockResolvedValue(
+        ["A", "B", "C", "D"].map((n) => ({
+          name: `${n}.wav`,
+          path: `D:/Stems/${n}.wav`,
+          kind: "audio" as const,
+        })),
+      );
+      renderPanel(["D:/Stems"]);
+      fireEvent.click(screen.getByText("Stems"));
+      await screen.findByText("A.wav");
+    }
+
+    it("Shift+click selects the range from the anchor", async () => {
+      await open();
+      press(row("A.wav"));
+      press(row("C.wav"), { shiftKey: true });
+      expect(["A", "B", "C", "D"].map((n) => row(`${n}.wav`).getAttribute("aria-selected"))).toEqual([
+        "true",
+        "true",
+        "true",
+        "false",
+      ]);
+    });
+
+    it("a plain click on one of several selected files leaves only that one", async () => {
+      await open();
+      press(row("A.wav"));
+      press(row("C.wav"), { shiftKey: true });
+      press(row("B.wav"));
+      expect(["A", "B", "C", "D"].map((n) => row(`${n}.wav`).getAttribute("aria-selected"))).toEqual([
+        "false",
+        "true",
+        "false",
+        "false",
+      ]);
+    });
+  });
+
   it("says when a folder is gone instead of breaking", async () => {
     listLibraryDir.mockRejectedValue("not found");
     renderPanel(["D:/Gone"]);
