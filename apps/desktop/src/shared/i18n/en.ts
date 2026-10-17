@@ -713,6 +713,7 @@ const en = {
       colSection: "Section",
       colCue: "Cue",
       sectionAsCue: "{{kind}} (as a cue)",
+      cueAsSection: "{{kind}} (as a section)",
       none: "—",
       ignore: "Ignore (count-in, other)",
       listen: "Hear the announcement at {{position}}",

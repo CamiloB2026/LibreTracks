@@ -3,6 +3,7 @@ import { getBeatDurationSeconds, nextDownbeatAfter } from "@libretracks/shared/t
 
 import type {
   GuideAnalysis,
+  MarkerCategory,
   MarkerKind,
   ProposedSignatureMarker,
   ProposedTempoMarker,
@@ -152,7 +153,8 @@ export function guideTrackOptions(
  * it is ignored (a count-in). "Verso 3, entra batería" is both a section and
  * a cue. The cue may be a section kind: "Verso a capella" is the section
  * verse plus a capella in the cue lane, since two sections cannot share a
- * spot.
+ * spot. The section may be a cue kind: "Toda la banda" said with a count-in
+ * starts a section, so it goes in the section lane.
  */
 export type GroupMarkers = { section: string; cue: string; ignored: boolean };
 
@@ -171,8 +173,9 @@ function labelValue(label: string): { value: string; cue: boolean } | null {
   return { value: offered ? `${kind}:${variant}` : kind, cue: false };
 }
 
-/** The markers a group's labels name: its first section and its first cue. */
-export function markersForLabels(labels: string[]): GroupMarkers {
+/** The markers a group's labels name: its first section and its first cue;
+ * with a count-in and no section named, the cue is the section. */
+export function markersForLabels(labels: string[], countedIn = false): GroupMarkers {
   if (labels.includes("count")) return { section: "", cue: "", ignored: true };
   let section = "";
   let cue = "";
@@ -184,6 +187,7 @@ export function markersForLabels(labels: string[]): GroupMarkers {
     else if (!value.cue && !section) section = value.value;
     else if (!value.cue && !extraSection) extraSection = value.value;
   }
+  if (countedIn && !section && cue) return { section: cue, cue: extraSection, ignored: false };
   // A second section, with no cue named, rides in the cue lane.
   return { section, cue: cue || extraSection, ignored: false };
 }
@@ -226,7 +230,7 @@ export function placeGuideSections(
   startSeconds: number;
   kind: MarkerKind;
   variant: number | null;
-  categoryOverride: "cue" | null;
+  categoryOverride: MarkerCategory | null;
 }[] {
   const region = song.regions.find((candidate) => candidate.id === regionId);
   if (!region) return [];
@@ -268,7 +272,7 @@ export function placeGuideSections(
     startSeconds: number;
     kind: MarkerKind;
     variant: number | null;
-    categoryOverride: "cue" | null;
+    categoryOverride: MarkerCategory | null;
   }[] = [];
   const onSpot = (seconds: number) =>
     placed.filter((other) => Math.abs(other.startSeconds - seconds) < SAME_POSITION_SECONDS);
@@ -290,7 +294,11 @@ export function placeGuideSections(
         regions,
       );
     }
-    for (const marker of [parseMarkerValue(group.section), parseMarkerValue(group.cue)]) {
+    const slots = [
+      { marker: parseMarkerValue(group.section), sectionSlot: true },
+      { marker: parseMarkerValue(group.cue), sectionSlot: false },
+    ];
+    for (const { marker, sectionSlot } of slots) {
       if (!marker) continue;
       const here = onSpot(startSeconds);
       // The same marker twice on one downbeat ("Coro 1." … "Coro 1.") is one.
@@ -298,14 +306,24 @@ export function placeGuideSections(
         continue;
       }
       // Two sections cannot share a spot: the later one goes in the cue lane.
-      const sectionHere = here.some(
-        (other) => isSectionKind(other.kind) && other.categoryOverride === null,
-      );
-      const categoryOverride = isSectionKind(marker.kind) && sectionHere ? "cue" : null;
+      const sectionHere = here.some((other) => inSectionLane(other));
+      const categoryOverride: MarkerCategory | null = isSectionKind(marker.kind)
+        ? sectionHere
+          ? "cue"
+          : null
+        : sectionSlot && !sectionHere
+          ? "section"
+          : null;
       placed.push({ startSeconds, ...marker, categoryOverride });
     }
   }
   return placed;
+}
+
+function inSectionLane(marker: { kind: string; categoryOverride: MarkerCategory | null }) {
+  return marker.categoryOverride
+    ? marker.categoryOverride === "section"
+    : isSectionKind(marker.kind);
 }
 
 /** "1:05.3", from the song start. */

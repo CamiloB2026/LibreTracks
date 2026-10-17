@@ -231,7 +231,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       setRows(proposalRows);
       setKeyChoice(detectedKey ?? "");
       const groups = result.guide?.analysis.groups ?? [];
-      setGroupMarkers(groups.map((group) => markersForLabels(group.labels)));
+      setGroupMarkers(groups.map((group) => markersForLabels(group.labels, group.countedIn)));
       setInclude({
         tempo: proposalRows.some((row) => row.kind === "tempo"),
         // Without a click the meter is a guess: the user opts in.
@@ -713,11 +713,28 @@ function sectionOptions(t: Translate) {
   });
 }
 
+const onlyCueKinds = () => CUE_KINDS.filter((kind) => !MARKER_KINDS.includes(kind));
+
+/** Section kinds, then cue kinds to put in the section lane, as select
+ * options ("Toda la banda" said with a count-in starts a section). */
+function sectionSlotOptions(t: Translate) {
+  return [
+    ...sectionOptions(t),
+    ...onlyCueKinds().map((kind) => ({
+      value: kind,
+      label: (t as (key: string, options: { kind: string }) => string)(
+        "transport.songAnalysis.cueAsSection",
+        { kind: markerKindLabel(kind, t) },
+      ),
+    })),
+  ];
+}
+
 /** Cue kinds, then section kinds to put in the cue lane, as select options
  * ("Verso a capella": a capella rides as a cue next to the verse). */
 function cueOptions(t: Translate) {
   return [
-    ...CUE_KINDS.filter((kind) => !MARKER_KINDS.includes(kind)).map((kind) => ({
+    ...onlyCueKinds().map((kind) => ({
       value: kind,
       label: markerKindLabel(kind, t),
     })),
@@ -747,7 +764,7 @@ function GuideReview({
   const { t } = useTranslation();
   if (!result.guide) return null;
   const { groups } = result.guide.analysis;
-  const sections = sectionOptions(t);
+  const sections = sectionSlotOptions(t);
   const cues = cueOptions(t);
   const unrecognised = groups.filter((_, index) => isUnrecognised(markers[index])).length;
   return (

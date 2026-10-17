@@ -258,6 +258,37 @@ pub fn is_count(text: &str) -> bool {
     !words.is_empty() && words.iter().all(|word| number_word(word).is_some())
 }
 
+/// Whether `kind` is a section (the rest are cues).
+pub fn is_section_kind(kind: &str) -> bool {
+    SECTION_KINDS.contains(&kind)
+}
+
+/// The announcement ends counting in ("Toda la banda, tres, cuatro").
+fn ends_counting(text: &str) -> bool {
+    let words = tokens(text);
+    let numbers: Vec<u32> = words
+        .iter()
+        .rev()
+        .map_while(|word| number_word(word))
+        .collect();
+    numbers.len() >= 2 && numbers.windows(2).all(|w| w[0] == w[1] + 1)
+}
+
+/// An announcement read with the count that follows it within a breath, if
+/// any: "Coro, uno." + "Dos, tres, cuatro." is a chorus counted in, not
+/// chorus 1. `counted_in`: a count follows the words, so they start a
+/// section (a cue said with a count-in, "Toda la banda" + "tres, cuatro",
+/// goes in the section lane).
+pub fn read_announcement(
+    text: &str,
+    following_count: Option<&str>,
+) -> (Vec<AnnouncedMarker>, bool) {
+    match following_count {
+        Some(count) => (parse_announcement(&format!("{text} {count}")), true),
+        None => (parse_announcement(text), ends_counting(text)),
+    }
+}
+
 /// The markers a transcribed announcement names, in order, without repeats.
 pub fn parse_announcement(text: &str) -> Vec<AnnouncedMarker> {
     let words = tokens(text);
@@ -385,6 +416,36 @@ mod tests {
         assert_eq!(parsed("Interlude."), vec![("interlude", None)]);
         assert_eq!(parsed("End."), vec![("ending", None)]);
         assert_eq!(parsed("Outro."), vec![("outro", None)]);
+    }
+
+    #[test]
+    fn a_count_split_from_its_word_is_still_a_count() {
+        // Real: "Coro, Uno." and, 0.4 s later, "¡Dos, tres, cuatro!".
+        let (markers, counted_in) = read_announcement("Coro, Uno.", Some("¡Dos, tres, cuatro!"));
+        assert_eq!(
+            markers,
+            vec![AnnouncedMarker {
+                kind: "chorus",
+                variant: None
+            }]
+        );
+        assert!(counted_in);
+        // Alone, the number is the variant.
+        assert_eq!(
+            read_announcement("Coro, Uno.", None).0,
+            vec![AnnouncedMarker {
+                kind: "chorus",
+                variant: Some(1)
+            }]
+        );
+    }
+
+    #[test]
+    fn a_cue_with_a_count_in_is_counted_in() {
+        assert!(read_announcement("Toda la banda.", Some("Tres, cuatro.")).1);
+        assert!(read_announcement("Toda la banda, tres, cuatro.", None).1);
+        assert!(!read_announcement("Toda la banda.", None).1);
+        assert!(!read_announcement("Coro 2.", None).1);
     }
 
     #[test]

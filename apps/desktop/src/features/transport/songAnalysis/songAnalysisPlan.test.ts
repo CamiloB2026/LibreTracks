@@ -148,6 +148,30 @@ describe("guide", () => {
     expect(isUnrecognised(markersForLabels(["count"]))).toBe(false);
   });
 
+  it("a cue said with a count-in is the section", () => {
+    // "Toda la banda" + "tres, cuatro" starts a section.
+    expect(markersForLabels(["all_in"], true)).toEqual({
+      section: "all_in",
+      cue: "",
+      ignored: false,
+    });
+    expect(markersForLabels(["all_in"])).toEqual({ section: "", cue: "all_in", ignored: false });
+    // With a section named, the cue stays a cue.
+    expect(markersForLabels(["bridge", "softly"], true)).toEqual({
+      section: "bridge",
+      cue: "softly",
+      ignored: false,
+    });
+  });
+
+  it("puts a cue in the section slot in the section lane", () => {
+    const { analysis } = oneAnnouncement(5.3, []);
+    const markers = [{ section: "all_in", cue: "", ignored: false }];
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)).toEqual([
+      { startSeconds: 106, kind: "all_in", variant: null, categoryOverride: "section" },
+    ]);
+  });
+
   const plain = () => ({ ...song(), tempoMarkers: [], timeSignatureMarkers: [] });
   const oneAnnouncement = (endSeconds: number, labels: string[]) => ({
     analysis: {

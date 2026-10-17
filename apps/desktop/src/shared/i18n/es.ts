@@ -727,6 +727,7 @@ const es = {
       colSection: "Sección",
       colCue: "Aviso",
       sectionAsCue: "{{kind}} (como aviso)",
+      cueAsSection: "{{kind}} (como sección)",
       none: "—",
       ignore: "Ignorar (conteo, otro)",
       listen: "Escuchar el anuncio de {{position}}",

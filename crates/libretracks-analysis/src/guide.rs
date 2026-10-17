@@ -20,7 +20,7 @@ use serde::Serialize;
 
 use crate::dsp::{decimate_to, resample_to};
 use crate::fft::fft;
-use crate::guide_text::{is_count, parse_announcement};
+use crate::guide_text::{is_count, is_section_kind, read_announcement};
 
 /// Speech analysis rate: a voice's identity lives below 8 kHz.
 const SPEECH_RATE: f64 = 16_000.0;
@@ -60,6 +60,12 @@ pub trait Transcriber {
     fn progress(&mut self, _done: usize, _total: usize) {}
 }
 
+/// A count starting this soon after an announcement belongs to it ("Coro,
+/// uno." … "dos, tres, cuatro"; "Toda la banda." … "tres, cuatro").
+const COUNT_FOLLOWS_SECONDS: f64 = 1.2;
+/// A clip match is only sure when the clip covers this much of the
+/// fragment: a count clip ("dos") fits inside "Verso, dos, tres, cuatro".
+const SURE_MATCH_COVERAGE: f64 = 0.6;
 /// Two fragments under this cost are the same recording, said again.
 const SAME_RECORDING_COST: f64 = 1.0;
 /// Fragments whose lengths differ more than this ratio are different words.
@@ -93,6 +99,9 @@ pub struct GuideGroup {
     pub transcript: Option<String>,
     /// DTW cost of that match (lower is closer).
     pub match_cost: Option<f64>,
+    /// Said with a count-in, so a cue here starts a section ("Toda la
+    /// banda" + "tres, cuatro"): it goes in the section lane.
+    pub counted_in: bool,
     pub occurrences: usize,
     /// Where it is first said, to play it in the review.
     pub first_start_seconds: f64,
@@ -166,104 +175,179 @@ pub fn analyze_guide(
             recogniser.detect_language(&sample);
         }
     }
-    // First every group's clip match, so the number of announcements left to
-    // transcribe is known before the slow part starts.
+    // First every group's clip match: a sure one needs no recognition.
     struct Pending {
         members: Vec<usize>,
         clip_label: Option<String>,
         match_cost: Option<f64>,
         sure: bool,
-        representative: usize,
     }
     let mut pending: Vec<Pending> = Vec::with_capacity(group_count);
     for group in 0..group_count {
         let members: Vec<usize> = (0..fragments.len())
             .filter(|&i| groups_of[i] == group)
             .collect();
-        let first = members[0];
         // The best clip over every time it is said.
         let features = &features;
         let best = members
             .iter()
             .flat_map(|&member| {
                 templates.iter().map(move |(label, template)| {
-                    (subsequence_cost(template, &features[member]), *label)
+                    let coverage = template.len() as f64 / features[member].len().max(1) as f64;
+                    (
+                        subsequence_cost(template, &features[member]),
+                        *label,
+                        coverage,
+                    )
                 })
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
-        let (clip_label, match_cost) = match best {
-            Some((cost, label)) if cost < MATCH_COST => (Some(label.to_string()), Some(cost)),
-            Some((cost, _)) => (None, Some(cost)),
-            None => (None, None),
+        let (clip_label, match_cost, coverage) = match best {
+            Some((cost, label, coverage)) if cost < MATCH_COST => {
+                (Some(label.to_string()), Some(cost), coverage)
+            }
+            Some((cost, _, coverage)) => (None, Some(cost), coverage),
+            None => (None, None, 0.0),
         };
-        let sure = match_cost.is_some_and(|cost| cost < SURE_MATCH_COST) && clip_label.is_some();
-        // The longest time it is said: the clearest take to recognise.
-        let representative = members
-            .iter()
-            .copied()
-            .max_by(|a, b| {
-                (fragments[*a].1 - fragments[*a].0).total_cmp(&(fragments[*b].1 - fragments[*b].0))
-            })
-            .unwrap_or(first);
+        let sure = match_cost.is_some_and(|cost| cost < SURE_MATCH_COST)
+            && clip_label.is_some()
+            && coverage >= SURE_MATCH_COVERAGE;
         pending.push(Pending {
             members,
             clip_label,
             match_cost,
             sure,
-            representative,
         });
     }
-    // The groups to transcribe, one at a time (about a second each), so the
-    // progress bar moves with each. Packing several into one whisper window
+    let Some(recogniser) = transcriber.as_deref_mut() else {
+        // No speech recognition: the groups as they sound, named by clips.
+        let groups = pending
+            .into_iter()
+            .map(|group| GuideGroup {
+                labels: group.clip_label.into_iter().collect(),
+                transcript: None,
+                match_cost: group.match_cost,
+                counted_in: false,
+                occurrences: group.members.len(),
+                first_start_seconds: fragments[group.members[0]].0,
+                first_end_seconds: fragments[group.members[0]].1,
+            })
+            .collect();
+        return guide_analysis(&fragments, &groups_of, groups);
+    };
+
+    // Every announcement is transcribed, one at a time (about a second each,
+    // so the progress bar moves with each). Sounding alike is not enough to
+    // share a name: "Intro, dos, tres, cuatro" and "Coro, dos, tres, cuatro"
+    // are mostly the same count. Packing several into one whisper window
     // was tried: words drifted between announcements.
-    let mut transcripts: Vec<Option<String>> = vec![None; pending.len()];
-    if let Some(recogniser) = transcriber.as_deref_mut() {
-        let wanted: Vec<usize> = (0..pending.len()).filter(|&g| !pending[g].sure).collect();
-        for (done, &g) in wanted.iter().enumerate() {
-            recogniser.progress(done, wanted.len());
-            transcripts[g] = recogniser.transcribe(&speech_of(pending[g].representative));
-        }
-        if !wanted.is_empty() {
-            recogniser.progress(wanted.len(), wanted.len());
-        }
+    let mut heard: Vec<Option<String>> = vec![None; fragments.len()];
+    let wanted: Vec<usize> = (0..fragments.len())
+        .filter(|&i| !pending[groups_of[i]].sure)
+        .collect();
+    for (done, &index) in wanted.iter().enumerate() {
+        recogniser.progress(done, wanted.len());
+        heard[index] = recogniser.transcribe(&speech_of(index));
     }
-    let mut groups: Vec<GuideGroup> = Vec::with_capacity(group_count);
-    for (group, transcript) in pending.into_iter().zip(transcripts) {
-        let Pending {
-            members,
-            clip_label,
-            match_cost,
-            sure: _,
-            representative: _,
-        } = group;
-        let first = members[0];
-        let mut labels: Vec<String> = match transcript.as_deref() {
-            Some(text) if is_count(text) => vec!["count".to_string()],
-            Some(text) => parse_announcement(text)
+    if !wanted.is_empty() {
+        recogniser.progress(wanted.len(), wanted.len());
+    }
+
+    // What each announcement names, with the count that follows it.
+    let readings: Vec<(Vec<String>, bool)> = (0..fragments.len())
+        .map(|index| {
+            let clip_label = || {
+                pending[groups_of[index]]
+                    .clip_label
+                    .clone()
+                    .into_iter()
+                    .collect()
+            };
+            let Some(text) = heard[index].as_deref() else {
+                return (clip_label(), false);
+            };
+            if is_count(text) {
+                return (vec!["count".to_string()], false);
+            }
+            let following_count = heard
+                .get(index + 1)
+                .and_then(Option::as_deref)
+                .filter(|next| {
+                    is_count(next)
+                        && fragments[index + 1].0 - fragments[index].1 <= COUNT_FOLLOWS_SECONDS
+                });
+            let (markers, counted_in) = read_announcement(text, following_count);
+            let names_a_section = markers.iter().any(|marker| is_section_kind(marker.kind));
+            let labels: Vec<String> = markers
                 .into_iter()
                 .map(|marker| match marker.variant {
                     Some(variant) => format!("{}_{variant}", marker.kind),
                     None => marker.kind.to_string(),
                 })
-                .collect(),
-            None => Vec::new(),
-        };
-        if labels.is_empty() {
-            labels.extend(clip_label);
-        }
-        groups.push(GuideGroup {
-            labels,
-            transcript,
-            match_cost,
-            occurrences: members.len(),
-            first_start_seconds: fragments[first].0,
-            first_end_seconds: fragments[first].1,
-        });
+                .collect();
+            if labels.is_empty() {
+                return (clip_label(), false);
+            }
+            (labels, counted_in && !names_a_section)
+        })
+        .collect();
+
+    // Regroup by what is said: the same markers make one row; nothing
+    // recognised, one row per recording and wording.
+    #[derive(PartialEq)]
+    enum Key {
+        Named(Vec<String>, bool),
+        Unknown(usize, String),
     }
+    let mut keys: Vec<Key> = Vec::new();
+    let mut regrouped: Vec<usize> = Vec::with_capacity(fragments.len());
+    let mut groups: Vec<GuideGroup> = Vec::new();
+    for (index, (labels, counted_in)) in readings.into_iter().enumerate() {
+        let key = if labels.is_empty() {
+            let wording: String = heard[index]
+                .as_deref()
+                .unwrap_or_default()
+                .to_lowercase()
+                .chars()
+                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+                .collect();
+            Key::Unknown(groups_of[index], wording)
+        } else {
+            Key::Named(labels.clone(), counted_in)
+        };
+        let group = match keys.iter().position(|known| *known == key) {
+            Some(group) => {
+                groups[group].occurrences += 1;
+                group
+            }
+            None => {
+                keys.push(key);
+                groups.push(GuideGroup {
+                    labels,
+                    transcript: heard[index].clone(),
+                    match_cost: pending[groups_of[index]].match_cost,
+                    counted_in,
+                    occurrences: 1,
+                    first_start_seconds: fragments[index].0,
+                    first_end_seconds: fragments[index].1,
+                });
+                groups.len() - 1
+            }
+        };
+        regrouped.push(group);
+    }
+    guide_analysis(&fragments, &regrouped, groups)
+}
+
+fn guide_analysis(
+    fragments: &[(f64, f64)],
+    groups_of: &[usize],
+    groups: Vec<GuideGroup>,
+) -> GuideAnalysis {
     GuideAnalysis {
         announcements: fragments
             .iter()
-            .zip(&groups_of)
+            .zip(groups_of)
             .map(
                 |(&(start_seconds, end_seconds), &group)| GuideAnnouncement {
                     start_seconds,
@@ -655,8 +739,79 @@ mod tests {
         }
     }
 
+    /// Says its lines in order, one per announcement.
+    struct ScriptedTranscriber {
+        lines: Vec<&'static str>,
+        next: usize,
+    }
+
+    impl Transcriber for ScriptedTranscriber {
+        fn detect_language(&mut self, _speech: &[f32]) {}
+
+        fn transcribe(&mut self, _speech: &[f32]) -> Option<String> {
+            let line = self.lines.get(self.next).map(|line| line.to_string());
+            self.next += 1;
+            line
+        }
+    }
+
+    fn scripted(audio: &[f32], lines: &[&'static str]) -> GuideAnalysis {
+        let mut recogniser = ScriptedTranscriber {
+            lines: lines.to_vec(),
+            next: 0,
+        };
+        analyze_guide(audio, RATE, &[], Some(&mut recogniser))
+    }
+
     #[test]
-    fn speech_recognition_names_every_marker_of_each_group_once() {
+    fn announcements_that_sound_alike_but_say_different_things_are_apart() {
+        // Real (Digno es el Señor): "Intro, dos, tres, cuatro" and "Coro,
+        // dos, tres, cuatro" are mostly the same count and grouped as one
+        // recording; the chorus came out as a second intro.
+        let audio = track(&[(2.0, 0, 0.5), (12.0, 0, 0.5), (25.0, 0, 0.5)], 30.0);
+        let analysis = scripted(
+            &audio,
+            &[
+                "Entro, dos, tres, cuatro.",
+                "Coro, dos, tres, cuatro.",
+                "Intro, dos, tres, cuatro.",
+            ],
+        );
+        let groups: Vec<usize> = analysis.announcements.iter().map(|a| a.group).collect();
+        assert_eq!(groups, vec![0, 1, 0], "{analysis:?}");
+        assert_eq!(analysis.groups[0].labels, vec!["intro".to_string()]);
+        assert_eq!(analysis.groups[0].occurrences, 2);
+        assert_eq!(analysis.groups[1].labels, vec!["chorus".to_string()]);
+    }
+
+    #[test]
+    fn a_count_said_apart_from_its_word_is_still_a_count() {
+        // Real: "Coro, Uno." and, 0.4 s later, "¡Dos, tres, cuatro!".
+        let audio = track(&[(2.0, 0, 0.6), (3.1, 1, 1.2)], 10.0);
+        let analysis = scripted(&audio, &["Coro, Uno.", "¡Dos, tres, cuatro!"]);
+        assert_eq!(analysis.announcements.len(), 2, "{analysis:?}");
+        assert_eq!(analysis.groups[0].labels, vec!["chorus".to_string()]);
+        assert_eq!(analysis.groups[1].labels, vec!["count".to_string()]);
+    }
+
+    #[test]
+    fn a_cue_with_a_count_in_starts_a_section() {
+        // Real: "Toda la banda." and, 0.7 s later, "Tres, cuatro.".
+        let audio = track(&[(2.0, 0, 0.6), (3.3, 1, 1.0), (20.0, 2, 0.6)], 25.0);
+        let analysis = scripted(
+            &audio,
+            &["Toda la banda.", "Tres, cuatro.", "Toda la banda."],
+        );
+        let groups: Vec<usize> = analysis.announcements.iter().map(|a| a.group).collect();
+        assert_eq!(groups, vec![0, 1, 2], "{analysis:?}");
+        assert_eq!(analysis.groups[0].labels, vec!["all_in".to_string()]);
+        assert!(analysis.groups[0].counted_in);
+        // Without the count, the same words are a plain cue.
+        assert!(!analysis.groups[2].counted_in);
+    }
+
+    #[test]
+    fn speech_recognition_names_every_marker_of_each_announcement() {
         // Words of 0.5, 1.2 and 0.8 s; the 0.5 s one said twice.
         let audio = track(
             &[
@@ -689,10 +844,14 @@ mod tests {
             ],
             "{analysis:?}"
         );
-        // One recognition per group, not per announcement, with its count
-        // known up front.
-        assert_eq!(recogniser.calls.len(), 3);
-        assert_eq!(recogniser.progress, vec![(0, 3), (1, 3), (2, 3), (3, 3)]);
+        // One recognition per announcement, with the count known up front;
+        // the chorus said twice is still one row.
+        assert_eq!(recogniser.calls.len(), 4);
+        assert_eq!(
+            recogniser.progress,
+            vec![(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]
+        );
+        assert_eq!(analysis.groups[0].occurrences, 2);
         assert!(recogniser.language_sample_seconds > 1.0);
         assert_eq!(
             analysis.groups[1].transcript.as_deref(),

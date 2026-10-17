@@ -1488,6 +1488,9 @@ export type GuideGroup = {
   /** What speech recognition heard ("Verso 3, entra batería"), when it ran. */
   transcript: string | null;
   matchCost: number | null;
+  /** Said with a count-in: a cue here starts a section and goes in the
+   * section lane ("Toda la banda" + "tres, cuatro"). */
+  countedIn?: boolean;
   occurrences: number;
   firstStartSeconds: number;
   firstEndSeconds: number;
