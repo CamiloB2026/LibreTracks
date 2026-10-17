@@ -40,6 +40,34 @@ const CLEAR_RULER_MARKERS = {
   selectedTimeSignatureMarkerId: null as string | null,
 };
 
+/**
+ * La altura global de las pistas es una preferencia de la instalación, como el
+ * zoom de la interfaz: se guarda en localStorage para que sobreviva a cerrar y
+ * abrir la app. Las alturas por pista ya viajan en el proyecto (offsets).
+ */
+const TRACK_HEIGHT_STORAGE_KEY = "lt.timeline.trackHeight";
+
+function readStoredTrackHeight(): number {
+  try {
+    const raw = window.localStorage.getItem(TRACK_HEIGHT_STORAGE_KEY);
+    if (raw === null) return TIMELINE_DEFAULT_TRACK_HEIGHT;
+    const parsed = Number.parseFloat(raw);
+    return Number.isFinite(parsed) && parsed > 0
+      ? parsed
+      : TIMELINE_DEFAULT_TRACK_HEIGHT;
+  } catch {
+    return TIMELINE_DEFAULT_TRACK_HEIGHT;
+  }
+}
+
+function storeTrackHeight(trackHeight: number): void {
+  try {
+    window.localStorage.setItem(TRACK_HEIGHT_STORAGE_KEY, String(trackHeight));
+  } catch {
+    // Sin almacenamiento (modo privado, cuota): la altura vale para esta sesión.
+  }
+}
+
 function recordViewMode(viewMode: ViewMode): void {
   recordProductEvent(`feature_${viewMode}_view`);
 }
@@ -128,7 +156,10 @@ export const useTimelineUIStore = create<TimelineUIState>()(
   subscribeWithSelector((set, get) => ({
     cameraX: 0,
     zoomLevel: TIMELINE_DEFAULT_ZOOM_LEVEL,
-    trackHeight: TIMELINE_DEFAULT_TRACK_HEIGHT,
+    trackHeight:
+      typeof window === "undefined"
+        ? TIMELINE_DEFAULT_TRACK_HEIGHT
+        : readStoredTrackHeight(),
     selectedTrackIds: [],
     selectedClipId: null,
     selectedClipIds: [],
@@ -184,10 +215,15 @@ export const useTimelineUIStore = create<TimelineUIState>()(
       }));
     },
     setTrackHeight: (trackHeight) => {
+      const previous = get().trackHeight;
       set((state) => ({
         trackHeight:
           typeof trackHeight === "function" ? trackHeight(state.trackHeight) : trackHeight,
       }));
+      const next = get().trackHeight;
+      if (next !== previous && Number.isFinite(next)) {
+        storeTrackHeight(next);
+      }
     },
     setSelectedTrackIds: (selectedTrackIds) => {
       set({

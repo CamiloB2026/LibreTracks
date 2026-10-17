@@ -35,6 +35,10 @@ use super::DesktopSession;
 /// against a stalled tick (a hitched frame, a machine coming back from sleep).
 const MAX_CONTINUOUS_TICK_SECONDS: f64 = 1.0;
 
+/// How far behind a landing point the MIDI cursor is put back, so the
+/// half-open tick window includes the events placed exactly on it.
+const MIDI_LANDING_EPSILON_SECONDS: f64 = 0.001;
+
 /// Translate a scheduling decision into the wire-level message plus the port
 /// it must leave by (`None` = the app-wide output).
 fn to_outbound(message: ScheduledMidiMessage) -> (Option<String>, OutboundMidiMessage) {
@@ -110,6 +114,15 @@ impl DesktopSession {
         self.midi_cursor_seconds = position_seconds.max(0.0);
         self.release_all_midi_notes();
         self.active_midi_curves.clear();
+    }
+
+    /// Re-anchor MIDI where the playhead just landed (a jump, a vamp wrap, a
+    /// seek, Play) so the events sitting exactly on that point still go out:
+    /// the tick window is `(cursor, now]`, and a cursor left ON the landing
+    /// point would skip the lyrics change placed on the chorus marker.
+    pub(super) fn land_midi_cursor(&mut self, landing_seconds: f64) {
+        self.reset_midi_cursor(landing_seconds);
+        self.midi_cursor_seconds = landing_seconds.max(0.0) - MIDI_LANDING_EPSILON_SECONDS;
     }
 
     /// Send note-offs for every sounding note and forget them.
