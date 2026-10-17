@@ -699,6 +699,8 @@ const es = {
       applyKey: "Aplicar nota",
       noKey: "No se ha encontrado una nota clara en estas pistas.",
       keyUnchanged: "La canción ya tiene esta nota.",
+      keyModulates:
+        "La canción cambia de tonalidad: {{sections}}. Se propone la que dura más; la nota guardada es la de la canción, no la del último coro.",
       keyDoubt: "Dudosa: también podría ser {{key}}.",
       keyRelativeDoubt:
         "Dudosa: también podría ser {{key}}, su relativa (mismas notas, otra tónica).",

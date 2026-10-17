@@ -1414,6 +1414,11 @@ export type KeyAnalysis = {
   /** How far the band is from A = 440 Hz. */
   tuningCents: number;
   candidates: { key: string; score: number }[];
+  /**
+   * Where the song changes key, empty when it stays in one. `key` is then the
+   * one that lasts longest. Seconds from the song start.
+   */
+  sections: { startSeconds: number; key: string }[];
 };
 
 export type ClickTempoSegment = {

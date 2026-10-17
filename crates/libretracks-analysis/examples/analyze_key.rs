@@ -54,6 +54,33 @@ fn main() {
             mix[start + i] += sample;
         }
     }
+    if std::env::var_os("CHROMA").is_some() {
+        let names = [
+            "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+        ];
+        let window = (30.0 * f64::from(rate)) as usize;
+        let mut sections: Vec<(String, &[f32])> = vec![("whole".into(), &mix[..])];
+        for (index, chunk) in mix.chunks(window).enumerate() {
+            if chunk.len() >= window / 2 {
+                sections.push((format!("{:>3}s", index * 30), chunk));
+            }
+        }
+        for (label, samples) in sections {
+            let chroma = libretracks_analysis::key::debug_chroma(samples, rate);
+            let key = libretracks_analysis::analyze_key(samples, rate);
+            let bars: Vec<String> = names
+                .iter()
+                .zip(chroma)
+                .map(|(name, value)| format!("{name}:{:.0}", value * 100.0))
+                .collect();
+            println!(
+                "{label:>6}  {:<5} {}",
+                key.key.unwrap_or_default(),
+                bars.join(" ")
+            );
+        }
+        return;
+    }
     let started = std::time::Instant::now();
     let analysis = libretracks_analysis::analyze_key(&mix, rate);
     println!(
@@ -65,6 +92,12 @@ fn main() {
         analysis.tuning_cents,
         started.elapsed().as_secs_f64() * 1000.0
     );
+    for section in &analysis.sections {
+        println!(
+            "  section from {:>6.1} s: {}",
+            section.start_seconds, section.key
+        );
+    }
     for candidate in &analysis.candidates {
         println!("  {:<4} {:.3}", candidate.key, candidate.score);
     }

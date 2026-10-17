@@ -115,6 +115,7 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
         relativeDoubt: false,
         tuningCents: -32,
         candidates: [{ key: "D", score: 0.8 }],
+        sections: [],
       },
       currentKey: "C",
       transposeSemitones: 0,
@@ -249,6 +250,36 @@ describe("SongAnalysisModal", () => {
     expect(screen.getByLabelText("transport.songAnalysis.key")).toBeTruthy();
   });
 
+  it("says where the song modulates and proposes the key that lasts longest", async () => {
+    analyzeSong.mockResolvedValue(
+      result({
+        key: {
+          analysis: {
+            key: "D",
+            confidence: 0.12,
+            alternative: null,
+            relativeDoubt: false,
+            tuningCents: 0,
+            candidates: [],
+            sections: [
+              { startSeconds: 0, key: "D" },
+              { startSeconds: 180, key: "E" },
+            ],
+          },
+          currentKey: "A",
+          transposeSemitones: 0,
+        },
+      }),
+    );
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+    // 180 s from the song start is 3:00.0, whatever the song's position.
+    await screen.findByText(/transport\.songAnalysis\.keyModulates.*D · 0:00\.0 → E · 3:00\.0/);
+    expect(
+      (screen.getByLabelText("transport.songAnalysis.key") as HTMLSelectElement).value,
+    ).toBe("D");
+  });
+
   it("offers the relative key when the call is close", async () => {
     analyzeSong.mockResolvedValue(
       result({
@@ -260,6 +291,7 @@ describe("SongAnalysisModal", () => {
             relativeDoubt: true,
             tuningCents: 0,
             candidates: [],
+            sections: [],
           },
           currentKey: null,
           transposeSemitones: 2,

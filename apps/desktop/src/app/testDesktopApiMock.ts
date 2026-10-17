@@ -1327,6 +1327,7 @@ export const testDesktopApiMock = {
                 relativeDoubt: false,
                 tuningCents: 0,
                 candidates: [{ key: "D", score: 0.8 }],
+                sections: [],
               },
               currentKey: region?.key ?? null,
               transposeSemitones: region?.transposeSemitones ?? 0,

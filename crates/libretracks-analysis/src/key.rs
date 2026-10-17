@@ -26,6 +26,15 @@ const PEAKS_PER_FRAME: usize = 40;
 const MAX_DETUNE_SEMITONES: f64 = 0.35;
 /// Frames quieter than this share of the median loud frame are silence.
 const SILENT_FRAME_SHARE: f64 = 0.1;
+/// Length of the stretches the song is cut into to look for modulations.
+const WINDOW_SECONDS: f64 = 30.0;
+/// A stretch with fewer pitched frames than this says nothing (an intro).
+const MIN_WINDOW_FRAMES: usize = 40;
+/// A key that lasts less than this is a passing chord, not a modulation: the
+/// last chorus up a tone lasts a minute or more, a bridge's borrowed chord
+/// does not. Judged on duration, not on windows: the last window absorbs the
+/// remainder of the song and can be shorter or longer than the others.
+const MIN_SECTION_SECONDS: f64 = 45.0;
 /// Below this correlation margin the runner-up is offered as an alternative.
 /// Real songs whose key was right won by 0.16–0.36 (see the plan's
 /// validation table).
@@ -67,8 +76,20 @@ pub struct KeyAnalysis {
     pub relative_doubt: bool,
     /// How far the band is from A = 440 Hz, in cents.
     pub tuning_cents: f64,
-    /// The three best keys.
+    /// The three best keys (of the section the key comes from).
     pub candidates: Vec<KeyCandidate>,
+    /// Where the song changes key. Empty when it stays in one (the usual
+    /// case); otherwise one entry per stretch, and `key` is the one that
+    /// lasts longest.
+    pub sections: Vec<KeySection>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeySection {
+    /// Seconds from the start of the analysed audio.
+    pub start_seconds: f64,
+    pub key: String,
 }
 
 impl KeyAnalysis {
@@ -80,6 +101,7 @@ impl KeyAnalysis {
             relative_doubt: false,
             tuning_cents: 0.0,
             candidates: Vec::new(),
+            sections: Vec::new(),
         }
     }
 }
@@ -122,11 +144,20 @@ impl KeyAnalysis {
         for candidate in &mut self.candidates {
             shift(&mut candidate.key);
         }
+        for section in &mut self.sections {
+            shift(&mut section.key);
+        }
         self
     }
 }
 
 /// Analyse the key of a mono mix of the song's harmonic tracks.
+///
+/// A song that goes up a tone for the last chorus has no single key: its
+/// whole-song chromagram blends the two and lands on the notes they share (a
+/// song in D that ends in E reads as A, the dominant of both). So the song is
+/// cut into stretches, stretches in the same key are merged, and the key is
+/// the one that lasts longest; `sections` says where it changes.
 pub fn analyze_key(samples: &[f32], sample_rate: u32) -> KeyAnalysis {
     let (signal, rate) = decimate(samples, f64::from(sample_rate.max(1)));
     let frames = spectral_peaks(&signal, rate);
@@ -134,11 +165,41 @@ pub fn analyze_key(samples: &[f32], sample_rate: u32) -> KeyAnalysis {
         return KeyAnalysis::silent();
     }
     let tuning = estimate_tuning(&frames);
-    let chroma = chromagram(&frames, tuning);
-    if chroma.iter().sum::<f64>() <= 0.0 {
+    let whole = chromagram(&frames, tuning);
+    if whole.iter().sum::<f64>() <= 0.0 {
         return KeyAnalysis::silent();
     }
 
+    let stretches = key_stretches(&frames, tuning, signal.len() as f64 / rate);
+    if stretches.len() > 1 {
+        // First of the longest: a tie goes to the key the song starts in.
+        let main = stretches
+            .iter()
+            .enumerate()
+            .max_by(|(ia, a), (ib, b)| {
+                (a.end - a.start)
+                    .total_cmp(&(b.end - b.start))
+                    .then(ib.cmp(ia))
+            })
+            .map(|(_, stretch)| stretch)
+            .unwrap_or(&stretches[0]);
+        let sections = stretches
+            .iter()
+            .map(|stretch| {
+                let (tonic, minor, _) = rank_keys(&stretch.chroma)[0];
+                KeySection {
+                    start_seconds: stretch.start,
+                    key: key_name(tonic, minor),
+                }
+            })
+            .collect();
+        return describe(&main.chroma, tuning, sections);
+    }
+    describe(&whole, tuning, Vec::new())
+}
+
+/// Every key against the chroma, best first: (tonic, minor, correlation).
+fn rank_keys(chroma: &[f64; 12]) -> Vec<(usize, bool, f64)> {
     let mut scores: Vec<(usize, bool, f64)> = Vec::with_capacity(24);
     for tonic in 0..12 {
         for minor in [false, true] {
@@ -148,10 +209,15 @@ pub fn analyze_key(samples: &[f32], sample_rate: u32) -> KeyAnalysis {
                 &MAJOR_PROFILE
             };
             let rotated: Vec<f64> = (0..12).map(|pc| profile[(pc + 12 - tonic) % 12]).collect();
-            scores.push((tonic, minor, pearson(&chroma, &rotated)));
+            scores.push((tonic, minor, pearson(chroma, &rotated)));
         }
     }
     scores.sort_by(|a, b| b.2.total_cmp(&a.2));
+    scores
+}
+
+fn describe(chroma: &[f64; 12], tuning: f64, sections: Vec<KeySection>) -> KeyAnalysis {
+    let scores = rank_keys(chroma);
     let (tonic, minor, best) = scores[0];
     let (second_tonic, second_minor, second) = scores[1];
     let relative = if minor {
@@ -175,7 +241,107 @@ pub fn analyze_key(samples: &[f32], sample_rate: u32) -> KeyAnalysis {
                 score,
             })
             .collect(),
+        sections,
     }
+}
+
+/// A run of windows in one key.
+struct Stretch {
+    start: f64,
+    end: f64,
+    chroma: [f64; 12],
+}
+
+/// The key "family" two relative keys share (C and Am both give C's tonic): a
+/// stretch that flips between them is not a modulation.
+fn family(chroma: &[f64; 12]) -> usize {
+    let (tonic, minor, _) = rank_keys(chroma)[0];
+    if minor {
+        (tonic + 3) % 12
+    } else {
+        tonic
+    }
+}
+
+fn add_chroma(into: &mut [f64; 12], other: [f64; 12]) {
+    into.iter_mut().zip(other).for_each(|(a, b)| *a += b);
+}
+
+fn key_stretches(frames: &[(f64, Peaks)], tuning: f64, total_seconds: f64) -> Vec<Stretch> {
+    // Whole windows; the last one runs to the end.
+    let count = ((total_seconds / WINDOW_SECONDS).floor() as usize).max(1);
+    let mut groups: Vec<Stretch> = Vec::new();
+    for window in 0..count {
+        let start = window as f64 * WINDOW_SECONDS;
+        let end = if window + 1 == count {
+            f64::INFINITY
+        } else {
+            start + WINDOW_SECONDS
+        };
+        let from = frames.partition_point(|(seconds, _)| *seconds < start);
+        let to = frames.partition_point(|(seconds, _)| *seconds < end);
+        let chroma = chromagram(&frames[from..to], tuning);
+        let pitched = to - from >= MIN_WINDOW_FRAMES && chroma.iter().sum::<f64>() > 0.0;
+        let end = end.min(total_seconds);
+        match groups.last_mut() {
+            // An empty stretch (an intro, a silence) joins its neighbour.
+            Some(last) if !pitched => {
+                last.end = end;
+            }
+            Some(last) if family(&last.chroma) == family(&chroma) => {
+                last.end = end;
+                add_chroma(&mut last.chroma, chroma);
+            }
+            _ if !pitched => {}
+            _ => groups.push(Stretch { start, end, chroma }),
+        }
+    }
+
+    // Short stretches are passing chords, not modulations: fold each into the
+    // stretch before it (or the one after, for the first), then merge any
+    // neighbours that end up in the same key. The key of a merged stretch is
+    // re-read from its summed chroma.
+    while groups.len() > 1 {
+        let Some(short) = groups
+            .iter()
+            .position(|g| g.end - g.start < MIN_SECTION_SECONDS)
+        else {
+            break;
+        };
+        let absorbed = groups.remove(short);
+        let into = short.saturating_sub(1);
+        let target = &mut groups[into];
+        target.start = target.start.min(absorbed.start);
+        target.end = target.end.max(absorbed.end);
+        add_chroma(&mut target.chroma, absorbed.chroma);
+        let mut index = 1;
+        while index < groups.len() {
+            if family(&groups[index - 1].chroma) == family(&groups[index].chroma) {
+                let next = groups.remove(index);
+                let previous = &mut groups[index - 1];
+                previous.end = next.end;
+                add_chroma(&mut previous.chroma, next.chroma);
+            } else {
+                index += 1;
+            }
+        }
+    }
+    groups
+}
+
+/// The song's chromagram (C first), normalised to sum 1, for the
+/// `analyze_key` example's `CHROMA=1` dump. Not part of the analysis API.
+#[doc(hidden)]
+pub fn debug_chroma(samples: &[f32], sample_rate: u32) -> [f64; 12] {
+    let (signal, rate) = decimate(samples, f64::from(sample_rate.max(1)));
+    let frames = spectral_peaks(&signal, rate);
+    let tuning = estimate_tuning(&frames);
+    let mut chroma = chromagram(&frames, tuning);
+    let total: f64 = chroma.iter().sum();
+    if total > 0.0 {
+        chroma.iter_mut().for_each(|value| *value /= total);
+    }
+    chroma
 }
 
 /// Low-pass (windowed sinc) and keep one sample in `factor`.
@@ -220,7 +386,8 @@ fn decimate(samples: &[f32], rate: f64) -> (Vec<f32>, f64) {
 /// (frequency Hz, magnitude) of a frame's peaks.
 type Peaks = Vec<(f64, f64)>;
 
-fn spectral_peaks(signal: &[f32], rate: f64) -> Vec<Peaks> {
+/// The pitched frames of the signal as (seconds, peaks).
+fn spectral_peaks(signal: &[f32], rate: f64) -> Vec<(f64, Peaks)> {
     if signal.len() < FRAME {
         return Vec::new();
     }
@@ -231,7 +398,7 @@ fn spectral_peaks(signal: &[f32], rate: f64) -> Vec<Peaks> {
     let low = ((MIN_HZ / bin_hz).floor() as usize).max(1);
     let high = ((MAX_HZ / bin_hz).ceil() as usize).min(FRAME / 2 - 2);
 
-    let mut frames: Vec<(f64, Peaks)> = Vec::new();
+    let mut frames: Vec<(f64, f64, Peaks)> = Vec::new();
     let mut re = vec![0.0_f32; FRAME];
     let mut im = vec![0.0_f32; FRAME];
     let mut start = 0;
@@ -265,12 +432,12 @@ fn spectral_peaks(signal: &[f32], rate: f64) -> Vec<Peaks> {
             peaks.sort_by(|x, y| y.1.total_cmp(&x.1));
             peaks.truncate(PEAKS_PER_FRAME);
         }
-        frames.push((energy, peaks));
+        frames.push((start as f64 / rate, energy, peaks));
         start += HOP;
     }
 
     // Drop the silent frames (intros, breaks, the song's tail).
-    let mut energies: Vec<f64> = frames.iter().map(|f| f.0).filter(|e| *e > 0.0).collect();
+    let mut energies: Vec<f64> = frames.iter().map(|f| f.1).filter(|e| *e > 0.0).collect();
     if energies.is_empty() {
         return Vec::new();
     }
@@ -278,8 +445,8 @@ fn spectral_peaks(signal: &[f32], rate: f64) -> Vec<Peaks> {
     let floor = SILENT_FRAME_SHARE * energies[energies.len() / 2];
     frames
         .into_iter()
-        .filter(|(energy, peaks)| *energy > floor && !peaks.is_empty())
-        .map(|(_, peaks)| peaks)
+        .filter(|(_, energy, peaks)| *energy > floor && !peaks.is_empty())
+        .map(|(seconds, _, peaks)| (seconds, peaks))
         .collect()
 }
 
@@ -290,9 +457,9 @@ fn semitones_from_a440(frequency: f64) -> f64 {
 
 /// Band tuning in semitones (-0.5..0.5): the circular mean of every peak's
 /// distance to the nearest equal-tempered note, weighted by its level.
-fn estimate_tuning(frames: &[Peaks]) -> f64 {
+fn estimate_tuning(frames: &[(f64, Peaks)]) -> f64 {
     let (mut x, mut y) = (0.0, 0.0);
-    for peaks in frames {
+    for (_, peaks) in frames {
         for &(frequency, magnitude) in peaks {
             let deviation = semitones_from_a440(frequency);
             let angle = std::f64::consts::TAU * (deviation - deviation.round());
@@ -306,9 +473,9 @@ fn estimate_tuning(frames: &[Peaks]) -> f64 {
     y.atan2(x) / std::f64::consts::TAU
 }
 
-fn chromagram(frames: &[Peaks], tuning: f64) -> [f64; 12] {
+fn chromagram(frames: &[(f64, Peaks)], tuning: f64) -> [f64; 12] {
     let mut chroma = [0.0; 12];
-    for peaks in frames {
+    for (_, peaks) in frames {
         let mut frame = [0.0; 12];
         for &(frequency, magnitude) in peaks {
             let semitones = semitones_from_a440(frequency) - tuning;
@@ -456,6 +623,61 @@ mod tests {
         assert_eq!(transpose_key_name("A#m", 3).as_deref(), Some("C#m"));
         assert_eq!(transpose_key_name("C", -1).as_deref(), Some("B"));
         assert_eq!(transpose_key_name("Hm", 1), None);
+    }
+
+    /// `progression` repeated until it lasts at least `seconds`.
+    fn lasting(tonic: i32, seconds: f64) -> Vec<f32> {
+        let one = progression(tonic, false, 0.0);
+        let mut song = Vec::new();
+        while (song.len() as f64) < seconds * f64::from(RATE) {
+            song.extend_from_slice(&one);
+        }
+        song
+    }
+
+    #[test]
+    fn a_song_that_goes_up_a_tone_is_read_in_the_key_it_lasts_longest() {
+        // Re-creates a real case: 3 minutes in D, then the last chorus in E.
+        // Blended, the two read as A, the dominant of both.
+        let mut song = lasting(62, 112.0);
+        song.extend(lasting(64, 64.0));
+        let analysis = analyze_key(&song, RATE);
+        assert_eq!(analysis.key.as_deref(), Some("D"), "{analysis:?}");
+        let sections: Vec<(f64, &str)> = analysis
+            .sections
+            .iter()
+            .map(|s| (s.start_seconds, s.key.as_str()))
+            .collect();
+        assert_eq!(sections.len(), 2, "{analysis:?}");
+        assert_eq!(sections[0], (0.0, "D"));
+        assert_eq!(sections[1].1, "E");
+        assert!((sections[1].0 - 112.0).abs() <= 32.0, "{analysis:?}");
+    }
+
+    #[test]
+    fn modulation_is_reported_transposed_with_the_rest() {
+        let mut song = lasting(62, 112.0);
+        song.extend(lasting(64, 64.0));
+        let analysis = analyze_key(&song, RATE).transposed(-2);
+        assert_eq!(analysis.key.as_deref(), Some("C"));
+        assert_eq!(analysis.sections[1].key, "D");
+    }
+
+    #[test]
+    fn a_passing_stretch_in_another_key_is_not_a_modulation() {
+        // 20 s in another key inside a song in C: under two windows.
+        let mut song = lasting(60, 100.0);
+        song.extend(lasting(65, 20.0));
+        song.extend(lasting(60, 70.0));
+        let analysis = analyze_key(&song, RATE);
+        assert_eq!(analysis.key.as_deref(), Some("C"), "{analysis:?}");
+        assert!(analysis.sections.is_empty(), "{analysis:?}");
+    }
+
+    #[test]
+    fn a_short_song_has_no_sections() {
+        let analysis = analyze_key(&progression(62, false, 0.0), RATE);
+        assert!(analysis.sections.is_empty());
     }
 
     #[test]

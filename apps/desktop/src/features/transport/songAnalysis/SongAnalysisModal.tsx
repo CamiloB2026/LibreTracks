@@ -494,6 +494,15 @@ function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewP
       {currentKey === analysis.key ? (
         <p className="lt-render-hint">{t("transport.songAnalysis.keyUnchanged")}</p>
       ) : null}
+      {analysis.sections.length > 1 ? (
+        <p className="lt-render-warning">
+          {t("transport.songAnalysis.keyModulates", {
+            sections: analysis.sections
+              .map((section) => `${section.key} · ${formatSongPosition(section.startSeconds)}`)
+              .join(" → "),
+          })}
+        </p>
+      ) : null}
       {analysis.alternative ? (
         <p className="lt-render-warning">
           {t(

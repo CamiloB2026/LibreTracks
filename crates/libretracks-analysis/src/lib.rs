@@ -10,7 +10,7 @@ pub mod key;
 pub mod proposal;
 
 pub use click::{analyze_click, ClickAnalysis, ClickWarning, ClickWarningKind, TempoSegment};
-pub use key::{analyze_key, transpose_key_name, KeyAnalysis, KeyCandidate};
+pub use key::{analyze_key, transpose_key_name, KeyAnalysis, KeyCandidate, KeySection};
 pub use proposal::{
     propose_tempo_markers, ExistingTiming, ProposedSignatureMarker, ProposedTempoMarker, SongSpan,
     TempoProposal,

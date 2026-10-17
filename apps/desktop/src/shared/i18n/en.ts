@@ -686,6 +686,8 @@ const en = {
       applyKey: "Apply key",
       noKey: "No clear key found in these tracks.",
       keyUnchanged: "The song already has this key.",
+      keyModulates:
+        "The song changes key: {{sections}}. The one that lasts longest is proposed; the stored key is the song's, not the last chorus's.",
       keyDoubt: "Close call: it could also be {{key}}.",
       keyRelativeDoubt: "Close call: it could also be {{key}}, its relative (same notes, other tonic).",
       keyTransposed: "With its {{semitones}} transpose it sounds in {{key}}.",
