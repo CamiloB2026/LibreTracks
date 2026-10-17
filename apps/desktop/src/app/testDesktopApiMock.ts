@@ -1291,6 +1291,7 @@ export const testDesktopApiMock = {
   analyzeSong: async (request: {
     regionId: string;
     clickTrackIds: string[];
+    musicTempoTrackIds: string[];
     keyTrackIds: string[];
   }) => {
     const region = state.song.regions.find((candidate) => candidate.id === request.regionId);
@@ -1299,7 +1300,7 @@ export const testDesktopApiMock = {
       regionId: request.regionId,
       regionStartSeconds: region?.startSeconds ?? 0,
       tempo:
-        request.clickTrackIds.length > 0
+        request.clickTrackIds.length > 0 || request.musicTempoTrackIds.length > 0
           ? {
               analysis: {
                 segments: [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }],

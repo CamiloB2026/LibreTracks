@@ -12,8 +12,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
-    analyze_click, analyze_key, propose_tempo_markers, ClickAnalysis, ExistingTiming, KeyAnalysis,
-    ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
+    analyze_click, analyze_key, analyze_music_tempo, propose_tempo_markers, ClickAnalysis,
+    ExistingTiming, KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker, SongSpan,
+    TempoProposal,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -57,9 +58,14 @@ impl Drop for ActiveAnalysis {
 #[serde(rename_all = "camelCase")]
 pub struct AnalyzeSongRequest {
     pub region_id: String,
-    /// The click track(s), usually one. Empty: no tempo analysis.
+    /// The click track(s), usually one.
     #[serde(default)]
     pub click_track_ids: Vec<String>,
+    /// No click: the tracks the tempo is estimated from (everything but the
+    /// cues). Used only when `click_track_ids` is empty; both empty means no
+    /// tempo analysis.
+    #[serde(default)]
+    pub music_tempo_track_ids: Vec<String>,
     /// The harmonic tracks the key is read from. Empty: no key analysis.
     #[serde(default)]
     pub key_track_ids: Vec<String>,
@@ -124,6 +130,8 @@ pub fn cancel_analyze_song() {
 
 struct TempoJob {
     track_ids: Vec<String>,
+    /// Estimated from the music instead of read from a click.
+    from_music: bool,
     span: SongSpan,
     existing: ExistingTiming,
     fallback_beats_per_bar: u32,
@@ -174,7 +182,12 @@ fn prepare_job(
     let timeline_matches = (runtime_region.start_seconds - region.start_seconds).abs()
         <= SAME_BOUND_SECONDS
         && (runtime_region.end_seconds - region.end_seconds).abs() <= SAME_BOUND_SECONDS;
-    let tempo_unavailable = if request.click_track_ids.is_empty() {
+    let tempo_track_ids = if request.click_track_ids.is_empty() {
+        &request.music_tempo_track_ids
+    } else {
+        &request.click_track_ids
+    };
+    let tempo_unavailable = if tempo_track_ids.is_empty() {
         None
     } else if region.warp_enabled {
         Some("song_analysis_warp".to_string())
@@ -184,7 +197,7 @@ fn prepare_job(
         None
     };
 
-    let tempo = (!request.click_track_ids.is_empty() && tempo_unavailable.is_none()).then(|| {
+    let tempo = (!tempo_track_ids.is_empty() && tempo_unavailable.is_none()).then(|| {
         let next_song_start_seconds = song
             .regions
             .iter()
@@ -202,7 +215,8 @@ fn prepare_job(
             .map(|marker| marker.signature.as_str())
             .unwrap_or(song.time_signature.as_str());
         TempoJob {
-            track_ids: request.click_track_ids.clone(),
+            track_ids: tempo_track_ids.clone(),
+            from_music: request.click_track_ids.is_empty(),
             span: SongSpan {
                 start_seconds: region.start_seconds,
                 end_seconds: region.end_seconds,
@@ -385,7 +399,11 @@ fn run_job(
     let outcome = (|| -> Result<(), JobError> {
         if let Some(tempo) = &job.tempo {
             let (samples, rate) = read(&click_path)?;
-            let analysis = analyze_click(&samples, rate, tempo.fallback_beats_per_bar);
+            let analysis = if tempo.from_music {
+                analyze_music_tempo(&samples, rate, tempo.fallback_beats_per_bar)
+            } else {
+                analyze_click(&samples, rate, tempo.fallback_beats_per_bar)
+            };
             let proposal = propose_tempo_markers(&analysis, tempo.span, &tempo.existing);
             result.tempo = Some(TempoResult { analysis, proposal });
             if !on_progress(0.9) {
@@ -414,7 +432,10 @@ pub async fn analyze_song(
     request: AnalyzeSongRequest,
     state: State<'_, DesktopState>,
 ) -> Result<AnalyzeSongResult, String> {
-    if request.click_track_ids.is_empty() && request.key_track_ids.is_empty() {
+    if request.click_track_ids.is_empty()
+        && request.music_tempo_track_ids.is_empty()
+        && request.key_track_ids.is_empty()
+    {
         return Err("Nothing to analyze".to_string());
     }
     let Some(active) = ActiveAnalysis::acquire() else {
@@ -581,6 +602,7 @@ mod tests {
         AnalyzeSongRequest {
             region_id: region_id.into(),
             click_track_ids: vec!["click".into()],
+            music_tempo_track_ids: vec![],
             key_track_ids: vec!["keys".into(), "pad".into()],
         }
     }
@@ -629,5 +651,36 @@ mod tests {
         };
         let job = prepare_job(dir.path(), &transposed, &only_drums).expect("job");
         assert_eq!(job.key.expect("key job").untranspose, 0);
+    }
+
+    #[test]
+    fn without_a_click_the_tempo_comes_from_the_music() {
+        let dir = tempfile::tempdir().expect("dir");
+        let no_click = AnalyzeSongRequest {
+            click_track_ids: vec![],
+            music_tempo_track_ids: vec!["keys".into(), "drums".into()],
+            ..request("b")
+        };
+        let tempo = prepare_job(dir.path(), &song(), &no_click)
+            .expect("job")
+            .tempo
+            .expect("tempo job");
+        assert!(tempo.from_music);
+        assert_eq!(
+            tempo.track_ids,
+            vec!["keys".to_string(), "drums".to_string()]
+        );
+
+        // A chosen click wins over the music.
+        let both = AnalyzeSongRequest {
+            music_tempo_track_ids: vec!["keys".into()],
+            ..request("b")
+        };
+        let tempo = prepare_job(dir.path(), &song(), &both)
+            .expect("job")
+            .tempo
+            .expect("tempo");
+        assert!(!tempo.from_music);
+        assert_eq!(tempo.track_ids, vec!["click".to_string()]);
     }
 }

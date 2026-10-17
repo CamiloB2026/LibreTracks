@@ -20,8 +20,10 @@ import {
   clickTrackOptions,
   formatSongPosition,
   keyTrackOptions,
+  musicTempoTrackIds,
   reviewRows,
   rowIsValid,
+  scaleTempoRows,
   type ReviewRow,
 } from "./songAnalysisPlan";
 import { useSongAnalysisStore } from "./songAnalysisStore";
@@ -40,6 +42,8 @@ type Props = {
 
 /** Below this the band counts as tuned to 440 Hz. */
 const TUNING_NOTICE_CENTS = 15;
+/** The click select's "no click: estimate it from the music" option. */
+const FROM_MUSIC = "__music__";
 
 /**
  * "Analizar canción": read the song's click track (tempo and meter markers)
@@ -87,7 +91,11 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
     clickTrackOptions(song, regionId),
   );
   const [keyOptions] = useState(() => keyTrackOptions(song, regionId));
-  const [clickTrackId, setClickTrackId] = useState<string>(preselected ?? "");
+  const [musicTrackIds] = useState(() => musicTempoTrackIds(song, regionId));
+  // No click-named track: estimating from the music is the useful default.
+  const [clickTrackId, setClickTrackId] = useState<string>(
+    preselected ?? (musicTrackIds.length > 0 ? FROM_MUSIC : ""),
+  );
   const [keyTrackIds, setKeyTrackIds] = useState<Set<string>>(
     () => new Set(keyOptions.filter((option) => option.preselected).map((option) => option.id)),
   );
@@ -129,9 +137,11 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       );
     });
     try {
+      const fromMusic = clickTrackId === FROM_MUSIC;
       const result = await analyzeSong({
         regionId,
-        clickTrackIds: clickTrackId ? [clickTrackId] : [],
+        clickTrackIds: clickTrackId && !fromMusic ? [clickTrackId] : [],
+        musicTempoTrackIds: fromMusic ? musicTrackIds : [],
         // Session order, whatever order they were ticked in.
         keyTrackIds: wantsKey
           ? keyOptions.filter((option) => keyTrackIds.has(option.id)).map((option) => option.id)
@@ -143,11 +153,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       }
       const proposalRows = result.tempo ? reviewRows(result.tempo.proposal) : [];
       const detectedKey = result.key?.analysis.key ?? null;
+      const estimated =
+        result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
       setRows(proposalRows);
       setKeyChoice(detectedKey ?? "");
       setInclude({
         tempo: proposalRows.some((row) => row.kind === "tempo"),
-        signature: proposalRows.some((row) => row.kind === "signature"),
+        // Without a click the meter is a guess: the user opts in.
+        signature: !estimated && proposalRows.some((row) => row.kind === "signature"),
         key: detectedKey !== null && detectedKey !== result.key?.currentKey,
       });
       setPhase({ kind: "review", result });
@@ -257,6 +270,9 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                     onChange={(event) => setClickTrackId(event.target.value)}
                   >
                     <option value="">{t("transport.songAnalysis.noTempo")}</option>
+                    {musicTrackIds.length > 0 ? (
+                      <option value={FROM_MUSIC}>{t("transport.songAnalysis.fromMusic")}</option>
+                    ) : null}
                     {clickOptions.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.name}
@@ -264,9 +280,11 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                     ))}
                   </select>
                   <span className="lt-render-hint">
-                    {preselected
-                      ? t("transport.songAnalysis.clickTrackHint")
-                      : t("transport.songAnalysis.clickTrackNotFound")}
+                    {clickTrackId === FROM_MUSIC
+                      ? t("transport.songAnalysis.fromMusicHint")
+                      : preselected
+                        ? t("transport.songAnalysis.clickTrackHint")
+                        : t("transport.songAnalysis.clickTrackNotFound")}
                   </span>
                 </label>
 
@@ -336,6 +354,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 include={include}
                 onInclude={(tempo, signature) => setInclude({ ...include, tempo, signature })}
                 onEdit={editRow}
+                onScale={(factor) => setRows((previous) => scaleTempoRows(previous, factor))}
                 onSeek={(seconds) => void seekTo(seconds)}
               />
             ) : null}
@@ -541,10 +560,19 @@ type TempoReviewProps = {
   include: { tempo: boolean; signature: boolean };
   onInclude: (tempo: boolean, signature: boolean) => void;
   onEdit: (row: ReviewRow, text: string) => void;
+  onScale: (factor: number) => void;
   onSeek: (absoluteSeconds: number) => void;
 };
 
-function TempoReview({ result, rows, include, onInclude, onEdit, onSeek }: TempoReviewProps) {
+function TempoReview({
+  result,
+  rows,
+  include,
+  onInclude,
+  onEdit,
+  onScale,
+  onSeek,
+}: TempoReviewProps) {
   const { t } = useTranslation();
   if (!result.tempo) return null;
   const { analysis, proposal } = result.tempo;
@@ -556,10 +584,32 @@ function TempoReview({ result, rows, include, onInclude, onEdit, onSeek }: Tempo
   const detected = analysis.segments[0];
   const hasTempoRows = rows.some((row) => row.kind === "tempo");
   const hasSignatureRows = rows.some((row) => row.kind === "signature");
+  const estimated = analysis.warnings.some((w) => w.kind === "estimatedWithoutClick");
 
   return (
     <section className="lt-song-analysis-part">
       <h3>{t("transport.songAnalysis.tempoAndMeter")}</h3>
+      {estimated ? (
+        <p className="lt-render-notice">
+          {t("transport.songAnalysis.estimatedNotice")}{" "}
+          <button
+            type="button"
+            className="lt-secondary-button"
+            disabled={!include.tempo}
+            onClick={() => onScale(2)}
+          >
+            ×2
+          </button>{" "}
+          <button
+            type="button"
+            className="lt-secondary-button"
+            disabled={!include.tempo}
+            onClick={() => onScale(0.5)}
+          >
+            ÷2
+          </button>
+        </p>
+      ) : null}
       {analysis.segments.length > 0 && detected ? (
         <dl className="lt-song-analysis-summary">
           <div>
@@ -679,7 +729,9 @@ function TempoReview({ result, rows, include, onInclude, onEdit, onSeek }: Tempo
 
       {analysis.warnings.length > 0 ? (
         <ul className="lt-song-analysis-warnings">
-          {analysis.warnings.map((warning, index) => (
+          {analysis.warnings
+            .filter((warning) => warning.kind !== "estimatedWithoutClick")
+            .map((warning, index) => (
             <li key={`${warning.kind}-${index}`} className="lt-render-warning">
               {warning.kind === "noClick" ? null : (
                 <button

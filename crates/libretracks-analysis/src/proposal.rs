@@ -127,11 +127,11 @@ pub fn propose_tempo_markers(
         let mut start = downbeat;
         if index == 0 && bar > 0.0 {
             // Carry the grid back to the song start, so the bars before the
-            // first click (a silent intro, a pickup) are on it too.
-            let bars_back = ((downbeat - span.start_seconds) / bar + 1.0e-3)
-                .floor()
-                .max(0.0);
-            start -= bars_back * bar;
+            // first click (a silent intro, a pickup) are on it too. A grid
+            // estimated a hair before the song (from the music) moves forward
+            // instead.
+            let bars = ((downbeat - span.start_seconds) / bar + 1.0e-3).floor();
+            start -= bars * bar;
         }
         if (start - span.start_seconds).abs() < SNAP_TO_SONG_START_SECONDS {
             start = span.start_seconds;
@@ -318,6 +318,19 @@ mod tests {
         );
         assert_eq!(proposal.current_bpm, 120.0);
         assert!(!proposal.unchanged);
+    }
+
+    #[test]
+    fn a_grid_starting_just_before_the_song_moves_forward_a_bar() {
+        // Estimated from the music: first downbeat 80 ms before the song.
+        let proposal = propose_tempo_markers(
+            &analysis(vec![segment(-0.08, 127.0, 4, 40)]),
+            span(100.0, 220.0, None),
+            &timing(),
+        );
+        let bar = 4.0 * 60.0 / 127.0;
+        assert_eq!(proposal.tempo_markers.len(), 1, "{proposal:?}");
+        assert!((proposal.tempo_markers[0].start_seconds - (99.92 + bar)).abs() < 1e-9);
     }
 
     #[test]

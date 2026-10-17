@@ -678,6 +678,11 @@ const en = {
       intro:
         "Reads the click track to propose the tempo and time signature markers, and the harmonic tracks to propose the key. Review the proposal before applying it; it can be undone.",
       noTempo: "Don't analyze the tempo",
+      fromMusic: "No click: estimate it from the music",
+      fromMusicHint:
+        "Estimated from every track but the cues. Less reliable than a click: check the result.",
+      estimatedNotice:
+        "Tempo estimated from the music, without a click. If it came out double or half, fix it:",
       analyzeKey: "Analyze the key",
       keyTracksHint:
         "Tracks with harmony. The click, guide and percussion are left out because they blur the key.",
@@ -740,6 +745,8 @@ const en = {
         irregularBar: "A lone bar of a different length.",
         compoundGuess:
           "The click accents every 3 eighths and was read as 6/8. Check that the bar starts on the right accent.",
+        estimatedWithoutClick: "Tempo estimated from the music, without a click.",
+        uncertainTempo: "The pulse is unclear: the tempo may be wrong, or double or half.",
       },
     },
     levelSongs: {

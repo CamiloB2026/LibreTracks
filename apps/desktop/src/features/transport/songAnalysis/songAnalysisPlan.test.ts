@@ -8,6 +8,8 @@ import {
   clickTrackOptions,
   formatSongPosition,
   keyTrackOptions,
+  musicTempoTrackIds,
+  scaleTempoRows,
   parseBpm,
   parseSignature,
   reviewRows,
@@ -101,6 +103,24 @@ describe("keyTrackOptions", () => {
       // Its own name says nothing; its folder does.
       ["tom", false],
     ]);
+  });
+});
+
+describe("tempo from the music", () => {
+  it("uses every track but the click and the cues", () => {
+    // In the fixture: Keys, Metrónomo (click) and Guía (cue) sound in "b".
+    expect(musicTempoTrackIds(song(), "b")).toEqual(["keys"]);
+  });
+
+  it("scales the song's tempo markers, not the next song's", () => {
+    const scaled = scaleTempoRows(reviewRows(proposal), 2);
+    expect(scaled.filter((row) => row.kind === "tempo").map((row) => row.text)).toEqual([
+      "184",
+      "100",
+    ]);
+    // Out of range stays.
+    const tooFast = scaleTempoRows(scaled, 2);
+    expect(tooFast.find((row) => row.kind === "tempo")?.text).toBe("184");
   });
 });
 

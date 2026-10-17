@@ -1400,7 +1400,9 @@ export type ClickWarningKind =
   | "clickGap"
   | "variableTempo"
   | "irregularBar"
-  | "compoundGuess";
+  | "compoundGuess"
+  | "estimatedWithoutClick"
+  | "uncertainTempo";
 
 export type KeyAnalysis = {
   /** Sharp spelling like the key picker ("Dm", "F#"); null: no pitched audio. */
@@ -1462,8 +1464,10 @@ export type TempoProposal = {
 
 export type AnalyzeSongRequest = {
   regionId: string;
-  /** Empty: no tempo analysis. */
+  /** The click track. Empty: the tempo comes from `musicTempoTrackIds`. */
   clickTrackIds: string[];
+  /** No click: estimate the tempo from these tracks. Both empty: no tempo. */
+  musicTempoTrackIds: string[];
   /** Empty: no key analysis. */
   keyTrackIds: string[];
 };

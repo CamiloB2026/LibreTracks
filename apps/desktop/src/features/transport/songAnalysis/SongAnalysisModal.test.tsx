@@ -160,6 +160,7 @@ describe("SongAnalysisModal", () => {
     expect(analyzeSong).toHaveBeenCalledWith({
       regionId: "b",
       clickTrackIds: ["click"],
+      musicTempoTrackIds: [],
       keyTrackIds: ["keys"],
     });
     await screen.findByText("transport.songAnalysis.warning.clickGap");
@@ -226,6 +227,42 @@ describe("SongAnalysisModal", () => {
     fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
     await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
     expect(applySongAnalysis.mock.calls[0][2]).toBeNull();
+  });
+
+  it("without a click track, estimates the tempo from the music", async () => {
+    const noClick = song();
+    noClick.tracks = noClick.tracks.filter((track) => track.id !== "click");
+    noClick.clips = noClick.clips.filter((clip) => clip.trackId !== "click");
+    useSongStore.setState({ song: noClick });
+    const estimated = result();
+    estimated.tempo!.analysis.warnings = [{ seconds: 0, kind: "estimatedWithoutClick" }];
+    analyzeSong.mockResolvedValue(estimated);
+    applySongAnalysis.mockResolvedValue({} as TransportSnapshot);
+    render(<SongAnalysisModal onApplied={() => {}} />);
+
+    expect(
+      (screen.getByLabelText("transport.songAnalysis.clickTrack") as HTMLSelectElement).value,
+    ).toBe("__music__");
+    await analyzeAndReview();
+    // Drums count for the tempo, though not for the key.
+    expect(analyzeSong.mock.calls[0][0]).toMatchObject({
+      clickTrackIds: [],
+      musicTempoTrackIds: ["keys", "drums"],
+    });
+
+    await screen.findByText(/transport\.songAnalysis\.estimatedNotice/);
+    // Estimated at double: halve it.
+    fireEvent.click(screen.getByText("÷2"));
+    expect(screen.getByDisplayValue("46")).toBeTruthy();
+    // The meter is a guess: not ticked unless the user asks.
+    const meterBox = screen.getByLabelText("transport.songAnalysis.applySignature") as HTMLInputElement;
+    expect(meterBox.checked).toBe(false);
+    fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
+    const tempo = applySongAnalysis.mock.calls[0][1];
+    expect(tempo?.tempoMarkers[0].bpm).toBe(46);
+    // Meter left as it is: none inside the song today.
+    expect(tempo?.signatureMarkers).toEqual([]);
   });
 
   it("will not apply an invalid value", async () => {

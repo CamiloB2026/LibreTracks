@@ -691,6 +691,11 @@ const es = {
       intro:
         "Lee la pista de click para proponer las marcas de tempo y de compás, y las pistas armónicas para proponer la nota. Revisa la propuesta antes de aplicarla; se puede deshacer.",
       noTempo: "No analizar el tempo",
+      fromMusic: "Sin click: estimarlo de la música",
+      fromMusicHint:
+        "Se estima con todas las pistas menos las de cues. Es menos fiable que un click: revisa el resultado.",
+      estimatedNotice:
+        "Tempo estimado de la música, sin click. Si sale al doble o a la mitad, corrígelo:",
       analyzeKey: "Analizar la nota",
       keyTracksHint:
         "Pistas con armonía. Se han quitado el click, la guía y la percusión porque emborronan la nota.",
@@ -754,6 +759,9 @@ const es = {
         irregularBar: "Aquí hay un compás suelto de otra medida.",
         compoundGuess:
           "El click acentúa cada 3 corcheas y se ha leído como 6/8. Comprueba que el compás empieza en el acento correcto.",
+        estimatedWithoutClick: "Tempo estimado de la música, sin click.",
+        uncertainTempo:
+          "El pulso no está claro: el tempo puede estar mal, o al doble o a la mitad.",
       },
     },
     levelSongs: {

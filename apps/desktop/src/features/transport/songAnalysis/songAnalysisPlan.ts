@@ -99,6 +99,34 @@ export function keyTrackOptions(song: SongView, regionId: string): KeyTrackOptio
     });
 }
 
+/**
+ * No click: the tracks the tempo is estimated from. Everything with sound in
+ * the song but the click and the cues; drums are the best of it.
+ */
+export function musicTempoTrackIds(song: SongView, regionId: string): string[] {
+  return keyTrackOptions(song, regionId)
+    .filter((option) => {
+      const track = song.tracks.find((candidate) => candidate.id === option.id);
+      const name = track?.name ?? "";
+      return !isCueTrackName(name) && !CLICK_NAME.test(name);
+    })
+    .map((option) => option.id);
+}
+
+/**
+ * Every tempo marker's BPM times `factor` (×2 / ÷2 for a tempo estimated at
+ * double or half). Values that would leave the app's range stay as they are.
+ */
+export function scaleTempoRows(rows: ReviewRow[], factor: number): ReviewRow[] {
+  return rows.map((row) => {
+    if (row.kind !== "tempo" || row.restoresNextSong) return row;
+    const bpm = parseBpm(row.text);
+    if (bpm === null) return row;
+    const scaled = Math.round(bpm * factor * 100) / 100;
+    return scaled >= 20 && scaled <= 300 ? { ...row, text: String(scaled) } : row;
+  });
+}
+
 /** "1:05.3", from the song start. */
 export function formatSongPosition(secondsFromSongStart: number): string {
   const safe = Math.max(0, secondsFromSongStart);

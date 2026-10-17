@@ -16,12 +16,22 @@
 
 use serde::Serialize;
 
-/// Largest distance from a beat to the straight line fitted through its
-/// segment before the segment is cut. A generated click sits within a
-/// millisecond of its grid; 10 ms still keeps a sloppy bounce together.
-const MAX_FIT_RESIDUAL_SECONDS: f64 = 0.010;
-/// Largest drift a rounded BPM may build up across its segment.
-const MAX_ROUNDING_DRIFT_SECONDS: f64 = 0.008;
+/// How loosely beats may follow their tempo before a segment is cut.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Tolerances {
+    /// Largest distance from a beat to the straight line fitted through its
+    /// segment.
+    pub fit_residual: f64,
+    /// Largest drift a rounded BPM may build up across its segment.
+    pub rounding_drift: f64,
+}
+
+/// A generated click sits within a millisecond of its grid; 10 ms still keeps
+/// a sloppy bounce together.
+const CLICK_TOLERANCES: Tolerances = Tolerances {
+    fit_residual: 0.010,
+    rounding_drift: 0.008,
+};
 /// Shortest gap between two clicks: a 16th at 300 BPM is 50 ms.
 const REFRACTORY_SECONDS: f64 = 0.050;
 /// Part of each click its features are measured on.
@@ -92,6 +102,11 @@ pub enum ClickWarningKind {
     /// Eighths accented every three were read as 6/8: which accent starts
     /// the bar is a guess.
     CompoundGuess,
+    /// No click: the tempo was estimated from the music, and beat 1 is a
+    /// guess.
+    EstimatedWithoutClick,
+    /// The music's pulse is weak: the tempo may be wrong, or double or half.
+    UncertainTempo,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -144,13 +159,32 @@ pub fn analyze_click(
             kind: ClickWarningKind::NoAccent,
         });
     }
-    let bars = build_bars(
+    tempo_map_from_beats(
         &beats,
+        downbeat_known,
+        fallback_beats_per_bar,
+        CLICK_TOLERANCES,
+        warnings,
+    )
+}
+
+/// Beats (with their downbeats) to the analysis: bars, constant-tempo
+/// segments that start on downbeats, and the warnings about them. Shared by
+/// the click and by the tempo estimated from the music.
+pub(crate) fn tempo_map_from_beats(
+    beats: &[Beat],
+    downbeat_known: bool,
+    fallback_beats_per_bar: u32,
+    tolerances: Tolerances,
+    mut warnings: Vec<ClickWarning>,
+) -> ClickAnalysis {
+    let bars = build_bars(
+        beats,
         downbeat_known,
         fallback_beats_per_bar.max(1),
         &mut warnings,
     );
-    let segments = segment_bars(&bars, &mut warnings);
+    let segments = segment_bars(&bars, tolerances, &mut warnings);
     flag_tempo_and_meter_oddities(&segments, &mut warnings);
     warnings.sort_by(|a, b| a.seconds.total_cmp(&b.seconds));
     ClickAnalysis {
@@ -277,9 +311,9 @@ fn median(values: &[f32]) -> f32 {
 // ── 2–3. Classes, subdivisions and downbeats ────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
-struct Beat {
-    seconds: f64,
-    downbeat: bool,
+pub(crate) struct Beat {
+    pub seconds: f64,
+    pub downbeat: bool,
 }
 
 /// Spread of a sorted run, ignoring its outer 5 % on each side (a stray
@@ -601,7 +635,11 @@ struct SegmentDraft {
     bars: u32,
 }
 
-fn segment_bars(bars: &[Bar], warnings: &mut Vec<ClickWarning>) -> Vec<TempoSegment> {
+fn segment_bars(
+    bars: &[Bar],
+    tolerances: Tolerances,
+    warnings: &mut Vec<ClickWarning>,
+) -> Vec<TempoSegment> {
     let mut drafts: Vec<SegmentDraft> = Vec::new();
     let mut current: Option<SegmentDraft> = None;
     let mut previous_continues = false;
@@ -617,7 +655,7 @@ fn segment_bars(bars: &[Bar], warnings: &mut Vec<ClickWarning>) -> Vec<TempoSegm
             previous_continues && fits_meter && {
                 let mut times = draft.times.clone();
                 times.extend_from_slice(&bar.beats);
-                fit_line(&times).2 <= MAX_FIT_RESIDUAL_SECONDS
+                fit_line(&times).2 <= tolerances.fit_residual
             }
         });
         if joins {
@@ -670,7 +708,8 @@ fn segment_bars(bars: &[Bar], warnings: &mut Vec<ClickWarning>) -> Vec<TempoSegm
             3 if compound => (6, 8, draft.bars.div_ceil(2)),
             n => (n, 4, draft.bars),
         };
-        let (start_seconds, bpm) = round_tempo(&draft.times, period, beat_unit);
+        let (start_seconds, bpm) =
+            round_tempo(&draft.times, period, beat_unit, tolerances.rounding_drift);
         if draft.beats_per_bar == 3 && beat_unit == 8 {
             warnings.push(ClickWarning {
                 seconds: start_seconds,
@@ -689,8 +728,8 @@ fn segment_bars(bars: &[Bar], warnings: &mut Vec<ClickWarning>) -> Vec<TempoSegm
 }
 
 /// The coarsest BPM (whole, half, tenth, hundredth) that still lands every
-/// beat within `MAX_ROUNDING_DRIFT_SECONDS`, and the start that goes with it.
-fn round_tempo(times: &[f64], period: f64, beat_unit: u32) -> (f64, f64) {
+/// beat within `max_drift`, and the start that goes with it.
+fn round_tempo(times: &[f64], period: f64, beat_unit: u32, max_drift: f64) -> (f64, f64) {
     let unit = f64::from(beat_unit);
     let raw_bpm = 240.0 / (period * unit);
     let fit = |bpm: f64| {
@@ -714,7 +753,7 @@ fn round_tempo(times: &[f64], period: f64, beat_unit: u32) -> (f64, f64) {
         // Strip float noise: 92.50000000001 → 92.5.
         let bpm = (bpm * 100.0).round() / 100.0;
         let (intercept, drift) = fit(bpm);
-        if drift <= MAX_ROUNDING_DRIFT_SECONDS || times.len() < 2 {
+        if drift <= max_drift || times.len() < 2 {
             return (intercept, bpm);
         }
         fallback = Some((intercept, bpm));

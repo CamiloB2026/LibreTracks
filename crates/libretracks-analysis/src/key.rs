@@ -11,10 +11,9 @@
 
 use serde::Serialize;
 
+use crate::dsp::decimate;
 use crate::fft::fft;
 
-/// Analysis rate: harmonics above ~5 kHz say nothing about the key.
-const TARGET_RATE: f64 = 11_025.0;
 const FRAME: usize = 4096;
 const HOP: usize = 2048;
 /// Pitch range folded into the chromagram (C2 to C7).
@@ -342,45 +341,6 @@ pub fn debug_chroma(samples: &[f32], sample_rate: u32) -> [f64; 12] {
         chroma.iter_mut().for_each(|value| *value /= total);
     }
     chroma
-}
-
-/// Low-pass (windowed sinc) and keep one sample in `factor`.
-fn decimate(samples: &[f32], rate: f64) -> (Vec<f32>, f64) {
-    let factor = (rate / TARGET_RATE).round().max(1.0) as usize;
-    if factor == 1 {
-        return (samples.to_vec(), rate);
-    }
-    const TAPS: usize = 63;
-    let cutoff = 0.45 / factor as f64;
-    let middle = (TAPS / 2) as f64;
-    let kernel: Vec<f32> = (0..TAPS)
-        .map(|i| {
-            let x = i as f64 - middle;
-            let sinc = if x == 0.0 {
-                2.0 * cutoff
-            } else {
-                (std::f64::consts::TAU * cutoff * x).sin() / (std::f64::consts::PI * x)
-            };
-            let window = 0.54 - 0.46 * (std::f64::consts::TAU * i as f64 / (TAPS - 1) as f64).cos();
-            (sinc * window) as f32
-        })
-        .collect();
-    let output = (0..samples.len() / factor)
-        .map(|n| {
-            let center = n * factor;
-            let mut sum = 0.0_f32;
-            for (i, weight) in kernel.iter().enumerate() {
-                let Some(index) = (center + i).checked_sub(TAPS / 2) else {
-                    continue;
-                };
-                if let Some(sample) = samples.get(index) {
-                    sum += sample * weight;
-                }
-            }
-            sum
-        })
-        .collect();
-    (output, rate / factor as f64)
 }
 
 /// (frequency Hz, magnitude) of a frame's peaks.
