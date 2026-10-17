@@ -14,6 +14,7 @@
 //! `metronome_renderer.cpp`), so a marker anywhere else would make the app's
 //! click disagree with the multitrack's.
 
+use crate::fft::fft;
 use serde::Serialize;
 
 /// How loosely beats may follow their tempo before a segment is cut.
@@ -263,8 +264,8 @@ fn detect_onsets(samples: &[f32], sample_rate: u32) -> Vec<Onset> {
                 .iter()
                 .position(|x| x.abs() >= 0.25 * local_peak)
                 .unwrap_or(0);
-        let feature_end = (onset + window).min(samples.len());
-        let frequency = zero_crossing_frequency(&samples[onset..feature_end], local_peak, rate);
+        let pitch_end = (onset + PITCH_WINDOW_FACTOR * window).min(samples.len());
+        let frequency = click_pitch(&samples[onset..pitch_end], rate);
         onsets.push(Onset {
             seconds: onset as f64 / rate,
             level_db: 20.0 * f64::from(local_peak.max(1.0e-9)).log10(),
@@ -274,29 +275,52 @@ fn detect_onsets(samples: &[f32], sample_rate: u32) -> Vec<Onset> {
     onsets
 }
 
-/// Apparent pitch from zero crossings, with hysteresis so the decaying tail
-/// does not add crossings of its own.
-fn zero_crossing_frequency(window: &[f32], peak: f32, rate: f64) -> f64 {
-    if window.len() < 2 {
+/// Zero-padded FFT size for a click's pitch.
+const PITCH_FFT_SIZE: usize = 8192;
+/// The pitch is read on three feature windows (45 ms): the start can move a
+/// millisecond with the render rate (a resampled click rings a little ahead
+/// of itself), and on 15 ms that changed one alternating click's mean pitch
+/// by 5 % (Dios de promesas at 48 kHz). The 24 real clicks give the same
+/// tempo map at 22.05, 44.1 and 48 kHz with 45 ms, but not with 15 or 30.
+const PITCH_WINDOW_FACTOR: usize = 3;
+/// Band the pitch is read in: above hum and the click's thump, below what a
+/// 22.05 kHz render still carries, so every render rate sees the same band.
+const PITCH_BAND_HZ: (f64, f64) = (200.0, 8000.0);
+
+/// Apparent pitch: the power-weighted mean of the click's spectrum, in
+/// octaves. Two ways that pick one value were tried and both read one click
+/// sound as two pitches with no spread between them, which `feature_levels`
+/// takes for an accent: zero crossings (a period more or less in the window,
+/// depending on where the samples fell: Eres Todopoderoso at 48 kHz gave
+/// bars of 7/4, 1/4, 11/4 … where 44.1 kHz gave 4/4) and the strongest
+/// partial (woodblocks with two partials of near equal strength, 757 and
+/// 807 Hz, flip between them). A mean moves smoothly instead.
+fn click_pitch(window: &[f32], rate: f64) -> f64 {
+    if window.len() < 4 {
         return 0.0;
     }
-    let hysteresis = 0.05 * peak;
-    let mut sign = 0_i8;
-    let mut crossings = 0_usize;
-    for &x in window {
-        let current = if x > hysteresis {
-            1
-        } else if x < -hysteresis {
-            -1
-        } else {
-            continue;
-        };
-        if sign != 0 && current != sign {
-            crossings += 1;
-        }
-        sign = current;
+    let size = PITCH_FFT_SIZE.max(window.len().next_power_of_two());
+    let mut re = vec![0.0_f32; size];
+    let mut im = vec![0.0_f32; size];
+    let last = (window.len() - 1) as f32;
+    for (i, &x) in window.iter().enumerate() {
+        let hann = 0.5 - 0.5 * (std::f32::consts::TAU * i as f32 / last).cos();
+        re[i] = x * hann;
     }
-    crossings as f64 * rate / (2.0 * window.len() as f64)
+    fft(&mut re, &mut im);
+    let bin_hz = rate / size as f64;
+    let from = ((PITCH_BAND_HZ.0 / bin_hz).ceil() as usize).max(1);
+    let to = ((PITCH_BAND_HZ.1.min(0.5 * rate) / bin_hz) as usize).min(size / 2);
+    let (mut weighted, mut total) = (0.0_f64, 0.0_f64);
+    for bin in from..to {
+        let power = f64::from(re[bin] * re[bin] + im[bin] * im[bin]);
+        weighted += power * (bin as f64 * bin_hz).log2();
+        total += power;
+    }
+    if total <= 0.0 {
+        return 0.0;
+    }
+    (weighted / total).exp2()
 }
 
 fn median(values: &[f32]) -> f32 {
@@ -877,6 +901,45 @@ mod tests {
         assert_eq!(segment.bars, 16);
         assert_close(segment.start_seconds, 0.5, 0.001);
         assert!(analysis.warnings.is_empty(), "{:?}", analysis.warnings);
+    }
+
+    #[test]
+    fn one_click_sound_between_samples_is_not_an_accent() {
+        // Real (Eres Todopoderoso rendered at 48 kHz): one recorded click,
+        // starting at a different point of its wave each time, read as 1667
+        // and 1733 Hz with no spread between them, and became bars of 7/4,
+        // 1/4, 11/4 … This sound read as 1667 and 1700 Hz the same way.
+        let period = 60.0 / 130.0;
+        let mut buffer = vec![0.0_f32; (34.0 * f64::from(RATE)) as usize];
+        for beat in 0..64 {
+            let seconds = 0.5 + beat as f64 * period + beat as f64 * 0.000_013_7;
+            let first = (seconds * f64::from(RATE)).ceil() as usize;
+            for (i, sample) in buffer[first..first + 1440].iter_mut().enumerate() {
+                let t = (first + i) as f64 / f64::from(RATE) - seconds;
+                let phase = beat as f64 * 0.9;
+                let tone = (std::f64::consts::TAU * 1700.0 * t + phase).sin() + 0.2;
+                let attack = (t / 0.001).min(1.0);
+                *sample += (0.5 * attack * (-t / 0.006).exp() * tone) as f32;
+            }
+        }
+        // One sound, one pitch: well inside the gap that splits two.
+        let pitches: Vec<f64> = detect_onsets(&buffer, RATE)
+            .iter()
+            .map(|onset| onset.pitch_octaves)
+            .collect();
+        assert_eq!(pitches.len(), 64);
+        let (low, high) = pitches
+            .iter()
+            .fold((f64::MAX, f64::MIN), |(lo, hi), p| (lo.min(*p), hi.max(*p)));
+        assert!(
+            high - low < PITCH_GAP_OCTAVES / 3.0,
+            "{} .. {} Hz",
+            low.exp2(),
+            high.exp2()
+        );
+        let analysis = analyze_click(&buffer, RATE, 4);
+        assert!(!analysis.downbeat_known, "{analysis:?}");
+        assert_eq!(analysis.segments[0].bpm, 130.0);
     }
 
     #[test]
