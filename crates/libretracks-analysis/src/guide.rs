@@ -292,28 +292,22 @@ pub fn analyze_guide(
         })
         .collect();
 
-    // Regroup by what is said: the same markers make one row; nothing
-    // recognised, one row per recording and wording.
+    // A row per announcement, so each can be set on its own (the review
+    // said "11 markers" and offered 6 rows when equal ones were merged);
+    // bare counts, which place nothing, share one row.
     #[derive(PartialEq)]
     enum Key {
-        Named(Vec<String>, bool),
-        Unknown(usize, String),
+        Count,
+        Announcement(usize),
     }
     let mut keys: Vec<Key> = Vec::new();
     let mut regrouped: Vec<usize> = Vec::with_capacity(fragments.len());
     let mut groups: Vec<GuideGroup> = Vec::new();
     for (index, (labels, counted_in)) in readings.into_iter().enumerate() {
-        let key = if labels.is_empty() {
-            let wording: String = heard[index]
-                .as_deref()
-                .unwrap_or_default()
-                .to_lowercase()
-                .chars()
-                .filter(|c| c.is_alphanumeric() || c.is_whitespace())
-                .collect();
-            Key::Unknown(groups_of[index], wording)
+        let key = if labels == ["count"] {
+            Key::Count
         } else {
-            Key::Named(labels.clone(), counted_in)
+            Key::Announcement(index)
         };
         let group = match keys.iter().position(|known| *known == key) {
             Some(group) => {
@@ -777,11 +771,16 @@ mod tests {
                 "Intro, dos, tres, cuatro.",
             ],
         );
-        let groups: Vec<usize> = analysis.announcements.iter().map(|a| a.group).collect();
-        assert_eq!(groups, vec![0, 1, 0], "{analysis:?}");
-        assert_eq!(analysis.groups[0].labels, vec!["intro".to_string()]);
-        assert_eq!(analysis.groups[0].occurrences, 2);
-        assert_eq!(analysis.groups[1].labels, vec!["chorus".to_string()]);
+        let labels: Vec<Vec<String>> = analysis.groups.iter().map(|g| g.labels.clone()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                vec!["intro".to_string()],
+                vec!["chorus".to_string()],
+                vec!["intro".to_string()],
+            ],
+            "{analysis:?}"
+        );
     }
 
     #[test]
@@ -835,23 +834,24 @@ mod tests {
         };
         let analysis = analyze_guide(&audio, RATE, &[], Some(&mut recogniser));
         let labels: Vec<Vec<String>> = analysis.groups.iter().map(|g| g.labels.clone()).collect();
+        // A row per announcement: the chorus said twice is two rows, each
+        // settable on its own.
         assert_eq!(
             labels,
             vec![
                 vec!["chorus".to_string()],
                 vec!["verse_3".to_string(), "drums_in".to_string()],
+                vec!["chorus".to_string()],
                 vec!["count".to_string()],
             ],
             "{analysis:?}"
         );
-        // One recognition per announcement, with the count known up front;
-        // the chorus said twice is still one row.
+        // One recognition per announcement, with the count known up front.
         assert_eq!(recogniser.calls.len(), 4);
         assert_eq!(
             recogniser.progress,
             vec![(0, 4), (1, 4), (2, 4), (3, 4), (4, 4)]
         );
-        assert_eq!(analysis.groups[0].occurrences, 2);
         assert!(recogniser.language_sample_seconds > 1.0);
         assert_eq!(
             analysis.groups[1].transcript.as_deref(),
