@@ -2,7 +2,8 @@ use std::fs;
 
 use libretracks_analysis::{ProposedSignatureMarker, ProposedTempoMarker};
 use libretracks_core::{
-    Marker, MarkerKind, Song, SongMaster, SongRegion, TempoMarker, TimeSignatureMarker,
+    Marker, MarkerCategory, MarkerKind, Song, SongMaster, SongRegion, TempoMarker,
+    TimeSignatureMarker,
 };
 use libretracks_project::{create_song_folder, save_song, SONG_FILE_NAME};
 use tempfile::tempdir;
@@ -212,6 +213,7 @@ fn section(start: f64, kind: MarkerKind, variant: Option<u8>, name: &str) -> Ana
         kind,
         variant,
         name: name.into(),
+        category_override: None,
     }
 }
 
@@ -251,6 +253,100 @@ fn guide_sections_replace_the_song_s_own_markers_only() {
     let chorus = &song.section_markers[2];
     assert_eq!((chorus.kind, chorus.variant), (MarkerKind::Chorus, Some(2)));
     assert_ne!(song.section_markers[1].id, song.section_markers[2].id);
+}
+
+#[test]
+fn a_second_section_on_the_same_spot_goes_in_the_cue_lane() {
+    let mut song = setlist();
+    apply_sections_to_song(
+        &mut song,
+        "r2",
+        &[
+            section(64.0, MarkerKind::Verse, None, "Verso"),
+            AnalysedSection {
+                category_override: Some(MarkerCategory::Cue),
+                ..section(64.0, MarkerKind::Acapella, None, "A Capella")
+            },
+        ],
+    )
+    .expect("apply");
+    let lanes: Vec<(MarkerKind, MarkerCategory)> = song
+        .section_markers
+        .iter()
+        .map(|m| (m.kind, m.category()))
+        .collect();
+    assert_eq!(
+        lanes,
+        vec![
+            (MarkerKind::Verse, MarkerCategory::Section),
+            (MarkerKind::Acapella, MarkerCategory::Cue),
+        ]
+    );
+}
+
+#[test]
+fn a_section_kind_can_be_created_in_the_cue_lane() {
+    let song = setlist();
+    let root = tempdir().expect("temp dir").keep();
+    let song_dir = create_song_folder(&root, "cue-lane-create").expect("song dir");
+    fs::create_dir_all(song_dir.join("audio")).expect("audio dir");
+    save_song(&song_dir, &song).expect("save");
+    let mut session = DesktopSession::default();
+    session.song_file_path = Some(song_dir.join(SONG_FILE_NAME));
+    session.song_dir = Some(song_dir);
+    session.engine.load_song(song).expect("load");
+    let audio = AudioController::default();
+
+    session
+        .create_section_marker(
+            70.0,
+            Some(MarkerKind::Verse),
+            None,
+            Some("Verso".into()),
+            &audio,
+        )
+        .expect("section");
+    session
+        .create_section_marker_in_lane(
+            70.0,
+            Some(MarkerKind::Acapella),
+            None,
+            Some("A Capella".into()),
+            Some(MarkerCategory::Cue),
+            &audio,
+        )
+        .expect("as cue");
+    let created = session.engine.song().cloned().expect("song");
+    let lanes: Vec<(MarkerKind, MarkerCategory)> = created
+        .section_markers
+        .iter()
+        .map(|m| (m.kind, m.category()))
+        .collect();
+    assert_eq!(
+        lanes,
+        vec![
+            (MarkerKind::Verse, MarkerCategory::Section),
+            (MarkerKind::Acapella, MarkerCategory::Cue),
+        ]
+    );
+    // Asking for the lane the kind already implies stores no override.
+    session
+        .create_section_marker_in_lane(
+            80.0,
+            Some(MarkerKind::DrumsIn),
+            None,
+            None,
+            Some(MarkerCategory::Cue),
+            &audio,
+        )
+        .expect("cue");
+    let song = session.engine.song().cloned().expect("song");
+    let drums = song
+        .section_markers
+        .iter()
+        .find(|m| m.kind == MarkerKind::DrumsIn)
+        .expect("drums in");
+    assert_eq!(drums.category_override, None);
 }
 
 #[test]

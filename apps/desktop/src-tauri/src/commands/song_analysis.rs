@@ -99,6 +99,31 @@ pub struct KeyResult {
 pub struct GuideResult {
     /// Times from `render_start_seconds` (the rendered timeline).
     pub analysis: GuideAnalysis,
+    /// Speech recognition read the announcements (otherwise only the app's
+    /// voice clips labelled them).
+    pub speech_recognition: bool,
+}
+
+/// Wraps the recogniser to move the progress bar as each announcement is
+/// heard (they take about a second each).
+struct ReportingTranscriber<'a> {
+    inner: &'a mut dyn libretracks_analysis::Transcriber,
+    on_progress: &'a mut dyn FnMut(f64) -> bool,
+    heard: u32,
+}
+
+impl libretracks_analysis::Transcriber for ReportingTranscriber<'_> {
+    fn detect_language(&mut self, speech: &[f32]) {
+        self.inner.detect_language(speech);
+    }
+
+    fn transcribe(&mut self, speech: &[f32]) -> Option<String> {
+        let text = self.inner.transcribe(speech);
+        self.heard += 1;
+        // 0.9 → 0.99, closing in without knowing how many are left.
+        (self.on_progress)(0.99 - 0.09 * 0.85_f64.powi(self.heard as i32));
+        text
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -310,6 +335,19 @@ fn prepare_job(
     })
 }
 
+/// Mobile has no recogniser yet: a type for the `Option` that is always None.
+#[cfg(any(target_os = "android", target_os = "ios"))]
+struct NoTranscriber;
+
+#[cfg(any(target_os = "android", target_os = "ios"))]
+impl libretracks_analysis::Transcriber for NoTranscriber {
+    fn detect_language(&mut self, _speech: &[f32]) {}
+
+    fn transcribe(&mut self, _speech: &[f32]) -> Option<String> {
+        None
+    }
+}
+
 /// The app's voice-guide clips, every language, as templates for the guide
 /// analysis: `sections/<kind>[_<n>].wav`, `cues/<kind>.wav` and the count
 /// clips (labelled `count`). A missing folder is skipped: with no templates
@@ -385,6 +423,7 @@ fn run_job(
     sample_rate: u32,
     scratch_dir: &std::path::Path,
     voices_dir: Option<&std::path::Path>,
+    speech_model: Option<&std::path::Path>,
     on_progress: &mut dyn FnMut(f64) -> bool,
 ) -> Result<AnalyzeSongResult, JobError> {
     let mut result = AnalyzeSongResult {
@@ -503,8 +542,36 @@ fn run_job(
             }
             let (samples, rate) = read(&guide_path)?;
             let templates = voices_dir.map(load_guide_templates).unwrap_or_default();
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            let mut recogniser = speech_model.and_then(|model| {
+                crate::commands::speech::WhisperTranscriber::load(
+                    model,
+                    Box::new(|| ANALYSIS_CANCEL.load(Ordering::Acquire)),
+                )
+            });
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            let mut recogniser: Option<NoTranscriber> = {
+                let _ = speech_model;
+                None
+            };
+            let speech_recognition = recogniser.is_some();
+            let analysis = match recogniser.as_mut() {
+                Some(inner) => {
+                    let mut reporting = ReportingTranscriber {
+                        inner,
+                        on_progress: &mut *on_progress,
+                        heard: 0,
+                    };
+                    analyze_guide(&samples, rate, &templates, Some(&mut reporting))
+                }
+                None => analyze_guide(&samples, rate, &templates, None),
+            };
+            if ANALYSIS_CANCEL.load(Ordering::Acquire) {
+                return Err(JobError::Cancelled);
+            }
             result.guide = Some(GuideResult {
-                analysis: analyze_guide(&samples, rate, &templates),
+                analysis,
+                speech_recognition,
             });
         }
         Ok(())
@@ -556,6 +623,7 @@ pub async fn analyze_song(
         .map_err(|error| error.to_string())?
         .join("song-analysis");
     let voices_dir = crate::commands::settings::voice_guide_voices_dir(&app);
+    let speech_model = crate::commands::speech::ready_model(&app);
 
     tauri::async_runtime::spawn_blocking(move || {
         let _active = active;
@@ -569,7 +637,14 @@ pub async fn analyze_song(
             !ANALYSIS_CANCEL.load(Ordering::Acquire)
         };
         let voices = voices_dir.as_deref().map(std::path::Path::new);
-        match run_job(&job, sample_rate, &scratch_dir, voices, &mut on_progress) {
+        match run_job(
+            &job,
+            sample_rate,
+            &scratch_dir,
+            voices,
+            speech_model.as_deref(),
+            &mut on_progress,
+        ) {
             Ok(result) => Ok(result),
             Err(JobError::Cancelled) => Ok(AnalyzeSongResult::cancelled(job.region_id.clone())),
             Err(JobError::Failed(error)) => Err(error),
@@ -590,6 +665,10 @@ pub struct SectionChange {
     pub variant: Option<u8>,
     /// The localized name, like the marker menus give it.
     pub name: String,
+    /// `Cue` for a section kind on a spot that already has a section ("Verso
+    /// a capella": verse is the section, a capella goes in the cue lane).
+    #[serde(default)]
+    pub category_override: Option<libretracks_core::MarkerCategory>,
 }
 
 /// The tempo and meter markers to write inside the song.
@@ -628,6 +707,7 @@ pub fn apply_song_analysis(
                 kind: section.kind,
                 variant: section.variant,
                 name: section.name,
+                category_override: section.category_override,
             })
             .collect::<Vec<_>>()
     });

@@ -5,7 +5,11 @@ import {
   analyzeSong,
   applySongAnalysis,
   cancelAnalyzeSong,
+  downloadSpeechModel,
   listenToSongAnalysisProgress,
+  listenToSpeechModelProgress,
+  speechModelStatus,
+  type SpeechModelStatus,
   seekTransport,
   SONG_KEY_OPTIONS,
   transposeKey,
@@ -17,16 +21,15 @@ import { CUE_KINDS, MARKER_KINDS, markerKindLabel, markerKindVariants } from "..
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { useSongStore } from "../songStore";
 import {
-  assignmentForLabel,
-  assignmentValue,
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
   guideTrackOptions,
+  isUnrecognised,
   keyTrackOptions,
-  parseAssignmentValue,
+  markersForLabels,
   placeGuideSections,
-  type GroupAssignment,
+  type GroupMarkers,
   musicTempoTrackIds,
   reviewRows,
   rowIsValid,
@@ -103,7 +106,41 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
     guideTrackOptions(song, regionId),
   );
   const [guideTrackId, setGuideTrackId] = useState<string>(guidePreselected ?? "");
-  const [assignments, setAssignments] = useState<GroupAssignment[]>([]);
+  const [groupMarkers, setGroupMarkers] = useState<GroupMarkers[]>([]);
+  const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null);
+  const [modelDownload, setModelDownload] = useState<
+    { kind: "idle" } | { kind: "downloading"; fraction: number } | { kind: "failed"; message: string }
+  >({ kind: "idle" });
+
+  useEffect(() => {
+    let alive = true;
+    speechModelStatus()
+      .then((status) => {
+        if (alive) setSpeechModel(status);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const downloadModel = async () => {
+    setModelDownload({ kind: "downloading", fraction: 0 });
+    const unlisten = await listenToSpeechModelProgress((event) =>
+      setModelDownload({ kind: "downloading", fraction: event.fraction }),
+    );
+    try {
+      setSpeechModel(await downloadSpeechModel());
+      setModelDownload({ kind: "idle" });
+    } catch (error) {
+      setModelDownload({
+        kind: "failed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      unlisten();
+    }
+  };
   // No click-named track: estimating from the music is the useful default.
   const [clickTrackId, setClickTrackId] = useState<string>(
     preselected ?? (musicTrackIds.length > 0 ? FROM_MUSIC : ""),
@@ -176,7 +213,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       setRows(proposalRows);
       setKeyChoice(detectedKey ?? "");
       const groups = result.guide?.analysis.groups ?? [];
-      setAssignments(groups.map((group) => assignmentForLabel(group.label)));
+      setGroupMarkers(groups.map((group) => markersForLabels(group.labels)));
       setInclude({
         tempo: proposalRows.some((row) => row.kind === "tempo"),
         // Without a click the meter is a guess: the user opts in.
@@ -216,10 +253,10 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       regionId,
       phase.result.renderStartSeconds,
       phase.result.guide.analysis,
-      assignments,
+      groupMarkers,
       touchesTempo ? tempoPayload : null,
     );
-  }, [phase, song, regionId, assignments, touchesTempo, tempoPayload]);
+  }, [phase, song, regionId, groupMarkers, touchesTempo, tempoPayload]);
   const appliesSections =
     phase.kind === "review" && phase.result.guide !== null && include.sections;
   const canApply =
@@ -381,6 +418,13 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                   </select>
                   <span className="lt-render-hint">{t("transport.songAnalysis.guideTrackHint")}</span>
                 </label>
+                {guideTrackId && speechModel?.supported ? (
+                  <SpeechModelNotice
+                    status={speechModel}
+                    download={modelDownload}
+                    onDownload={() => void downloadModel()}
+                  />
+                ) : null}
               </>
             )}
           </div>
@@ -434,12 +478,13 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
             {phase.result.guide ? (
               <GuideReview
                 result={phase.result}
-                assignments={assignments}
-                onAssign={(group, assignment) =>
-                  setAssignments((previous) =>
-                    previous.map((current, index) => (index === group ? assignment : current)),
+                markers={groupMarkers}
+                onChange={(group, markers) =>
+                  setGroupMarkers((previous) =>
+                    previous.map((current, index) => (index === group ? markers : current)),
                   )
                 }
+                offerSpeech={speechModel?.supported === true && !speechModel.downloaded}
                 placedCount={sections.length}
                 existingCount={
                   song.sectionMarkers.filter((marker) => {
@@ -548,10 +593,57 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
 }
 
+type SpeechModelNoticeProps = {
+  status: SpeechModelStatus;
+  download:
+    | { kind: "idle" }
+    | { kind: "downloading"; fraction: number }
+    | { kind: "failed"; message: string };
+  onDownload: () => void;
+};
+
+/** Speech recognition reads any voice's announcements; it needs a download. */
+function SpeechModelNotice({ status, download, onDownload }: SpeechModelNoticeProps) {
+  const { t } = useTranslation();
+  if (status.downloaded) {
+    return <p className="lt-render-hint">{t("transport.songAnalysis.speechReady")}</p>;
+  }
+  const megabytes = Math.round(status.sizeBytes / 1_000_000);
+  return (
+    <div className="lt-render-notice">
+      <p>{t("transport.songAnalysis.speechMissing", { megabytes })}</p>
+      {download.kind === "downloading" ? (
+        <div
+          className="lt-render-progress"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(download.fraction * 100)}
+        >
+          <div
+            className="lt-render-progress-fill"
+            style={{ width: `${Math.round(download.fraction * 100)}%` }}
+          />
+        </div>
+      ) : (
+        <button type="button" className="lt-secondary-button" onClick={onDownload}>
+          {t("transport.songAnalysis.speechDownload", { megabytes })}
+        </button>
+      )}
+      {download.kind === "failed" ? (
+        <p className="lt-render-warning">
+          {t("transport.songAnalysis.speechFailed", { error: download.message })}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 type GuideReviewProps = {
   result: AnalyzeSongResult;
-  assignments: GroupAssignment[];
-  onAssign: (group: number, assignment: GroupAssignment) => void;
+  markers: GroupMarkers[];
+  onChange: (group: number, markers: GroupMarkers) => void;
+  offerSpeech: boolean;
   placedCount: number;
   existingCount: number;
   included: boolean;
@@ -559,11 +651,11 @@ type GuideReviewProps = {
   onSeek: (absoluteSeconds: number) => void;
 };
 
-/** Every section kind (with its numbered variants), then every cue, as
- * select options. */
-function kindOptions(t: (key: string, options?: { defaultValue?: string }) => string) {
-  const kinds = [...MARKER_KINDS, ...CUE_KINDS.filter((kind) => !MARKER_KINDS.includes(kind))];
-  return kinds.filter((kind) => kind !== "custom").flatMap((kind) => {
+type Translate = (key: string, options?: { defaultValue?: string }) => string;
+
+/** Section kinds with their numbered variants, as select options. */
+function sectionOptions(t: Translate) {
+  return MARKER_KINDS.filter((kind) => kind !== "custom").flatMap((kind) => {
     const label = markerKindLabel(kind, t);
     return [
       { value: kind, label },
@@ -575,10 +667,29 @@ function kindOptions(t: (key: string, options?: { defaultValue?: string }) => st
   });
 }
 
+/** Cue kinds, then section kinds to put in the cue lane, as select options
+ * ("Verso a capella": a capella rides as a cue next to the verse). */
+function cueOptions(t: Translate) {
+  return [
+    ...CUE_KINDS.filter((kind) => !MARKER_KINDS.includes(kind)).map((kind) => ({
+      value: kind,
+      label: markerKindLabel(kind, t),
+    })),
+    ...sectionOptions(t).map((option) => ({
+      value: option.value,
+      label: (t as (key: string, options: { kind: string }) => string)(
+        "transport.songAnalysis.sectionAsCue",
+        { kind: option.label },
+      ),
+    })),
+  ];
+}
+
 function GuideReview({
   result,
-  assignments,
-  onAssign,
+  markers,
+  onChange,
+  offerSpeech,
   placedCount,
   existingCount,
   included,
@@ -588,8 +699,9 @@ function GuideReview({
   const { t } = useTranslation();
   if (!result.guide) return null;
   const { groups } = result.guide.analysis;
-  const options = kindOptions(t);
-  const unassigned = assignments.filter((assignment) => assignment === null).length;
+  const sections = sectionOptions(t);
+  const cues = cueOptions(t);
+  const unrecognised = groups.filter((_, index) => isUnrecognised(markers[index])).length;
   return (
     <section className="lt-song-analysis-part">
       <h3>
@@ -608,10 +720,13 @@ function GuideReview({
       ) : (
         <>
           <p className="lt-render-hint">{t("transport.songAnalysis.sectionsHint")}</p>
-          {unassigned > 0 ? (
+          {unrecognised > 0 ? (
             <p className="lt-render-warning">
-              {t("transport.songAnalysis.unrecognised", { count: unassigned })}
+              {t("transport.songAnalysis.unrecognised", { count: unrecognised })}
             </p>
+          ) : null}
+          {offerSpeech && !result.guide.speechRecognition ? (
+            <p className="lt-render-hint">{t("transport.songAnalysis.speechSuggestion")}</p>
           ) : null}
           {existingCount > 0 && included ? (
             <p className="lt-render-hint">
@@ -623,16 +738,19 @@ function GuideReview({
               <thead>
                 <tr>
                   <th>{t("transport.songAnalysis.colAnnouncement")}</th>
-                  <th>{t("transport.songAnalysis.colTimes")}</th>
-                  <th>{t("transport.songAnalysis.colMarker")}</th>
+                  <th>{t("transport.songAnalysis.colSection")}</th>
+                  <th>{t("transport.songAnalysis.colCue")}</th>
                 </tr>
               </thead>
               <tbody>
                 {groups.map((group, index) => {
-                  const assignment = assignments[index] ?? null;
+                  const current = markers[index] ?? { section: "", cue: "", ignored: false };
                   const position = formatSongPosition(group.firstStartSeconds);
                   return (
-                    <tr key={index} className={assignment === null ? "is-unassigned" : undefined}>
+                    <tr
+                      key={index}
+                      className={isUnrecognised(current) ? "is-unassigned" : undefined}
+                    >
                       <td>
                         <button
                           type="button"
@@ -641,21 +759,47 @@ function GuideReview({
                           onClick={() => onSeek(result.renderStartSeconds + group.firstStartSeconds)}
                         >
                           ▶ {position}
-                        </button>
+                        </button>{" "}
+                        {group.occurrences > 1 ? `×${group.occurrences}` : null}
+                        {group.transcript ? (
+                          <small className="lt-level-songs-note">«{group.transcript}»</small>
+                        ) : null}
                       </td>
-                      <td>×{group.occurrences}</td>
                       <td>
                         <select
-                          aria-label={t("transport.songAnalysis.markerFor", { position })}
-                          value={assignmentValue(assignment)}
+                          aria-label={t("transport.songAnalysis.sectionFor", { position })}
+                          value={current.ignored ? "ignore" : current.section}
                           disabled={!included}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            onChange(
+                              index,
+                              value === "ignore"
+                                ? { section: "", cue: "", ignored: true }
+                                : { ...current, section: value, ignored: false },
+                            );
+                          }}
+                        >
+                          <option value="">{t("transport.songAnalysis.none")}</option>
+                          <option value="ignore">{t("transport.songAnalysis.ignore")}</option>
+                          {sections.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td>
+                        <select
+                          aria-label={t("transport.songAnalysis.cueFor", { position })}
+                          value={current.cue}
+                          disabled={!included || current.ignored}
                           onChange={(event) =>
-                            onAssign(index, parseAssignmentValue(event.target.value))
+                            onChange(index, { ...current, cue: event.target.value, ignored: false })
                           }
                         >
-                          <option value="">{t("transport.songAnalysis.unassigned")}</option>
-                          <option value="ignore">{t("transport.songAnalysis.ignore")}</option>
-                          {options.map((option) => (
+                          <option value="">{t("transport.songAnalysis.none")}</option>
+                          {cues.map((option) => (
                             <option key={option.value} value={option.value}>
                               {option.label}
                             </option>

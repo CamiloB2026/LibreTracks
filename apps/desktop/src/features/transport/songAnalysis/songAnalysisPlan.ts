@@ -1,5 +1,5 @@
 import { buildSongTempoRegions } from "@libretracks/shared/models";
-import { nextDownbeatAfter } from "@libretracks/shared/timelineMath";
+import { getBeatDurationSeconds, nextDownbeatAfter } from "@libretracks/shared/timelineMath";
 
 import type {
   GuideAnalysis,
@@ -146,52 +146,86 @@ export function guideTrackOptions(
   return { options, preselected: named?.id ?? null };
 }
 
-/** What a guide group is: a marker kind (and variant), or ignored. */
-export type GroupAssignment = { kind: MarkerKind; variant: number | null } | "ignore" | null;
-
 /**
- * A matched voice clip's label as a marker: `chorus_2` → chorus, variant 2;
- * `count` (the count-in) → ignored; an unknown label → unassigned.
+ * What a guide group puts on the timeline: a section (`chorus`,
+ * `verse:3`, or "" for none), a cue (`drums_in`, or ""), or nothing because
+ * it is ignored (a count-in). "Verso 3, entra batería" is both a section and
+ * a cue. The cue may be a section kind: "Verso a capella" is the section
+ * verse plus a capella in the cue lane, since two sections cannot share a
+ * spot.
  */
-export function assignmentForLabel(label: string | null): GroupAssignment {
-  if (!label) return null;
-  if (label === "count") return "ignore";
+export type GroupMarkers = { section: string; cue: string; ignored: boolean };
+
+const isSectionKind = (kind: string) => MARKER_KINDS.includes(kind as MarkerKind);
+const isCueKind = (kind: string) => CUE_KINDS.includes(kind as MarkerKind);
+
+/** One label (`verse_3`, `drums_in`) as a select value (`verse:3`), if known. */
+function labelValue(label: string): { value: string; cue: boolean } | null {
   const match = /^([a-z_]+?)(?:_(\d+))?$/.exec(label);
   if (!match) return null;
-  const kind = match[1] as MarkerKind;
-  if (!MARKER_KINDS.includes(kind) && !CUE_KINDS.includes(kind)) return null;
+  const kind = match[1];
   const variant = match[2] ? Number(match[2]) : null;
-  return { kind, variant: variant && markerKindVariants(kind).includes(variant) ? variant : null };
+  if (isCueKind(kind) && !isSectionKind(kind)) return { value: kind, cue: true };
+  if (!isSectionKind(kind)) return null;
+  const offered = variant !== null && markerKindVariants(kind as MarkerKind).includes(variant);
+  return { value: offered ? `${kind}:${variant}` : kind, cue: false };
 }
 
-/** `chorus` / `chorus:2` / `ignore` / "" (unassigned): the review's select values. */
-export function assignmentValue(assignment: GroupAssignment): string {
-  if (assignment === null) return "";
-  if (assignment === "ignore") return "ignore";
-  return assignment.variant ? `${assignment.kind}:${assignment.variant}` : assignment.kind;
+/** The markers a group's labels name: its first section and its first cue. */
+export function markersForLabels(labels: string[]): GroupMarkers {
+  if (labels.includes("count")) return { section: "", cue: "", ignored: true };
+  let section = "";
+  let cue = "";
+  let extraSection = "";
+  for (const label of labels) {
+    const value = labelValue(label);
+    if (!value) continue;
+    if (value.cue && !cue) cue = value.value;
+    else if (!value.cue && !section) section = value.value;
+    else if (!value.cue && !extraSection) extraSection = value.value;
+  }
+  // A second section, with no cue named, rides in the cue lane.
+  return { section, cue: cue || extraSection, ignored: false };
 }
 
-export function parseAssignmentValue(value: string): GroupAssignment {
-  if (value === "") return null;
-  if (value === "ignore") return "ignore";
+/** Nothing recognised and not ignored: the review asks the user. */
+export function isUnrecognised(markers: GroupMarkers | undefined): boolean {
+  return !markers || (!markers.ignored && markers.section === "" && markers.cue === "");
+}
+
+function parseMarkerValue(value: string): { kind: MarkerKind; variant: number | null } | null {
+  if (!value) return null;
   const [kind, variant] = value.split(":");
   return { kind: kind as MarkerKind, variant: variant ? Number(variant) : null };
 }
 
 /**
- * Where each assigned announcement's marker goes: on the first downbeat after
- * the announcement ends (the voice speaks in the bar before its section). The
- * grid is the song's, or the one the tempo review is about to write when
- * `tempo` is given. Returns rendered-timeline seconds.
+ * The voice speaks in the bar before its section, but the tail of its last
+ * word ("…cuatro") can run a few milliseconds past the section's downbeat:
+ * measured on a real guide against markers placed by hand. A downbeat this
+ * many beats before the end of the announcement still counts as after it.
+ */
+const ANNOUNCEMENT_TAIL_BEATS = 0.3;
+
+/**
+ * Where each announcement's markers go: on the first downbeat after the
+ * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`). The grid is the song's,
+ * or the one the tempo review is about to write when `tempo` is given.
+ * Returns rendered-timeline seconds.
  */
 export function placeGuideSections(
   song: SongView,
   regionId: string,
   renderStartSeconds: number,
   analysis: GuideAnalysis,
-  assignments: GroupAssignment[],
+  markers: GroupMarkers[],
   tempo: { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] } | null,
-): { startSeconds: number; kind: MarkerKind; variant: number | null }[] {
+): {
+  startSeconds: number;
+  kind: MarkerKind;
+  variant: number | null;
+  categoryOverride: "cue" | null;
+}[] {
   const region = song.regions.find((candidate) => candidate.id === regionId);
   if (!region) return [];
   let grid = song;
@@ -220,24 +254,46 @@ export function placeGuideSections(
     };
   }
   const regions = buildSongTempoRegions(grid);
-  const placed: { startSeconds: number; kind: MarkerKind; variant: number | null }[] = [];
+  const beatAt = (seconds: number) => {
+    const current =
+      regions.find((r) => seconds >= r.startSeconds && seconds < r.endSeconds) ??
+      regions[regions.length - 1];
+    return current
+      ? getBeatDurationSeconds(current.bpm, current.timeSignature)
+      : getBeatDurationSeconds(grid.bpm, grid.timeSignature);
+  };
+  const placed: {
+    startSeconds: number;
+    kind: MarkerKind;
+    variant: number | null;
+    categoryOverride: "cue" | null;
+  }[] = [];
+  const onSpot = (seconds: number) =>
+    placed.filter((other) => Math.abs(other.startSeconds - seconds) < SAME_POSITION_SECONDS);
   for (const announcement of analysis.announcements) {
-    const assignment = assignments[announcement.group];
-    if (!assignment || assignment === "ignore") continue;
+    const group = markers[announcement.group];
+    if (!group || group.ignored) continue;
+    const end = renderStartSeconds + announcement.endSeconds;
     const startSeconds = nextDownbeatAfter(
-      renderStartSeconds + announcement.endSeconds,
+      end - ANNOUNCEMENT_TAIL_BEATS * beatAt(end),
       grid.bpm,
       grid.timeSignature,
       regions,
     );
-    // The same marker twice on one downbeat ("Coro 1." … "Coro 1.") is one.
-    const duplicate = placed.some(
-      (other) =>
-        Math.abs(other.startSeconds - startSeconds) < SAME_POSITION_SECONDS &&
-        other.kind === assignment.kind &&
-        other.variant === assignment.variant,
-    );
-    if (!duplicate) placed.push({ startSeconds, ...assignment });
+    for (const marker of [parseMarkerValue(group.section), parseMarkerValue(group.cue)]) {
+      if (!marker) continue;
+      const here = onSpot(startSeconds);
+      // The same marker twice on one downbeat ("Coro 1." … "Coro 1.") is one.
+      if (here.some((other) => other.kind === marker.kind && other.variant === marker.variant)) {
+        continue;
+      }
+      // Two sections cannot share a spot: the later one goes in the cue lane.
+      const sectionHere = here.some(
+        (other) => isSectionKind(other.kind) && other.categoryOverride === null,
+      );
+      const categoryOverride = isSectionKind(marker.kind) && sectionHere ? "cue" : null;
+      placed.push({ startSeconds, ...marker, categoryOverride });
+    }
   }
   return placed;
 }

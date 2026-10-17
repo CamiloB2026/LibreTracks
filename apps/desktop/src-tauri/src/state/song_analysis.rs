@@ -8,7 +8,8 @@
 
 use libretracks_analysis::{ProposedSignatureMarker, ProposedTempoMarker};
 use libretracks_core::{
-    source_seconds_at_view, Marker, MarkerKind, Song, TempoMarker, TimeSignatureMarker,
+    source_seconds_at_view, Marker, MarkerCategory, MarkerKind, Song, TempoMarker,
+    TimeSignatureMarker,
 };
 
 use crate::audio::engine::AudioController;
@@ -121,6 +122,8 @@ pub struct AnalysedSection {
     pub kind: MarkerKind,
     pub variant: Option<u8>,
     pub name: String,
+    /// The lane, when it is not the one the kind implies.
+    pub category_override: Option<MarkerCategory>,
 }
 
 /// Replace the section and cue markers inside the song with `sections`.
@@ -170,7 +173,9 @@ pub(super) fn apply_sections_to_song(
             kind: section.kind,
             variant: section.variant,
             color: None,
-            category_override: None,
+            category_override: section
+                .category_override
+                .filter(|lane| *lane != section.kind.category()),
         });
     }
     song.section_markers

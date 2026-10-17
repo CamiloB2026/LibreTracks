@@ -285,6 +285,7 @@ pub fn create_section_marker(
     kind: Option<MarkerKind>,
     variant: Option<u8>,
     name: Option<String>,
+    category_override: Option<libretracks_core::MarkerCategory>,
     state: State<'_, DesktopState>,
 ) -> Result<TransportSnapshot, String> {
     let mut session = state
@@ -293,7 +294,14 @@ pub fn create_section_marker(
         .map_err(|_| DesktopError::StatePoisoned.to_string())?;
 
     session
-        .create_section_marker(start_seconds, kind, variant, name, &state.audio)
+        .create_section_marker_in_lane(
+            start_seconds,
+            kind,
+            variant,
+            name,
+            category_override,
+            &state.audio,
+        )
         .map_err(|error| error.to_string())
 }
 

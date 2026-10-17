@@ -1478,12 +1478,15 @@ export type AnalyzeSongRequest = {
 export type GuideAnnouncement = { startSeconds: number; endSeconds: number; group: number };
 
 /**
- * The announcements that are the same recording said again. `label` is the
- * app's voice clip that matched (`chorus_2`, `drums_in`, `count`), null when
- * none did: the user names the group in the review.
+ * The announcements that are the same recording said again. `labels` are the
+ * markers it names, as voice-clip names (`verse_3`, `drums_in`), or
+ * `["count"]` for a count-in; empty when nothing was recognised and the user
+ * names the group in the review.
  */
 export type GuideGroup = {
-  label: string | null;
+  labels: string[];
+  /** What speech recognition heard ("Verso 3, entra batería"), when it ran. */
+  transcript: string | null;
   matchCost: number | null;
   occurrences: number;
   firstStartSeconds: number;
@@ -1498,6 +1501,8 @@ export type SectionChange = {
   kind: MarkerKind;
   variant: number | null;
   name: string;
+  /** "cue": a section kind sharing its spot with a section goes in the cue lane. */
+  categoryOverride?: MarkerCategory | null;
 };
 
 export type AnalyzeSongResult = {
@@ -1515,12 +1520,39 @@ export type AnalyzeSongResult = {
     currentKey: string | null;
     transposeSemitones: number;
   } | null;
-  guide: { analysis: GuideAnalysis } | null;
+  /** `speechRecognition`: the announcements were read by speech recognition,
+   * not only matched against the app's voice clips. */
+  guide: { analysis: GuideAnalysis; speechRecognition: boolean } | null;
   missingFiles: string[];
 };
 
 export async function analyzeSong(request: AnalyzeSongRequest): Promise<AnalyzeSongResult> {
   return invokeCommand<AnalyzeSongResult>("analyze_song", { request });
+}
+
+export type SpeechModelStatus = {
+  /** Speech recognition is built for this platform (desktop today). */
+  supported: boolean;
+  downloaded: boolean;
+  sizeBytes: number;
+};
+
+export async function speechModelStatus(): Promise<SpeechModelStatus> {
+  return invokeCommand<SpeechModelStatus>("speech_model_status");
+}
+
+/** Downloads the speech recognition model once (≈57 MB). */
+export async function downloadSpeechModel(): Promise<SpeechModelStatus> {
+  return invokeCommand<SpeechModelStatus>("download_speech_model");
+}
+
+export async function listenToSpeechModelProgress(
+  handler: (event: { fraction: number }) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<{ fraction: number }>("speech-model-progress", (event) => {
+    handler(event.payload);
+  });
 }
 
 export async function cancelAnalyzeSong(): Promise<void> {
@@ -2365,13 +2397,20 @@ export async function deleteMixScene(sceneId: string): Promise<TransportSnapshot
 
 export async function createSectionMarker(
   startSeconds: number,
-  options?: { kind?: MarkerKind; variant?: number | null; name?: string },
+  options?: {
+    kind?: MarkerKind;
+    variant?: number | null;
+    name?: string;
+    /** "cue" puts a section kind in the cue lane (the spot has a section). */
+    categoryOverride?: MarkerCategory | null;
+  },
 ): Promise<TransportSnapshot> {
   return invokeCommand<TransportSnapshot>("create_section_marker", {
     startSeconds,
     kind: options?.kind ?? null,
     variant: options?.variant ?? null,
     name: options?.name ?? null,
+    categoryOverride: options?.categoryOverride ?? null,
   });
 }
 

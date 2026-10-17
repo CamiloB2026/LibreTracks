@@ -64,7 +64,7 @@ fn main() {
     }
     let (samples, rate) = read_mono(std::path::Path::new(&guide)).expect("readable guide");
     let started = std::time::Instant::now();
-    let analysis = analyze_guide(&samples, rate, &templates);
+    let analysis = analyze_guide(&samples, rate, &templates, None);
     println!(
         "{} announcements, {} groups, {} templates, {:.0} ms",
         analysis.announcements.len(),
@@ -79,7 +79,11 @@ fn main() {
             announcement.start_seconds,
             announcement.end_seconds,
             announcement.group,
-            group.label.clone().unwrap_or_else(|| "?".into()),
+            if group.labels.is_empty() {
+                "?".to_string()
+            } else {
+                group.labels.join("+")
+            },
             group.match_cost.map_or("-".into(), |c| format!("{c:.2}"))
         );
     }

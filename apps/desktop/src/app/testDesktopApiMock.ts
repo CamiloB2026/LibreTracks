@@ -1322,7 +1322,7 @@ export const testDesktopApiMock = {
       tempoUnavailable: null,
       guide:
         request.guideTrackIds.length > 0
-          ? { analysis: { announcements: [], groups: [] } }
+          ? { analysis: { announcements: [], groups: [] }, speechRecognition: false }
           : null,
       key:
         request.keyTrackIds.length > 0
@@ -1344,6 +1344,10 @@ export const testDesktopApiMock = {
     };
   },
   cancelAnalyzeSong: async () => {},
+  speechModelStatus: async () => ({ supported: true, downloaded: false, sizeBytes: 59_707_625 }),
+  downloadSpeechModel: async () => ({ supported: true, downloaded: true, sizeBytes: 59_707_625 }),
+  listenToSpeechModelProgress: async (_handler: (event: { fraction: number }) => void) =>
+    () => {},
   listenToSongAnalysisProgress: async (_handler: (event: { fraction: number }) => void) =>
     () => {},
   applySongAnalysis: async () => clone(buildSnapshot()),

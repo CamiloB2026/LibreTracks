@@ -18,8 +18,9 @@
 
 use serde::Serialize;
 
-use crate::dsp::decimate_to;
+use crate::dsp::{decimate_to, resample_to};
 use crate::fft::fft;
+use crate::guide_text::{is_count, parse_announcement};
 
 /// Speech analysis rate: a voice's identity lives below 8 kHz.
 const SPEECH_RATE: f64 = 16_000.0;
@@ -36,6 +37,25 @@ const MIN_SPEECH_SECONDS: f64 = 0.15;
 /// A guide clip matching under this DTW cost is the same word in the same
 /// voice (see the module docs for the measured gap).
 const MATCH_COST: f64 = 1.6;
+/// Under this, a clip match is certain enough to skip transcribing the group.
+/// A fragment that only partly matches ("Verso 3, entra batería" against
+/// the clip "entra batería", 1.41) is transcribed, so both markers come out.
+const SURE_MATCH_COST: f64 = 1.0;
+/// Speech recognition rate.
+const RECOGNITION_RATE: f64 = 16_000.0;
+/// Speech given to language detection: the longest announcements, up to this.
+const LANGUAGE_SAMPLE_SECONDS: f64 = 12.0;
+/// Silence padded around a fragment before recognition (recognisers clip
+/// the first and last syllable of audio that starts on a word).
+const RECOGNITION_PAD_SECONDS: f64 = 0.15;
+
+/// Speech recognition, provided by the app (whisper.cpp on desktop).
+pub trait Transcriber {
+    /// Settle the language from a sample of the track's speech (16 kHz mono).
+    fn detect_language(&mut self, speech: &[f32]);
+    /// The text of one announcement (16 kHz mono), `None` on failure.
+    fn transcribe(&mut self, speech: &[f32]) -> Option<String>;
+}
 /// Two fragments under this cost are the same recording, said again.
 const SAME_RECORDING_COST: f64 = 1.0;
 /// Fragments whose lengths differ more than this ratio are different words.
@@ -62,8 +82,11 @@ pub struct GuideAnnouncement {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuideGroup {
-    /// The matching clip's label, when one matched.
-    pub label: Option<String>,
+    /// The markers it names, as voice-clip labels (`verse_3`, `drums_in`), or
+    /// `["count"]` for a count-in. Empty: not recognised, the user says.
+    pub labels: Vec<String>,
+    /// What speech recognition heard, when it ran.
+    pub transcript: Option<String>,
     /// DTW cost of that match (lower is closer).
     pub match_cost: Option<f64>,
     pub occurrences: usize,
@@ -79,12 +102,14 @@ pub struct GuideAnalysis {
     pub groups: Vec<GuideGroup>,
 }
 
-/// Find, group and (when a clip matches) label the announcements of a guide
-/// track.
+/// Find, group and label the announcements of a guide track: from speech
+/// recognition when a `transcriber` is given, from the app's clips otherwise
+/// (or when it hears nothing it knows).
 pub fn analyze_guide(
     samples: &[f32],
     sample_rate: u32,
     templates: &[GuideTemplate],
+    mut transcriber: Option<&mut dyn Transcriber>,
 ) -> GuideAnalysis {
     let (signal, rate) = decimate_to(samples, f64::from(sample_rate.max(1)), SPEECH_RATE);
     let fragments = speech_fragments(&signal, rate);
@@ -112,6 +137,31 @@ pub fn analyze_guide(
 
     let groups_of = group_fragments(&features, &fragments);
     let group_count = groups_of.iter().copied().max().map_or(0, |max| max + 1);
+    let original_rate = f64::from(sample_rate.max(1));
+    // A fragment as the recogniser wants it: 16 kHz, a little silence around.
+    let speech_of = |index: usize| -> Vec<f32> {
+        let (start, end) = fragments[index];
+        let from = ((start - RECOGNITION_PAD_SECONDS).max(0.0) * original_rate) as usize;
+        let to = (((end + RECOGNITION_PAD_SECONDS) * original_rate) as usize).min(samples.len());
+        resample_to(&samples[from.min(to)..to], original_rate, RECOGNITION_RATE)
+    };
+    if let Some(recogniser) = transcriber.as_deref_mut() {
+        if !fragments.is_empty() {
+            let mut longest: Vec<usize> = (0..fragments.len()).collect();
+            longest.sort_by(|a, b| {
+                let length = |i: &usize| fragments[*i].1 - fragments[*i].0;
+                length(b).total_cmp(&length(a))
+            });
+            let mut sample = Vec::new();
+            for index in longest {
+                if sample.len() as f64 >= LANGUAGE_SAMPLE_SECONDS * RECOGNITION_RATE {
+                    break;
+                }
+                sample.extend(speech_of(index));
+            }
+            recogniser.detect_language(&sample);
+        }
+    }
     let mut groups: Vec<GuideGroup> = Vec::with_capacity(group_count);
     for group in 0..group_count {
         let members: Vec<usize> = (0..fragments.len())
@@ -128,13 +178,41 @@ pub fn analyze_guide(
                 })
             })
             .min_by(|a, b| a.0.total_cmp(&b.0));
-        let (label, match_cost) = match best {
+        let (clip_label, match_cost) = match best {
             Some((cost, label)) if cost < MATCH_COST => (Some(label.to_string()), Some(cost)),
             Some((cost, _)) => (None, Some(cost)),
             None => (None, None),
         };
+        let sure = match_cost.is_some_and(|cost| cost < SURE_MATCH_COST) && clip_label.is_some();
+        // The longest time it is said: the clearest take to recognise.
+        let representative = members
+            .iter()
+            .copied()
+            .max_by(|a, b| {
+                (fragments[*a].1 - fragments[*a].0).total_cmp(&(fragments[*b].1 - fragments[*b].0))
+            })
+            .unwrap_or(first);
+        let transcript = match transcriber.as_deref_mut() {
+            Some(recogniser) if !sure => recogniser.transcribe(&speech_of(representative)),
+            _ => None,
+        };
+        let mut labels: Vec<String> = match transcript.as_deref() {
+            Some(text) if is_count(text) => vec!["count".to_string()],
+            Some(text) => parse_announcement(text)
+                .into_iter()
+                .map(|marker| match marker.variant {
+                    Some(variant) => format!("{}_{variant}", marker.kind),
+                    None => marker.kind.to_string(),
+                })
+                .collect(),
+            None => Vec::new(),
+        };
+        if labels.is_empty() {
+            labels.extend(clip_label);
+        }
         groups.push(GuideGroup {
-            label,
+            labels,
+            transcript,
             match_cost,
             occurrences: members.len(),
             first_start_seconds: fragments[first].0,
@@ -461,7 +539,7 @@ mod tests {
     #[test]
     fn finds_each_announcement() {
         let audio = track(&[(2.0, 0, 0.5), (12.0, 1, 0.6), (25.0, 0, 0.5)], 30.0);
-        let analysis = analyze_guide(&audio, RATE, &[]);
+        let analysis = analyze_guide(&audio, RATE, &[], None);
         let starts: Vec<f64> = analysis
             .announcements
             .iter()
@@ -485,7 +563,7 @@ mod tests {
             ],
             55.0,
         );
-        let analysis = analyze_guide(&audio, RATE, &[]);
+        let analysis = analyze_guide(&audio, RATE, &[], None);
         let groups: Vec<usize> = analysis.announcements.iter().map(|a| a.group).collect();
         assert_eq!(groups, vec![0, 1, 0, 2, 1], "{analysis:?}");
         assert_eq!(analysis.groups[0].occurrences, 2);
@@ -500,18 +578,105 @@ mod tests {
             samples: word(0, 0.5),
             sample_rate: RATE,
         }];
-        let analysis = analyze_guide(&audio, RATE, &templates);
+        let analysis = analyze_guide(&audio, RATE, &templates, None);
         assert_eq!(
-            analysis.groups[0].label.as_deref(),
-            Some("chorus"),
+            analysis.groups[0].labels,
+            vec!["chorus".to_string()],
             "{analysis:?}"
         );
-        assert_eq!(analysis.groups[1].label, None, "{analysis:?}");
+        assert!(analysis.groups[1].labels.is_empty(), "{analysis:?}");
+    }
+
+    /// Hears whatever it is told, by fragment length, and records the calls.
+    struct FakeTranscriber {
+        language_sample_seconds: f64,
+        calls: Vec<f64>,
+        answers: Vec<(f64, &'static str)>,
+    }
+
+    impl Transcriber for FakeTranscriber {
+        fn detect_language(&mut self, speech: &[f32]) {
+            self.language_sample_seconds = speech.len() as f64 / RECOGNITION_RATE;
+        }
+
+        fn transcribe(&mut self, speech: &[f32]) -> Option<String> {
+            let seconds = speech.len() as f64 / RECOGNITION_RATE;
+            self.calls.push(seconds);
+            self.answers
+                .iter()
+                .min_by(|a, b| (a.0 - seconds).abs().total_cmp(&(b.0 - seconds).abs()))
+                .map(|(_, text)| text.to_string())
+        }
+    }
+
+    #[test]
+    fn speech_recognition_names_every_marker_of_each_group_once() {
+        // Words of 0.5, 1.2 and 0.8 s; the 0.5 s one said twice.
+        let audio = track(
+            &[
+                (2.0, 0, 0.5),
+                (12.0, 1, 1.2),
+                (25.0, 0, 0.5),
+                (40.0, 2, 0.8),
+            ],
+            45.0,
+        );
+        let mut recogniser = FakeTranscriber {
+            language_sample_seconds: 0.0,
+            calls: Vec::new(),
+            // Lengths include the 0.15 s padding on both sides.
+            answers: vec![
+                (0.8, "Coro."),
+                (1.5, "Verso 3, entra batería."),
+                (1.1, "Uno, dos, tres, cuatro."),
+            ],
+        };
+        let analysis = analyze_guide(&audio, RATE, &[], Some(&mut recogniser));
+        let labels: Vec<Vec<String>> = analysis.groups.iter().map(|g| g.labels.clone()).collect();
+        assert_eq!(
+            labels,
+            vec![
+                vec!["chorus".to_string()],
+                vec!["verse_3".to_string(), "drums_in".to_string()],
+                vec!["count".to_string()],
+            ],
+            "{analysis:?}"
+        );
+        // One recognition per group, not per announcement.
+        assert_eq!(recogniser.calls.len(), 3);
+        assert!(recogniser.language_sample_seconds > 1.0);
+        assert_eq!(
+            analysis.groups[1].transcript.as_deref(),
+            Some("Verso 3, entra batería.")
+        );
+    }
+
+    #[test]
+    fn a_sure_clip_match_is_not_transcribed() {
+        let audio = track(&[(2.0, 0, 0.5), (12.0, 1, 0.6)], 20.0);
+        let templates = vec![GuideTemplate {
+            label: "chorus".into(),
+            samples: word(0, 0.5),
+            sample_rate: RATE,
+        }];
+        let mut recogniser = FakeTranscriber {
+            language_sample_seconds: 0.0,
+            calls: Vec::new(),
+            answers: vec![(0.9, "Puente.")],
+        };
+        let analysis = analyze_guide(&audio, RATE, &templates, Some(&mut recogniser));
+        assert_eq!(analysis.groups[0].labels, vec!["chorus".to_string()]);
+        assert_eq!(analysis.groups[1].labels, vec!["bridge".to_string()]);
+        assert_eq!(
+            recogniser.calls.len(),
+            1,
+            "only the unmatched group is transcribed"
+        );
     }
 
     #[test]
     fn silence_has_no_announcements() {
-        let analysis = analyze_guide(&vec![0.0; RATE as usize * 5], RATE, &[]);
+        let analysis = analyze_guide(&vec![0.0; RATE as usize * 5], RATE, &[], None);
         assert!(analysis.announcements.is_empty());
         assert!(analysis.groups.is_empty());
     }

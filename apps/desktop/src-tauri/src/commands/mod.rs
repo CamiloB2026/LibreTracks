@@ -13,6 +13,7 @@ pub mod project;
 pub mod render;
 pub mod settings;
 pub mod song_analysis;
+pub mod speech;
 pub mod system;
 pub mod timeline;
 pub mod transport;

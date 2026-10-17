@@ -7,9 +7,10 @@ import {
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
-  assignmentForLabel,
   guideTrackOptions,
+  isUnrecognised,
   keyTrackOptions,
+  markersForLabels,
   placeGuideSections,
   musicTempoTrackIds,
   scaleTempoRows,
@@ -132,31 +133,104 @@ describe("guide", () => {
     expect(guideTrackOptions(song(), "b").preselected).toBe("guide");
   });
 
-  it("reads a voice clip's label as a marker", () => {
-    expect(assignmentForLabel("chorus_2")).toEqual({ kind: "chorus", variant: 2 });
-    expect(assignmentForLabel("drums_in")).toEqual({ kind: "drums_in", variant: null });
-    expect(assignmentForLabel("count")).toBe("ignore");
-    expect(assignmentForLabel(null)).toBeNull();
-    expect(assignmentForLabel("not_a_kind")).toBeNull();
+  it("reads the labels as a section and a cue", () => {
+    expect(markersForLabels(["verse_3", "drums_in"])).toEqual({
+      section: "verse:3",
+      cue: "drums_in",
+      ignored: false,
+    });
+    expect(markersForLabels(["chorus"])).toEqual({ section: "chorus", cue: "", ignored: false });
+    expect(markersForLabels(["count"])).toEqual({ section: "", cue: "", ignored: true });
     // A variant the picker does not offer becomes the plain kind.
-    expect(assignmentForLabel("verse_9")).toEqual({ kind: "verse", variant: null });
+    expect(markersForLabels(["verse_9"]).section).toBe("verse");
+    expect(markersForLabels(["not_a_kind"])).toEqual({ section: "", cue: "", ignored: false });
+    expect(isUnrecognised(markersForLabels([]))).toBe(true);
+    expect(isUnrecognised(markersForLabels(["count"]))).toBe(false);
+  });
+
+  const plain = () => ({ ...song(), tempoMarkers: [], timeSignatureMarkers: [] });
+  const oneAnnouncement = (endSeconds: number, labels: string[]) => ({
+    analysis: {
+      announcements: [{ startSeconds: endSeconds - 0.5, endSeconds, group: 0 }],
+      groups: [
+        {
+          labels,
+          transcript: null,
+          matchCost: null,
+          occurrences: 1,
+          firstStartSeconds: endSeconds - 0.5,
+          firstEndSeconds: endSeconds,
+        },
+      ],
+    },
+    markers: [markersForLabels(labels)],
+  });
+
+  it("puts both markers of one announcement on the next downbeat", () => {
+    const { analysis, markers } = oneAnnouncement(5.3, ["verse_3", "drums_in"]);
+    // 120 BPM 4/4: bars of 2 s. Song at 100 s; ends at 105.3 → 106.
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)).toEqual([
+      { startSeconds: 106, kind: "verse", variant: 3, categoryOverride: null },
+      { startSeconds: 106, kind: "drums_in", variant: null, categoryOverride: null },
+    ]);
+  });
+
+  it("a second section of one announcement goes in the cue lane", () => {
+    // "Verso a capella": two sections cannot share a spot.
+    expect(markersForLabels(["verse", "acapella"])).toEqual({
+      section: "verse",
+      cue: "acapella",
+      ignored: false,
+    });
+    const { analysis, markers } = oneAnnouncement(5.3, ["verse", "acapella"]);
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)).toEqual([
+      { startSeconds: 106, kind: "verse", variant: null, categoryOverride: null },
+      { startSeconds: 106, kind: "acapella", variant: null, categoryOverride: "cue" },
+    ]);
+  });
+
+  it("two announcements naming sections on one downbeat: the later is a cue", () => {
+    const analysis = {
+      announcements: [
+        { startSeconds: 4.0, endSeconds: 4.5, group: 0 },
+        { startSeconds: 4.8, endSeconds: 5.3, group: 1 },
+      ],
+      groups: [0, 1].map(() => ({
+        labels: [],
+        transcript: null,
+        matchCost: null,
+        occurrences: 1,
+        firstStartSeconds: 4,
+        firstEndSeconds: 5.3,
+      })),
+    };
+    const markers = [markersForLabels(["chorus"]), markersForLabels(["tag"])];
+    expect(
+      placeGuideSections(plain(), "b", 100, analysis, markers, null).map((m) => [
+        m.kind,
+        m.categoryOverride,
+      ]),
+    ).toEqual([
+      ["chorus", null],
+      ["tag", "cue"],
+    ]);
+  });
+
+  it("a word's tail just past the downbeat still lands on it", () => {
+    // "…cuatro" ends 50 ms after the downbeat at 106 (measured on a real
+    // guide against markers placed by hand): the section is at 106, not 108.
+    const { analysis, markers } = oneAnnouncement(6.05, ["intro"]);
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)[0].startSeconds).toBe(106);
   });
 
   it("follows the tempo the review is about to write", () => {
-    const analysis = {
-      announcements: [{ startSeconds: 4.8, endSeconds: 5.3, group: 0 }],
-      groups: [{ label: "intro", matchCost: 0.5, occurrences: 1, firstStartSeconds: 4.8, firstEndSeconds: 5.3 }],
-    };
-    const assignments = [{ kind: "intro" as const, variant: null }];
-    const plain = { ...song(), tempoMarkers: [], timeSignatureMarkers: [] };
-    // The song's own grid: 120 BPM, bars of 2 s → 106.
-    expect(placeGuideSections(plain, "b", 100, analysis, assignments, null)[0].startSeconds).toBe(106);
-    // With a 60 BPM marker at the song start: bars of 4 s → 108.
+    const { analysis, markers } = oneAnnouncement(5.3, ["intro"]);
     const tempo = {
       tempoMarkers: [{ startSeconds: 100, bpm: 60, restoresNextSong: false }],
       signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
     };
-    expect(placeGuideSections(plain, "b", 100, analysis, assignments, tempo)[0].startSeconds).toBe(108);
+    // 60 BPM: bars of 4 s from 100 → 108.
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, tempo)[0].startSeconds).toBe(108);
   });
 });
 

@@ -472,7 +472,7 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
         "create_section_marker" => {
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
-                into_value_result(crate::commands::timeline::create_section_marker(arg(&args, "startSeconds")?, arg(&args, "kind")?, arg(&args, "variant")?, arg(&args, "name")?, app.state()))
+                into_value_result(crate::commands::timeline::create_section_marker(arg(&args, "startSeconds")?, arg(&args, "kind")?, arg(&args, "variant")?, arg(&args, "name")?, arg(&args, "categoryOverride")?, app.state()))
             })
             .await
             .map_err(|error| error.to_string())?

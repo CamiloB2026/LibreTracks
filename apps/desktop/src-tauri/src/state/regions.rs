@@ -32,6 +32,21 @@ impl DesktopSession {
         name: Option<String>,
         audio: &AudioController,
     ) -> Result<TransportSnapshot, DesktopError> {
+        self.create_section_marker_in_lane(start_seconds, kind, variant, name, None, audio)
+    }
+
+    /// `create_section_marker` with the lane chosen: `Some(Cue)` puts a
+    /// section kind in the cue lane, for when the spot already has a section
+    /// (two sections cannot share it; the UI offers the cue lane instead).
+    pub fn create_section_marker_in_lane(
+        &mut self,
+        start_seconds: f64,
+        kind: Option<MarkerKind>,
+        variant: Option<u8>,
+        name: Option<String>,
+        category_override: Option<MarkerCategory>,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
         let mut song = self
             .engine
             .song()
@@ -59,9 +74,9 @@ impl DesktopSession {
             kind,
             variant,
             color: None,
-            // New markers start in the lane their kind implies; the user can
-            // drag them to the other row afterwards.
-            category_override: None,
+            // New markers start in the lane their kind implies (unless the
+            // caller chose one); the user can drag them to the other row.
+            category_override: category_override.filter(|lane| *lane != kind.category()),
         });
         song.section_markers.sort_by(|left, right| {
             left.start_seconds

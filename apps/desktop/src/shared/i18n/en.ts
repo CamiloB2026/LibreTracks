@@ -673,6 +673,9 @@ const en = {
       midiLearnLearn: "Learn",
       midiLearnListeningShort: "Listening",
     },
+    markerCollision: {
+      askCue: "Two section markers can't share a spot. Do you want to add it as a cue?",
+    },
     songAnalysis: {
       title: "Analyze song",
       intro:
@@ -693,12 +696,21 @@ const en = {
       replacesMarkers_one: "Replaces the song's current marker.",
       replacesMarkers_other: "Replaces the song's {{count}} current markers.",
       colAnnouncement: "Announcement",
-      colTimes: "Times",
-      colMarker: "Marker",
-      unassigned: "⚠ Not recognised",
+      colSection: "Section",
+      colCue: "Cue",
+      sectionAsCue: "{{kind}} (as a cue)",
+      none: "—",
       ignore: "Ignore (count-in, other)",
       listen: "Hear the announcement at {{position}}",
-      markerFor: "Marker for the announcement at {{position}}",
+      sectionFor: "Section for the announcement at {{position}}",
+      cueFor: "Cue for the announcement at {{position}}",
+      speechReady: "Announcements will be recognised in any voice, in Spanish or English.",
+      speechMissing:
+        "To recognise announcements in any voice (male or female, Spanish or English) speech recognition must be downloaded once ({{megabytes}} MB). Without it only guides recorded with the app's own voice are recognised.",
+      speechDownload: "Download ({{megabytes}} MB)",
+      speechFailed: "Could not download: {{error}}",
+      speechSuggestion:
+        "Download speech recognition in the setup and analyze again to recognise these announcements automatically.",
       fromMusic: "No click: estimate it from the music",
       fromMusicHint:
         "Estimated from every track but the cues. Less reliable than a click: check the result.",

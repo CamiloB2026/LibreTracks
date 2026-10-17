@@ -686,6 +686,10 @@ const es = {
       midiLearnLearn: "Aprender",
       midiLearnListeningShort: "Escuchando",
     },
+    markerCollision: {
+      askCue:
+        "No se pueden poner dos marcas de sección juntas. ¿Quieres ponerla como aviso?",
+    },
     songAnalysis: {
       title: "Analizar canción",
       intro:
@@ -706,12 +710,21 @@ const es = {
       replacesMarkers_one: "Sustituye la marca que la canción tiene ahora.",
       replacesMarkers_other: "Sustituye las {{count}} marcas que la canción tiene ahora.",
       colAnnouncement: "Anuncio",
-      colTimes: "Veces",
-      colMarker: "Marca",
-      unassigned: "⚠ Sin reconocer",
+      colSection: "Sección",
+      colCue: "Aviso",
+      sectionAsCue: "{{kind}} (como aviso)",
+      none: "—",
       ignore: "Ignorar (conteo, otro)",
       listen: "Escuchar el anuncio de {{position}}",
-      markerFor: "Marca para el anuncio de {{position}}",
+      sectionFor: "Sección para el anuncio de {{position}}",
+      cueFor: "Aviso para el anuncio de {{position}}",
+      speechReady: "Se reconocerán los anuncios con cualquier voz, en español o inglés.",
+      speechMissing:
+        "Para reconocer los anuncios de cualquier voz (hombre o mujer, español o inglés) hace falta descargar el reconocimiento de voz una vez ({{megabytes}} MB). Sin él solo se reconocen las guías grabadas con la voz de la app.",
+      speechDownload: "Descargar ({{megabytes}} MB)",
+      speechFailed: "No se pudo descargar: {{error}}",
+      speechSuggestion:
+        "Descarga el reconocimiento de voz en la configuración y vuelve a analizar para reconocer estos anuncios solos.",
       fromMusic: "Sin click: estimarlo de la música",
       fromMusicHint:
         "Se estima con todas las pistas menos las de cues. Es menos fiable que un click: revisa el resultado.",

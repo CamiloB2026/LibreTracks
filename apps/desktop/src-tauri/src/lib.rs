@@ -426,6 +426,8 @@ pub fn run() {
             commands::song_analysis::analyze_song,
             commands::song_analysis::cancel_analyze_song,
             commands::song_analysis::apply_song_analysis,
+            commands::speech::speech_model_status,
+            commands::speech::download_speech_model,
             commands::project::import_song_package,
             commands::project::export_session_package,
             commands::project::export_session_package_at,

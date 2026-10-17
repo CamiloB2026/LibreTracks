@@ -3,8 +3,10 @@
   "local": [
     "allow_remote_through_firewall",
     "append_debug_log",
+    "assign_pad_key",
     "cancel_app_close",
     "clear_diagnostics_log",
+    "clear_pad_key",
     "cloud_cancel_transfer",
     "cloud_connect",
     "cloud_delete",
@@ -23,6 +25,7 @@
     "delete_library_folder",
     "delete_pad",
     "download_pad",
+    "download_speech_model",
     "exit_app",
     "forget_library_assets",
     "forget_library_place",
@@ -46,6 +49,7 @@
     "list_default_sessions",
     "list_library_dir",
     "list_session_templates",
+    "load_pad_key",
     "move_library_asset",
     "pair_bluetooth_midi",
     "purge_decoding_cache",
@@ -64,6 +68,7 @@
     "set_decoding_cache_dir",
     "set_decoding_cache_max_gb",
     "set_ui_language",
+    "speech_model_status",
     "take_audio_idle_wake",
     "take_pending_open_with_file",
     "video_apply_settings",
@@ -75,10 +80,7 @@
     "video_media_status",
     "video_output_status",
     "video_sync_stats",
-    "video_test_pattern",
-    "assign_pad_key",
-    "clear_pad_key",
-    "load_pad_key"
+    "video_test_pattern"
   ],
   "view": [
     "get_missing_media",

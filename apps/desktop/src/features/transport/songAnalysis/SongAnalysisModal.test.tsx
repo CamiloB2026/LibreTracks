@@ -31,6 +31,12 @@ const applySongAnalysis =
     ) => Promise<TransportSnapshot>
   >();
 
+const downloadSpeechModel = vi.fn(async () => ({
+  supported: true,
+  downloaded: true,
+  sizeBytes: 59_707_625,
+}));
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
@@ -50,6 +56,9 @@ vi.mock("@libretracks/shared/desktopApi", async (importOriginal) => ({
     sections: SectionChange[] | null,
   ) => applySongAnalysis(regionId, tempo, key, sections),
   seekTransport: async () => ({}) as TransportSnapshot,
+  speechModelStatus: async () => ({ supported: true, downloaded: false, sizeBytes: 59_707_625 }),
+  downloadSpeechModel: () => downloadSpeechModel(),
+  listenToSpeechModelProgress: async () => () => {},
 }));
 
 const { SongAnalysisModal } = await import("./SongAnalysisModal");
@@ -285,23 +294,34 @@ describe("SongAnalysisModal", () => {
     expect(tempo?.signatureMarkers).toEqual([]);
   });
 
-  it("places the guide's announcements on the next downbeat and asks about the unknown ones", async () => {
+  it("places the guide's markers and asks about the unknown announcements", async () => {
+    const group = (labels: string[], transcript: string | null, start: number, end: number, occurrences = 1) => ({
+      labels,
+      transcript,
+      matchCost: null,
+      occurrences,
+      firstStartSeconds: start,
+      firstEndSeconds: end,
+    });
     analyzeSong.mockResolvedValue(
       result({
         tempo: null,
         key: null,
         guide: {
+          speechRecognition: true,
           analysis: {
             announcements: [
               { startSeconds: 4.8, endSeconds: 5.3, group: 0 },
               { startSeconds: 11.9, endSeconds: 12.4, group: 1 },
               { startSeconds: 24.6, endSeconds: 25.1, group: 0 },
-              { startSeconds: 40.0, endSeconds: 41.0, group: 2 },
+              { startSeconds: 30.0, endSeconds: 31.2, group: 2 },
+              { startSeconds: 40.0, endSeconds: 41.0, group: 3 },
             ],
             groups: [
-              { label: "chorus_2", matchCost: 0.4, occurrences: 2, firstStartSeconds: 4.8, firstEndSeconds: 5.3 },
-              { label: null, matchCost: 2.8, occurrences: 1, firstStartSeconds: 11.9, firstEndSeconds: 12.4 },
-              { label: "count", matchCost: 0.1, occurrences: 1, firstStartSeconds: 40, firstEndSeconds: 41 },
+              group(["chorus_2"], "Coro dos.", 4.8, 5.3, 2),
+              group([], "Repite.", 11.9, 12.4),
+              group(["verse_3", "drums_in"], "Verso 3, entra batería.", 30.0, 31.2),
+              group(["count"], "Uno, dos, tres, cuatro.", 40, 41),
             ],
           },
         },
@@ -314,23 +334,36 @@ describe("SongAnalysisModal", () => {
     ).toBe("guide");
     await analyzeAndReview();
 
-    await screen.findByText(/transport\.songAnalysis\.unrecognised.*"count":1/);
-    const unknown = screen.getByLabelText(/transport\.songAnalysis\.markerFor.*0:11\.9/);
-    fireEvent.change(unknown, { target: { value: "verse:1" } });
+    // What recognition heard is shown; only "Repite" is left to the user.
+    await screen.findByText("«Verso 3, entra batería.»");
+    expect(screen.getByText(/transport\.songAnalysis\.unrecognised.*"count":1/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/transport\.songAnalysis\.sectionFor.*0:11\.9/), {
+      target: { value: "verse:1" },
+    });
     fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
 
     await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
-    // 120 BPM 4/4: bars every 2 s. Song at 100 s; ends at 105.3, 112.4, 125.1.
+    // 120 BPM 4/4: bars every 2 s. Song at 100 s; ends at 105.3, 112.4,
+    // 125.1 and 131.2; the count-in is ignored.
     const sections = applySongAnalysis.mock.calls[0][3] ?? [];
     expect(sections.map((s) => [s.startSeconds, s.kind, s.variant])).toEqual([
       [106, "chorus", 2],
       [114, "verse", 1],
       [126, "chorus", 2],
+      [132, "verse", 3],
+      [132, "drums_in", null],
     ]);
     expect(sections[0].name).toMatch(/markerKind\.chorus.* 2$/);
-    // No tempo and no key were analysed: those stay untouched.
     expect(applySongAnalysis.mock.calls[0][1]).toBeNull();
     expect(applySongAnalysis.mock.calls[0][2]).toBeNull();
+  });
+
+  it("offers to download speech recognition when a guide is chosen", async () => {
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await screen.findByText(/transport\.songAnalysis\.speechMissing/);
+    fireEvent.click(screen.getByText(/transport\.songAnalysis\.speechDownload/));
+    await screen.findByText("transport.songAnalysis.speechReady");
+    expect(downloadSpeechModel).toHaveBeenCalledTimes(1);
   });
 
   it("will not apply an invalid value", async () => {

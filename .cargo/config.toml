@@ -3,6 +3,13 @@ target-dir = "target-desktop-native"
 
 [env]
 LT_ENGINE_V2_LIB_DIR = { value = "native/audio-engine-v2/build-rb-on/Release", relative = true }
+# whisper.cpp (whisper-rs-sys, speech recognition of guide tracks) is built
+# with CMake. On Windows it must use the static CRT like the rest of the app
+# (+crt-static below), or the link fails on __imp_fputs & co. Its
+# CMakeLists asks for CMake 3.5, so the variable is only honoured with policy
+# CMP0091 forced on. Both are ignored outside MSVC.
+CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
+CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
 
 [target.'cfg(all(target_os = "windows", target_env = "msvc"))']
 rustflags = ["-C", "target-feature=+crt-static"]

@@ -49,3 +49,26 @@ pub(crate) fn decimate_to(samples: &[f32], rate: f64, target: f64) -> (Vec<f32>,
         .collect();
     (output, rate / factor as f64)
 }
+
+/// Resample to exactly `target` Hz (speech recognition wants 16 kHz): low-pass
+/// below the new Nyquist, then linear interpolation. Plenty for a voice.
+pub(crate) fn resample_to(samples: &[f32], rate: f64, target: f64) -> Vec<f32> {
+    if samples.is_empty() || (rate - target).abs() < 0.5 {
+        return samples.to_vec();
+    }
+    // Integer decimation first (to just above the target), then the rest.
+    let factor = (rate / target).floor().max(1.0);
+    let (filtered, filtered_rate) = decimate_to(samples, rate, rate / factor);
+    let ratio = filtered_rate / target;
+    let length = (filtered.len() as f64 / ratio) as usize;
+    (0..length)
+        .map(|i| {
+            let position = i as f64 * ratio;
+            let index = position.floor() as usize;
+            let fraction = (position - index as f64) as f32;
+            let a = filtered[index.min(filtered.len() - 1)];
+            let b = filtered[(index + 1).min(filtered.len() - 1)];
+            a + (b - a) * fraction
+        })
+        .collect()
+}

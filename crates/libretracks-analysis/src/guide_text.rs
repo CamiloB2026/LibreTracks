@@ -1,0 +1,406 @@
+//! What a transcribed guide announcement asks for, as marker kinds.
+//!
+//! The text comes from speech recognition of a guide track: "Verso 3, entra
+//! batería", "Coro, dos, tres, cuatro", "Bridge 1", "Entro" (sic). This turns
+//! it into the markers it names — here verse 3 plus drums in, chorus, bridge 1
+//! and intro — whatever the voice, in Spanish or English.
+//!
+//! - Words are compared loosely (one or two letters off, by length), because
+//!   recognition of a lone word slips: "Intro" comes back "Entro", "Coro"
+//!   "Cordo", "Refrain" "Re-frame".
+//! - Small filler words between a phrase's words are skipped ("solo de
+//!   guitarra", "entra la batería", "toda la banda").
+//! - A number right after a section is its variant ("Coro dos", "Bridge 1"),
+//!   unless the numbers go on counting: in "Verso, dos, tres, cuatro" the
+//!   section word stands for beat 1 of the count-in, and the section has no
+//!   number.
+//! - Counts alone ("uno, dos, tres, cuatro") and unknown words name nothing.
+
+/// A marker the announcement names: `kind` is the `MarkerKind` serde name.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnnouncedMarker {
+    pub kind: &'static str,
+    pub variant: Option<u8>,
+}
+
+/// Phrases (words without fillers) and the kind they name. Spanish and
+/// English together: a guide may mix them ("Refrain" in a Spanish guide).
+const PHRASES: &[(&[&str], &str)] = &[
+    // Sections.
+    (&["intro"], "intro"),
+    (&["introduccion"], "intro"),
+    (&["verso"], "verse"),
+    (&["estrofa"], "verse"),
+    (&["verse"], "verse"),
+    (&["pre", "coro"], "pre_chorus"),
+    (&["precoro"], "pre_chorus"),
+    (&["pre", "chorus"], "pre_chorus"),
+    (&["prechorus"], "pre_chorus"),
+    (&["coro"], "chorus"),
+    (&["chorus"], "chorus"),
+    (&["post", "coro"], "post_chorus"),
+    (&["postcoro"], "post_chorus"),
+    (&["post", "chorus"], "post_chorus"),
+    (&["postchorus"], "post_chorus"),
+    (&["puente"], "bridge"),
+    (&["bridge"], "bridge"),
+    (&["breakdown"], "breakdown"),
+    (&["drop"], "drop"),
+    (&["solo", "guitarra"], "guitar_solo"),
+    (&["guitar", "solo"], "guitar_solo"),
+    (&["solo", "bateria"], "drum_solo"),
+    (&["drum", "solo"], "drum_solo"),
+    (&["solo", "bajo"], "bass_solo"),
+    (&["bass", "solo"], "bass_solo"),
+    (&["solo"], "solo"),
+    (&["outro"], "outro"),
+    (&["salida"], "outro"),
+    (&["cierre"], "outro"),
+    (&["capella"], "acapella"),
+    (&["acapella"], "acapella"),
+    (&["cappella"], "acapella"),
+    (&["instrumental"], "instrumental"),
+    (&["interludio"], "interlude"),
+    (&["interlude"], "interlude"),
+    (&["estribillo"], "refrain"),
+    (&["refrain"], "refrain"),
+    (&["tag"], "tag"),
+    (&["repeticion"], "tag"),
+    (&["vamp"], "vamp"),
+    (&["final", "grande"], "big_ending"),
+    (&["big", "ending"], "big_ending"),
+    (&["final"], "ending"),
+    (&["ending"], "ending"),
+    (&["fin"], "ending"),
+    (&["end"], "ending"),
+    (&["exhortacion"], "exhortation"),
+    (&["exhortation"], "exhortation"),
+    (&["rap"], "rap"),
+    (&["otra", "vuelta"], "turnaround"),
+    (&["turnaround"], "turnaround"),
+    // Cues.
+    (&["subir", "lento"], "slowly_build"),
+    (&["sube", "lento"], "slowly_build"),
+    (&["slowly", "build"], "slowly_build"),
+    (&["subir", "intensidad"], "build"),
+    (&["sube", "intensidad"], "build"),
+    (&["build"], "build"),
+    (&["bajar", "intensidad"], "ease_down"),
+    (&["baja", "intensidad"], "ease_down"),
+    (&["ease", "down"], "ease_down"),
+    (&["toda", "banda"], "all_in"),
+    (&["todos"], "all_in"),
+    (&["all", "in"], "all_in"),
+    (&["entra", "bateria"], "drums_in"),
+    (&["drums", "in"], "drums_in"),
+    (&["pausa"], "break"),
+    (&["corte"], "break"),
+    (&["break"], "break"),
+    (&["sostener"], "hold"),
+    (&["hold"], "hold"),
+    (&["suave"], "softly"),
+    (&["suavemente"], "softly"),
+    (&["softly"], "softly"),
+    (&["golpes"], "hits"),
+    (&["pulsos"], "hits"),
+    (&["hits"], "hits"),
+    (&["ultima", "vez"], "last_time"),
+    (&["last", "time"], "last_time"),
+    (&["sube", "tono"], "key_change_up"),
+    (&["subir", "tono"], "key_change_up"),
+    (&["key", "change", "up"], "key_change_up"),
+    (&["key", "up"], "key_change_up"),
+    (&["baja", "tono"], "key_change_down"),
+    (&["bajar", "tono"], "key_change_down"),
+    (&["key", "change", "down"], "key_change_down"),
+    (&["key", "down"], "key_change_down"),
+    (&["sube", "tempo"], "tempo_up"),
+    (&["speed", "up"], "tempo_up"),
+    (&["baja", "tempo"], "tempo_down"),
+    (&["slow", "down"], "tempo_down"),
+    (&["bateria"], "drums"),
+    (&["drums"], "drums"),
+    (&["bajo"], "bass"),
+    (&["bass"], "bass"),
+    (&["guitarra"], "guitar"),
+    (&["guitar"], "guitar"),
+    (&["teclado"], "keys"),
+    (&["teclados"], "keys"),
+    (&["piano"], "keys"),
+    (&["keys"], "keys"),
+    (&["ad", "lib"], "ad_lib"),
+    (&["espontaneo"], "worship_freely"),
+    (&["worship", "freely"], "worship_freely"),
+    (&["preparados"], "get_ready"),
+    (&["get", "ready"], "get_ready"),
+    (&["siguiente", "cancion"], "next_song"),
+    (&["next", "song"], "next_song"),
+    (&["swell"], "swell"),
+];
+
+/// Kinds that are sections (and so take a variant number).
+const SECTION_KINDS: &[&str] = &[
+    "intro",
+    "verse",
+    "pre_chorus",
+    "chorus",
+    "post_chorus",
+    "bridge",
+    "breakdown",
+    "drop",
+    "solo",
+    "outro",
+    "acapella",
+    "instrumental",
+    "interlude",
+    "refrain",
+    "tag",
+    "vamp",
+    "ending",
+    "exhortation",
+    "rap",
+    "turnaround",
+];
+
+/// Variants beyond this are a misheard count, not "Verse 12".
+const MAX_VARIANT: u32 = 9;
+
+fn number_word(token: &str) -> Option<u32> {
+    if let Ok(value) = token.parse::<u32>() {
+        return Some(value);
+    }
+    Some(match token {
+        "uno" | "una" | "one" => 1,
+        "dos" | "two" => 2,
+        "tres" | "three" => 3,
+        "cuatro" | "four" => 4,
+        "cinco" | "five" => 5,
+        "seis" | "six" => 6,
+        "siete" | "seven" => 7,
+        "ocho" | "eight" => 8,
+        _ => return None,
+    })
+}
+
+/// Lowercase, accents off, hyphens joined ("re-frame" → "reframe",
+/// "pre-coro" → "precoro"), other punctuation as spaces.
+fn tokens(text: &str) -> Vec<String> {
+    let mut cleaned = String::with_capacity(text.len());
+    for c in text.chars() {
+        let c = match c {
+            'á' | 'à' | 'ä' | 'â' | 'Á' | 'À' | 'Ä' | 'Â' => 'a',
+            'é' | 'è' | 'ë' | 'ê' | 'É' | 'È' | 'Ë' | 'Ê' => 'e',
+            'í' | 'ì' | 'ï' | 'î' | 'Í' | 'Ì' | 'Ï' | 'Î' => 'i',
+            'ó' | 'ò' | 'ö' | 'ô' | 'Ó' | 'Ò' | 'Ö' | 'Ô' => 'o',
+            'ú' | 'ù' | 'ü' | 'û' | 'Ú' | 'Ù' | 'Ü' | 'Û' => 'u',
+            'ñ' | 'Ñ' => 'n',
+            '-' => continue,
+            c if c.is_alphanumeric() => c.to_ascii_lowercase(),
+            _ => ' ',
+        };
+        cleaned.push(c);
+    }
+    cleaned.split_whitespace().map(str::to_string).collect()
+}
+
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut previous: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut current = vec![i + 1; b.len() + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let substitution = previous[j] + usize::from(ca != cb);
+            current[j + 1] = substitution.min(previous[j + 1] + 1).min(current[j] + 1);
+        }
+        previous = current;
+    }
+    previous[b.len()]
+}
+
+/// A heard word against a dictionary word: exact up to 3 letters (tag, rap,
+/// in), one slip from 4, two from 7.
+fn same_word(heard: &str, word: &str) -> bool {
+    let allowed = match word.chars().count() {
+        0..=3 => 0,
+        4..=6 => 1,
+        _ => 2,
+    };
+    edit_distance(heard, word) <= allowed
+}
+
+/// Fillers that may sit between a phrase's words.
+fn is_filler(token: &str) -> bool {
+    token.chars().count() <= 3 && number_word(token).is_none()
+}
+
+/// The phrase at `start`, if it matches: the index after it.
+fn match_phrase(words: &[String], start: usize, phrase: &[&str]) -> Option<usize> {
+    let mut position = start;
+    for (index, expected) in phrase.iter().enumerate() {
+        if index > 0 && position < words.len() && !same_word(&words[position], expected) {
+            // One filler may sit between two words of a phrase.
+            if is_filler(&words[position]) {
+                position += 1;
+            }
+        }
+        if position >= words.len() || !same_word(&words[position], expected) {
+            return None;
+        }
+        position += 1;
+    }
+    Some(position)
+}
+
+/// The announcement is only a count ("uno, dos, tres, cuatro", "5, 6").
+pub fn is_count(text: &str) -> bool {
+    let words = tokens(text);
+    !words.is_empty() && words.iter().all(|word| number_word(word).is_some())
+}
+
+/// The markers a transcribed announcement names, in order, without repeats.
+pub fn parse_announcement(text: &str) -> Vec<AnnouncedMarker> {
+    let words = tokens(text);
+    // Longest phrases first: "solo guitarra" before "solo", "final grande"
+    // before "final".
+    let mut phrases: Vec<&(&[&str], &str)> = PHRASES.iter().collect();
+    phrases.sort_by_key(|(words, _)| std::cmp::Reverse(words.len()));
+
+    let mut found: Vec<AnnouncedMarker> = Vec::new();
+    let mut position = 0;
+    while position < words.len() {
+        let matched = phrases.iter().find_map(|(phrase, kind)| {
+            match_phrase(&words, position, phrase).map(|end| (end, *kind))
+        });
+        let Some((end, kind)) = matched else {
+            position += 1;
+            continue;
+        };
+        position = end;
+        let mut variant = None;
+        if SECTION_KINDS.contains(&kind) {
+            let numbers: Vec<u32> = words[position..]
+                .iter()
+                .map_while(|word| number_word(word))
+                .collect();
+            let counting = numbers.len() >= 2 && numbers.windows(2).all(|w| w[1] == w[0] + 1);
+            if let Some(&first) = numbers.first() {
+                if !counting && (1..=MAX_VARIANT).contains(&first) {
+                    variant = Some(first as u8);
+                }
+            }
+            position += numbers.len();
+        }
+        let marker = AnnouncedMarker { kind, variant };
+        if found.last() != Some(&marker) {
+            found.push(marker);
+        }
+    }
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parsed(text: &str) -> Vec<(&'static str, Option<u8>)> {
+        parse_announcement(text)
+            .into_iter()
+            .map(|marker| (marker.kind, marker.variant))
+            .collect()
+    }
+
+    // Every case below is a real transcription of a guide track (whisper.cpp
+    // base, 2026-10-17), slips included.
+
+    #[test]
+    fn two_markers_in_one_announcement() {
+        assert_eq!(
+            parsed("Verso 3, Entra batería."),
+            vec![("verse", Some(3)), ("drums_in", None)]
+        );
+    }
+
+    #[test]
+    fn a_count_after_the_section_is_not_its_number() {
+        assert_eq!(parsed("Verso 2, tres, cuatro."), vec![("verse", None)]);
+        assert_eq!(
+            parsed("Pre coro, dos, tres, cuatro."),
+            vec![("pre_chorus", None)]
+        );
+        assert_eq!(parsed("Verse 2, Three, Four."), vec![("verse", None)]);
+        assert_eq!(
+            parsed("Intra, Uno, dos, tres, cuatro."),
+            vec![("intro", None)]
+        );
+    }
+
+    #[test]
+    fn a_lone_number_is_the_variant() {
+        assert_eq!(parsed("Coro Uno."), vec![("chorus", Some(1))]);
+        assert_eq!(parsed("Coro dos."), vec![("chorus", Some(2))]);
+        assert_eq!(parsed("Bridge 1."), vec![("bridge", Some(1))]);
+        assert_eq!(parsed("Verso 1."), vec![("verse", Some(1))]);
+    }
+
+    #[test]
+    fn misheard_words_still_match() {
+        assert_eq!(parsed("Entro."), vec![("intro", None)]);
+        assert_eq!(parsed("Cordo!"), vec![("chorus", None)]);
+        assert_eq!(parsed("Re-frame."), vec![("refrain", None)]);
+        assert_eq!(parsed("Solo ve guitarra."), vec![("guitar_solo", None)]);
+        assert_eq!(
+            parsed("Salida, dos, tres, cuatro, tin, dos, tres, cuatro."),
+            vec![("outro", None)]
+        );
+    }
+
+    #[test]
+    fn cues_in_spanish_and_english() {
+        assert_eq!(
+            parsed("Subir intensidad, Subir intensidad,"),
+            vec![("build", None)]
+        );
+        assert_eq!(parsed("Bajar intensidad."), vec![("ease_down", None)]);
+        assert_eq!(parsed("Toda la banda."), vec![("all_in", None)]);
+        assert_eq!(parsed("Pulsos."), vec![("hits", None)]);
+        assert_eq!(parsed("Suave."), vec![("softly", None)]);
+        assert_eq!(parsed("Drums in."), vec![("drums_in", None)]);
+        assert_eq!(parsed("All in."), vec![("all_in", None)]);
+        assert_eq!(parsed("Slowly build."), vec![("slowly_build", None)]);
+        assert_eq!(parsed("Hits!"), vec![("hits", None)]);
+    }
+
+    #[test]
+    fn sections_in_spanish_and_english() {
+        assert_eq!(parsed("Solo de guitarra."), vec![("guitar_solo", None)]);
+        assert_eq!(parsed("Instrumental."), vec![("instrumental", None)]);
+        assert_eq!(parsed("Interludio."), vec![("interlude", None)]);
+        assert_eq!(parsed("Puente."), vec![("bridge", None)]);
+        assert_eq!(parsed("Final."), vec![("ending", None)]);
+        assert_eq!(parsed("Vamp!"), vec![("vamp", None)]);
+        assert_eq!(parsed("Tag!"), vec![("tag", None)]);
+        assert_eq!(parsed("Breakdown."), vec![("breakdown", None)]);
+        assert_eq!(parsed("Chorus."), vec![("chorus", None)]);
+        assert_eq!(parsed("Interlude."), vec![("interlude", None)]);
+        assert_eq!(parsed("End."), vec![("ending", None)]);
+        assert_eq!(parsed("Outro."), vec![("outro", None)]);
+    }
+
+    #[test]
+    fn a_bare_count_is_recognised_as_one() {
+        assert!(is_count("5, 6, Uno, dos, tres, cuatro, cinco, seis."));
+        assert!(is_count("Uno."));
+        assert!(!is_count("Coro, dos, tres, cuatro."));
+        assert!(!is_count(""));
+    }
+
+    #[test]
+    fn counts_and_unknown_words_name_nothing() {
+        assert!(parsed("Uno.").is_empty());
+        assert!(parsed("5, 6, Uno, dos, tres, cuatro, cinco, seis.").is_empty());
+        assert!(parsed("Repite, dos, tres, cuatro.").is_empty());
+        assert!(parsed("¡Vir frayne!").is_empty());
+        assert!(parsed("").is_empty());
+    }
+}
