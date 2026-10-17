@@ -187,6 +187,54 @@ TEST_CASE("Streaming source reads match legacy in-memory source across block bou
     }
 }
 
+// Una fuente mono pedida en estereo sale por los dos canales, en memoria y en
+// streaming, y una pista que la reproduce tambien. Antes DecodedSource::read
+// duplicaba el mono y acto seguido ponia el segundo canal a cero: los mono
+// sonaban solo por la izquierda, y el mezclador lo tapaba con una heuristica
+// ("fuente de un solo lado") que tambien centraba estereos de un solo lado.
+TEST_CASE("a mono source fills both channels of a stereo read") {
+    constexpr int kSampleRate = 48000;
+    constexpr Frame kFrames = kDefaultBlockFrames * 2 + 333;
+    const auto samples = make_reference_audio(kFrames, 1);
+
+    SourceManager memory_manager;
+    SourceManager streaming_manager;
+    memory_manager.register_source("mono", "");
+    streaming_manager.register_source("mono", "streaming-mono.wav");
+    REQUIRE(memory_manager.store_decoded_source(
+        "mono", samples, 1, kSampleRate, kFrames).is_ok());
+    REQUIRE(streaming_manager.store_decoded_source(
+        "mono", samples, 1, kSampleRate, kFrames).is_ok());
+    const auto memory_source = memory_manager.get_shared("mono");
+    const auto streaming_source = streaming_manager.get_shared("mono");
+    REQUIRE(streaming_source->is_streaming());
+
+    constexpr Frame kStart = kDefaultBlockFrames - 100;
+    constexpr int kRead = 512;
+    require_ready_range(streaming_manager, "mono", kStart, kRead);
+    for (const auto& planar : {read_planar(*memory_source, kStart, kRead),
+                               read_planar(*streaming_source, kStart, kRead)}) {
+        float peak_l = 0.0f;
+        for (int f = 0; f < kRead; ++f) {
+            peak_l = std::max(peak_l, std::abs(planar[static_cast<std::size_t>(f * 2)]));
+            CHECK(planar[static_cast<std::size_t>(f * 2 + 1)]
+                  == planar[static_cast<std::size_t>(f * 2)]);
+        }
+        CHECK(peak_l > 0.1f);
+    }
+
+    for (const auto* manager : {&memory_manager, &streaming_manager}) {
+        const auto block = render_track_block(*manager, "mono", kStart, kRead);
+        float peak_r = 0.0f;
+        for (int f = 0; f < kRead; ++f) {
+            peak_r = std::max(peak_r, std::abs(block[static_cast<std::size_t>(f * 2 + 1)]));
+            CHECK(block[static_cast<std::size_t>(f * 2 + 1)]
+                  == block[static_cast<std::size_t>(f * 2)]);
+        }
+        CHECK(peak_r > 0.05f);
+    }
+}
+
 TEST_CASE("try_install_from_cache_file reuses a previously written PCM cache") {
     constexpr int kChannels = 2;
     constexpr int kSampleRate = 48000;

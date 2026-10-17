@@ -54,6 +54,11 @@ int DecodedSource::read(Frame offset_frames, int frame_count,
         std::min<Frame>(frame_count, duration_frames_ - offset_frames));
 
     int ch_copy = std::min(out_channels, channel_count_);
+    // Canales de salida con senal: una fuente mono pedida en estereo se
+    // duplica en el segundo; solo los que sobren a partir de ahi van a cero.
+    // (Antes la duplicacion se hacia y se volvia a poner a cero justo despues:
+    // una fuente mono salia solo por la izquierda.)
+    const int ch_filled = (channel_count_ == 1 && out_channels >= 2) ? 2 : ch_copy;
 
     if (cache_) {
         int copied = 0;
@@ -143,7 +148,7 @@ int DecodedSource::read(Frame offset_frames, int frame_count,
             copied += chunk;
         }
 
-        for (int ch = ch_copy; ch < out_channels; ++ch)
+        for (int ch = ch_filled; ch < out_channels; ++ch)
             std::fill(out[ch], out[ch] + copied, 0.f);
         return copied;
     }
@@ -164,7 +169,7 @@ int DecodedSource::read(Frame offset_frames, int frame_count,
     }
 
     // Zero any extra requested output channels.
-    for (int ch = ch_copy; ch < out_channels; ++ch)
+    for (int ch = ch_filled; ch < out_channels; ++ch)
         std::fill(out[ch], out[ch] + readable, 0.f);
 
     return readable;

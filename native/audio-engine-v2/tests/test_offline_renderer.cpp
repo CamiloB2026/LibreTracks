@@ -253,6 +253,50 @@ TEST_CASE("offline render mixes only the chosen tracks, with their gain and pan"
     }
 }
 
+// Un estereo con un lado en silencio se respeta (no salta al centro) y un mono
+// suena por los dos lados y lo mueve el paneo: la decision es por numero de
+// canales de la fuente, igual que en la reproduccion.
+TEST_CASE("offline render: stereo keeps a silent side, mono plays on both") {
+    TempDir dir;
+    const std::string left_only = dir.file("left_only.wav");
+    const std::string mono = dir.file("mono.wav");
+    std::vector<float> lo(static_cast<std::size_t>(48000) * 2, 0.0f);
+    for (std::size_t f = 0; f < 48000; ++f) lo[f * 2] = 0.2f;
+    write_float_wav(left_only, lo, 2, 48000);
+    write_float_wav(mono, std::vector<float>(48000, 0.3f), 1, 48000);
+
+    SUBCASE("stereo with the right side silent stays on the left") {
+        const json song = song_json(json::array({track_json("t")}),
+                                    json::array({clip_json("c", "t", left_only, 0.0, 1.0)}));
+        auto req = base_request(song, 0.0, 1.0);
+        req.outputs.push_back({dir.file("mix.wav"), {"t"}});
+        REQUIRE(render_offline(req).is_ok());
+        const auto out = read_wav(dir.file("mix.wav"));
+        CHECK(out.at(24000, 0) == doctest::Approx(0.2f));
+        CHECK(out.at(24000, 1) == doctest::Approx(0.0f));
+    }
+
+    SUBCASE("mono plays on both sides, and the pan moves it") {
+        const json song = song_json(
+            json::array({track_json("c", 1.0, 0.0), track_json("r", 1.0, 1.0)}),
+            json::array({clip_json("cc", "c", mono, 0.0, 1.0),
+                         clip_json("cr", "r", mono, 0.0, 1.0)}));
+        auto centred = base_request(song, 0.0, 1.0);
+        centred.outputs.push_back({dir.file("centred.wav"), {"c"}});
+        REQUIRE(render_offline(centred).is_ok());
+        const auto c = read_wav(dir.file("centred.wav"));
+        CHECK(c.at(24000, 0) == doctest::Approx(0.3f));
+        CHECK(c.at(24000, 1) == doctest::Approx(0.3f));
+
+        auto right = base_request(song, 0.0, 1.0);
+        right.outputs.push_back({dir.file("right.wav"), {"r"}});
+        REQUIRE(render_offline(right).is_ok());
+        const auto r = read_wav(dir.file("right.wav"));
+        CHECK(r.at(24000, 0) == doctest::Approx(0.0f));
+        CHECK(r.at(24000, 1) == doctest::Approx(0.3f));
+    }
+}
+
 TEST_CASE("offline render: a folder expands to its tracks and carries its gain") {
     TempDir dir;
     const std::string a = dir.file("a.wav");

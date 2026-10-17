@@ -280,10 +280,17 @@ bool TrackRenderer::prepare_clip_block(const Clip&          clip,
 // ────────────────────────────────────────────────────────────────────────────
 
 int TrackRenderer::render_path_direct(const ClipBlock& cb) noexcept {
+    // Una fuente MONO suena por los dos lados (el paneo la mueve despues); una
+    // ESTEREO se lee tal cual, aunque un lado venga en silencio. La decision es
+    // por clip y por el numero de canales de la fuente, como en Varispeed y
+    // Stretched: el mezclador ya no adivina "fuente de un lado" por silencio.
     float* read_into[2] = { scratch_l_.data(), scratch_r_.data() };
+    const bool mono_source = cb.src->channel_count() == 1;
     const int copied = cb.src->read(cb.source_frame, cb.frames_to_read,
-                                     read_into, 2);
+                                     read_into, mono_source ? 1 : 2);
     if (copied <= 0) return 0;
+    if (mono_source)
+        std::copy_n(scratch_l_.begin(), copied, scratch_r_.begin());
     if (copied < cb.frames_to_read) {
         std::fill(scratch_l_.begin() + copied,
                   scratch_l_.begin() + cb.frames_to_read, 0.0f);

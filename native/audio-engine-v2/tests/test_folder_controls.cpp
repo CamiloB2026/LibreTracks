@@ -565,7 +565,8 @@ TEST_CASE("folder_track_does_not_produce_audio") {
 
 namespace {
 
-// Fuente estereo con solo el canal izquierdo: lo que entrega una pista mono.
+// Fuente ESTEREO con solo el canal izquierdo (p. ej. una guitarra grabada a un
+// lado). No es una pista mono: el derecho debe seguir en silencio.
 void add_left_only_source(SourceManager& sources, const Id& id, float amplitude = 0.5f,
                           Frame dur = kSR * 4) {
     auto samples = test::make_stereo_sine(dur, 440.0, amplitude);
@@ -573,6 +574,17 @@ void add_left_only_source(SourceManager& sources, const Id& id, float amplitude 
         samples[static_cast<std::size_t>(f * 2 + 1)] = 0.0f;
     sources.register_source(id, "");
     REQUIRE(sources.store_decoded_source(id, std::move(samples), 2, kSR, dur).is_ok());
+}
+
+// Fuente MONO de verdad: un solo canal.
+void add_mono_source(SourceManager& sources, const Id& id, float amplitude = 0.5f,
+                     Frame dur = kSR * 4) {
+    const auto stereo = test::make_stereo_sine(dur, 440.0, amplitude);
+    std::vector<float> mono(static_cast<std::size_t>(dur));
+    for (Frame f = 0; f < dur; ++f)
+        mono[static_cast<std::size_t>(f)] = stereo[static_cast<std::size_t>(f * 2)];
+    sources.register_source(id, "");
+    REQUIRE(sources.store_decoded_source(id, std::move(mono), 1, kSR, dur).is_ok());
 }
 
 } // namespace
@@ -619,7 +631,9 @@ TEST_CASE("track_meter_follows_pan_for_a_stereo_track") {
     CHECK(meters[1].left_peak == doctest::Approx(0.5f * meters[1].right_peak).epsilon(0.02));
 }
 
-TEST_CASE("track_meter_places_a_one_sided_source_with_the_pan") {
+// Un estereo con un lado en silencio NO salta al centro (antes el mezclador lo
+// detectaba por bloque y copiaba el lado con senal encima del otro).
+TEST_CASE("stereo_source_with_a_silent_side_is_not_duplicated") {
     SourceManager sources;
     add_left_only_source(sources, "src-0", 0.5f);
     auto session = std::make_shared<Session>(folder_session(1));
@@ -628,23 +642,91 @@ TEST_CASE("track_meter_places_a_one_sided_source_with_the_pan") {
     Mixer mixer(session, &sources, &clock, &scheduler);
     clock.play();
 
-    // Centrada, una fuente de un solo lado suena (y se mide) en los dos.
     std::vector<float> left, right;
     render_blocks(mixer, clock, 10, left, right);
     auto meters = mixer.track_meters();
     REQUIRE(meters.size() == 2);
+    CHECK(peak(left) > 0.4f);
+    CHECK(peak(right) < 1.0e-6f);
     CHECK(meters[1].left_peak > 0.4f);
-    CHECK(meters[1].right_peak == doctest::Approx(meters[1].left_peak));
+    CHECK(meters[1].right_peak < 1.0e-6f);
 
-    // Paneada a la derecha: solo la derecha, aunque la fuente venga por la L.
+    // Paneada a la derecha: el lado izquierdo (el unico con senal) se apaga y
+    // el derecho sigue en silencio. Con la regla vieja sonaba por la derecha.
     mixer.set_track_pan("child-0", 1.0f);
     render_blocks(mixer, clock, 30, left, right);
     meters = mixer.track_meters();
-    CHECK(meters[1].left_peak < 0.005f);
-    CHECK(meters[1].right_peak > 0.4f);
-    // Y el medidor coincide con lo que sale por el bus.
     CHECK(peak(left) < 0.005f);
+    CHECK(peak(right) < 1.0e-6f);
+    CHECK(meters[1].right_peak < 1.0e-6f);
+}
+
+// Una fuente MONO suena por los dos lados y el paneo la mueve.
+TEST_CASE("mono_source_sounds_on_both_sides_and_follows_the_pan") {
+    SourceManager sources;
+    add_mono_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    clock.play();
+
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 10, left, right);
+    auto meters = mixer.track_meters();
+    REQUIRE(meters.size() == 2);
+    CHECK(peak(left) > 0.4f);
+    CHECK(peak(right) == doctest::Approx(peak(left)));
+    CHECK(meters[1].left_peak > 0.4f);
+    CHECK(meters[1].right_peak == doctest::Approx(meters[1].left_peak));
+
+    mixer.set_track_pan("child-0", 1.0f);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(peak(left) < 0.005f);
+    CHECK(peak(right) > 0.4f);
+    CHECK(meters[1].left_peak < 0.005f);
     CHECK(meters[1].right_peak == doctest::Approx(peak(right)).epsilon(0.02));
+}
+
+// La decision es por clip: en la misma pista, un clip mono suena por los dos
+// lados y uno estereo de un solo lado se queda en su lado.
+TEST_CASE("mono_or_stereo_is_decided_per_clip_not_per_track") {
+    SourceManager sources;
+    add_mono_source(sources, "src-mono", 0.5f, kSR * 2);
+    add_left_only_source(sources, "src-left", 0.5f, kSR * 2);
+    Session session;
+    session.id = "session";
+    session.sample_rate = kSR;
+    session.sources.push_back(Source{"src-mono", ""});
+    session.sources.push_back(Source{"src-left", ""});
+    Song song;
+    song.id = "song";
+    song.start_frame = 0;
+    song.end_frame = kSR * 8;
+    Track track;
+    track.id = "t";
+    track.name = "T";
+    track.kind = TrackKind::Audio;
+    track.clips.push_back(Clip{"clip-mono", "src-mono", 0, 0, kSR * 2});
+    track.clips.push_back(Clip{"clip-left", "src-left", kSR * 2, 0, kSR * 2});
+    song.tracks.push_back(track);
+    session.songs.push_back(song);
+    auto shared = std::make_shared<Session>(session);
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(shared, &sources, &clock, &scheduler);
+    clock.play();
+
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 10, left, right);   // dentro del clip mono
+    CHECK(peak(left) > 0.4f);
+    CHECK(peak(right) == doctest::Approx(peak(left)));
+
+    clock.seek(kSR * 2 + kBlock * 4);              // dentro del clip estereo
+    render_blocks(mixer, clock, 10, left, right);
+    CHECK(peak(left) > 0.4f);
+    CHECK(peak(right) < 1.0e-6f);
 }
 
 TEST_CASE("track_meter_stays_pre_fader") {

@@ -616,14 +616,9 @@ Result<void> render_track(RenderContext& ctx, const Song& song, const Track& tra
 
         if (any) {
             // Mixer phase B for one track, without the per-block ramps (the
-            // controls do not move during a render).
-            float peak_l = 0.0f, peak_r = 0.0f;
-            for (int f = 0; f < n; ++f) {
-                peak_l = std::max(peak_l, std::abs(s.bus_l[static_cast<std::size_t>(f)]));
-                peak_r = std::max(peak_r, std::abs(s.bus_r[static_cast<std::size_t>(f)]));
-            }
-            const bool left_only = peak_l > 1.0e-7f && peak_r <= 1.0e-7f;
-            const bool right_only = peak_r > 1.0e-7f && peak_l <= 1.0e-7f;
+            // controls do not move during a render). A mono source is already
+            // on both sides (decode_window duplicates it); a stereo one is kept
+            // as it is even when one side is silent, as playback does.
             const bool mono_downmix = apply_mixer && track.mono_downmix;
             const float left_gain = pan_left_gain(track_pan);
             const float right_gain = pan_right_gain(track_pan);
@@ -647,10 +642,6 @@ Result<void> render_track(RenderContext& ctx, const Song& song, const Track& tra
                     const float summed = 0.5f * (src_l + src_r);
                     src_l = summed;
                     src_r = summed;
-                } else if (left_only) {
-                    src_r = src_l;
-                } else if (right_only) {
-                    src_l = src_r;
                 }
                 out_l[f] += src_l * gain * left_gain;
                 out_r[f] += src_r * gain * right_gain;
