@@ -2500,6 +2500,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "libretracks-analysis"
+version = "0.0.1"
+dependencies = [
+ "hound",
+ "serde",
+]
+
+[[package]]
 name = "libretracks-audio"
 version = "0.0.1"
 dependencies = [
@@ -2545,6 +2553,7 @@ dependencies = [
  "hound",
  "jni",
  "libc",
+ "libretracks-analysis",
  "libretracks-audio",
  "libretracks-cloud",
  "libretracks-core",

@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { clientToZoomedCoords } from "../../../shared/uiZoom";
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { openRenderSong } from "../render/renderStore";
+import { openSongAnalysis } from "../songAnalysis/songAnalysisStore";
 import { ArrangementBadge } from "../structure/ArrangementBadge";
 import { openStructureEditor } from "../structure/structureEditor";
 import {
@@ -344,6 +345,16 @@ export function CompactSongHeaderComponent({
                 }}
               >
                 {t("transport.menu.renderSong")}
+              </button>
+              <button
+                type="button"
+                className="lt-compact-clip-menu-item"
+                onClick={() => {
+                  setContextMenu(null);
+                  openSongAnalysis({ regionId: region.id, regionName: region.name });
+                }}
+              >
+                {t("transport.menu.analyzeSong")}
               </button>
               <div className="lt-compact-clip-menu-divider" aria-hidden="true" />
               <button

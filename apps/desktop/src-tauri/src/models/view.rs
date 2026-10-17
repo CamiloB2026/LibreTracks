@@ -1377,6 +1377,22 @@ pub(crate) fn musical_position_summary(
     }
 }
 
+/// How far (in bars) a time signature marker may sit from a bar line and still
+/// be on it: markers placed from audio land a few ms off the rounded grid.
+const BAR_BOUNDARY_TOLERANCE: f64 = 0.02;
+
+/// Bar count at a time signature marker. The engine's metronome restarts the
+/// bar there (`timing_segment_start`), so the count jumps to the next whole
+/// bar, unless it is already within the tolerance of one.
+fn bar_count_at_timing_boundary(cumulative_bars: f64) -> f64 {
+    let nearest = cumulative_bars.round();
+    if (cumulative_bars - nearest).abs() <= BAR_BOUNDARY_TOLERANCE {
+        nearest
+    } else {
+        (cumulative_bars - 1.0e-9).ceil()
+    }
+}
+
 #[derive(Debug, Clone)]
 struct TimingRegion {
     start_seconds: f64,
@@ -1418,6 +1434,10 @@ fn build_timing_regions(song: &Song, horizon_seconds: f64) -> Vec<TimingRegion> 
             }
             if let Some(next_signature) = boundary_signature {
                 time_signature = next_signature;
+                // A second marker at the same spot: the bar still restarts.
+                if start_seconds > 0.0 {
+                    cumulative_bars_end = bar_count_at_timing_boundary(cumulative_bars_end);
+                }
             }
             continue;
         }
@@ -1430,6 +1450,13 @@ fn build_timing_regions(song: &Song, horizon_seconds: f64) -> Vec<TimingRegion> 
                 / f64::from(TIMELINE_TIMEBASE_HZ);
         let bar_duration_seconds = beat_duration_seconds * f64::from(beats_per_bar);
         cumulative_bars_end += (boundary_seconds - start_seconds).max(0.0) / bar_duration_seconds;
+        // A time signature marker starts a bar, as the metronome and the
+        // timeline grid do (`barCountAtTimingBoundary` in
+        // packages/shared/src/timelineMath.ts). A tempo marker alone keeps
+        // the beat phase going.
+        if boundary_signature.is_some() {
+            cumulative_bars_end = bar_count_at_timing_boundary(cumulative_bars_end);
+        }
         regions.push(TimingRegion {
             start_seconds,
             end_seconds: boundary_seconds,

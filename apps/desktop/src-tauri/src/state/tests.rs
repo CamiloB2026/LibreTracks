@@ -3,7 +3,7 @@ use std::{fs, path::Path, thread, time::Duration};
 use libretracks_audio::{JumpTrigger, PendingMarkerJump, PlaybackState, TransitionType};
 use libretracks_core::{
     source_seconds_at_view, validate_song, warp_timeline_seconds_at, Clip, Marker, MarkerKind,
-    Song, SongRegion, TempoMarker, Track, TrackKind,
+    Song, SongRegion, TempoMarker, TimeSignatureMarker, Track, TrackKind,
 };
 use libretracks_project::{
     create_song_folder, export_region_as_package, generate_waveform_summary, load_song, save_song,
@@ -205,6 +205,30 @@ fn musical_position_summary_uses_tempo_markers_beyond_song_duration() {
     assert_eq!(summary.beat_in_bar, 2);
     assert_eq!(summary.sub_beat, 0);
     assert_eq!(summary.display, "7.2.00");
+}
+
+#[test]
+fn musical_position_summary_restarts_the_bar_at_a_time_signature_marker_off_the_grid() {
+    // 120 BPM 4/4: bars of 2 s. A time signature marker at 5 s (mid bar 3)
+    // starts bar 4 even with the same meter, as the engine's metronome does.
+    // A tempo marker alone keeps the beat phase, like the timeline grid.
+    let mut song = demo_song();
+    song.bpm = 120.0;
+    song.time_signature_markers = vec![TimeSignatureMarker {
+        id: "sig_mid_bar".into(),
+        start_seconds: 5.0,
+        signature: "4/4".into(),
+    }];
+    assert_eq!(musical_position_summary(&song, 5.0).display, "4.1.00");
+    assert_eq!(musical_position_summary(&song, 5.5).display, "4.2.00");
+
+    song.time_signature_markers.clear();
+    song.tempo_markers = vec![TempoMarker {
+        id: "tempo_mid_bar".into(),
+        start_seconds: 5.0,
+        bpm: 60.0,
+    }];
+    assert_eq!(musical_position_summary(&song, 5.0).display, "3.3.00");
 }
 
 fn demo_song_with_two_sections() -> Song {

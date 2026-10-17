@@ -1,0 +1,11 @@
+[package]
+name = "libretracks-analysis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+
+[dev-dependencies]
+hound = "3"

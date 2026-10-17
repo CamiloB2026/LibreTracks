@@ -19,6 +19,12 @@ export type TimelineRegion = {
   endSeconds: number;
   bpm: number;
   timeSignature: string;
+  /**
+   * A time signature marker sits at this region's start, so it begins a new
+   * bar even when the meter does not change (the engine's metronome restarts
+   * the count there too). A tempo marker alone keeps the beat phase going.
+   */
+  startsBar?: boolean;
 };
 
 export type TimelineGrid = {
@@ -58,6 +64,25 @@ type ResolvedTimelineRegion = TimelineRegion & {
 };
 
 const MUSICAL_POSITION_EPSILON = 1e-9;
+/**
+ * How far (in bars) a time signature marker may sit from a bar line and still
+ * count as on it. Markers placed from audio ("Analizar canción") land on the
+ * click's real downbeat, a few milliseconds off the rounded tempo's grid.
+ */
+const BAR_BOUNDARY_TOLERANCE = 0.02;
+
+/**
+ * Bar count where a time signature marker starts a new bar. Within the
+ * tolerance of a bar line it IS that bar line, instead of adding a sliver of
+ * a bar before it.
+ */
+export function barCountAtTimingBoundary(cumulativeBars: number): number {
+  const nearest = Math.round(cumulativeBars);
+  if (Math.abs(cumulativeBars - nearest) <= BAR_BOUNDARY_TOLERANCE) {
+    return nearest;
+  }
+  return Math.ceil(cumulativeBars - MUSICAL_POSITION_EPSILON);
+}
 
 export function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -516,7 +541,13 @@ export function buildVisibleTimelineGrid(params: TimelineGridParams): TimelineGr
       if (seconds < region.startSeconds - timebaseFramesToSeconds(1)) {
         continue;
       }
-      if (seconds >= region.endSeconds - timebaseFramesToSeconds(1)) {
+      // A beat a hair before the next region's start is that region's first
+      // bar line (see barCountAtTimingBoundary): drawing both doubles it.
+      const endGuardSeconds = Math.max(
+        timebaseFramesToSeconds(1),
+        BAR_BOUNDARY_TOLERANCE * region.beatDurationSeconds * region.beatsPerBar,
+      );
+      if (seconds >= region.endSeconds - endGuardSeconds) {
         continue;
       }
 
@@ -770,6 +801,7 @@ function normalizeTimelineRegions(
       endSeconds: Math.max(0, region.endSeconds),
       bpm: clampPositive(region.bpm, params.bpm),
       timeSignature: region.timeSignature || params.timeSignature,
+      startsBar: region.startsBar ?? false,
     }))
     .filter((region) => region.endSeconds > region.startSeconds)
     .sort((left, right) => left.startSeconds - right.startSeconds);
@@ -779,6 +811,7 @@ function normalizeTimelineRegions(
     endSeconds: Math.max(0, params.durationSeconds),
     bpm: clampPositive(params.bpm, 120),
     timeSignature: params.timeSignature,
+    startsBar: false,
   };
 
   const authoritativeRegions = inputRegions.length ? inputRegions : [fallbackRegion];
@@ -793,8 +826,13 @@ function normalizeTimelineRegions(
     const barFrames = beatFrames * beatsPerBar;
     const beatDurationSeconds = timebaseFramesToSeconds(beatFrames);
 
-    if (previousTimeSignature && previousTimeSignature !== region.timeSignature) {
-      cumulativeBarsStart = Math.ceil(cumulativeBarsStart - MUSICAL_POSITION_EPSILON);
+    // A meter change, or any time signature marker, starts a bar. A tempo
+    // change alone keeps the beat phase (see the "mid-beat" test).
+    if (
+      previousTimeSignature &&
+      (previousTimeSignature !== region.timeSignature || region.startsBar)
+    ) {
+      cumulativeBarsStart = barCountAtTimingBoundary(cumulativeBarsStart);
     }
 
     resolvedRegions.push({

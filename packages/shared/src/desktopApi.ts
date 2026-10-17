@@ -1389,6 +1389,99 @@ export async function listenToLevelSongsProgress(
   });
 }
 
+// "Analizar canción": tempo and meter from the song's click track. See
+// docs/plans/song-analysis/. Positions in `segments` and `warnings` are seconds
+// from the song start; the proposal's markers are absolute session seconds.
+
+export type ClickWarningKind =
+  | "noClick"
+  | "noAccent"
+  | "clickGap"
+  | "variableTempo"
+  | "irregularBar"
+  | "compoundGuess";
+
+export type ClickTempoSegment = {
+  startSeconds: number;
+  /** Quarter-note BPM, like the song's. */
+  bpm: number;
+  beatsPerBar: number;
+  beatUnit: number;
+  bars: number;
+};
+
+export type ClickAnalysis = {
+  segments: ClickTempoSegment[];
+  warnings: { seconds: number; kind: ClickWarningKind }[];
+  beatCount: number;
+  /** false: the click has no accent and the bar start is a guess. */
+  downbeatKnown: boolean;
+};
+
+export type ProposedTempoMarker = {
+  startSeconds: number;
+  bpm: number;
+  /** Puts back the tempo the next song had; not part of the analysis. */
+  restoresNextSong: boolean;
+};
+
+export type ProposedSignatureMarker = {
+  startSeconds: number;
+  signature: string;
+  restoresNextSong: boolean;
+};
+
+export type TempoProposal = {
+  tempoMarkers: ProposedTempoMarker[];
+  signatureMarkers: ProposedSignatureMarker[];
+  currentBpm: number;
+  currentSignature: string;
+  /** The song already has exactly these markers. */
+  unchanged: boolean;
+};
+
+export type AnalyzeSongTempoResult = {
+  cancelled: boolean;
+  regionId: string;
+  regionStartSeconds: number;
+  analysis: ClickAnalysis | null;
+  proposal: TempoProposal | null;
+  missingFiles: string[];
+};
+
+export async function analyzeSongTempo(request: {
+  regionId: string;
+  trackIds: string[];
+}): Promise<AnalyzeSongTempoResult> {
+  return invokeCommand<AnalyzeSongTempoResult>("analyze_song_tempo", { request });
+}
+
+export async function cancelAnalyzeSongTempo(): Promise<void> {
+  await invokeCommand<void>("cancel_analyze_song_tempo");
+}
+
+export async function listenToSongAnalysisProgress(
+  handler: (event: { fraction: number }) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<{ fraction: number }>("song-analysis-progress", (event) => {
+    handler(event.payload);
+  });
+}
+
+/** Replaces the tempo and meter markers inside the song: one undo step. */
+export async function applySongTempoAnalysis(
+  regionId: string,
+  tempoMarkers: ProposedTempoMarker[],
+  signatureMarkers: ProposedSignatureMarker[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("apply_song_tempo_analysis", {
+    regionId,
+    tempoMarkers,
+    signatureMarkers,
+  });
+}
+
 // Export the WHOLE session as a single portable .ltset (every region + library
 // + automation + waveforms, and — in full mode — the clip audio). The "build it
 // at home, open it at the venue" flow. The native save dialog runs on the Rust

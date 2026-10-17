@@ -268,6 +268,7 @@ import {
 } from "./panels/ExportSongModal";
 import { RenderSongModal } from "./render/RenderSongModal";
 import { LevelSongsModal } from "./levelSongs/LevelSongsModal";
+import { SongAnalysisModal } from "./songAnalysis/SongAnalysisModal";
 import { LevelSongsMenuItem } from "./levelSongs/LevelSongsMenuItem";
 import { ExportSessionModal } from "./panels/ExportSessionModal";
 import { beginExportWithChoice, cancelExportChoice, CloudLandingButton, CloudMenuItem, CloudSurfaces, confirmSessionExport, confirmSongExport, importSessionWithChoice, importSongWithChoice, useCloudStore } from "./cloud";
@@ -8225,6 +8226,7 @@ export function TransportPanelContent() {
 
             <RenderSongModal />
             <LevelSongsModal onApplied={applyPlaybackSnapshot} />
+            <SongAnalysisModal onApplied={applyPlaybackSnapshot} />
 
             <ExportSessionModal
               isOpen={isExportSessionModalOpen}

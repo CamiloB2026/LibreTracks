@@ -94,6 +94,7 @@ import { colorPickerActions } from "./colorPickerMenu";
 import { clipContextMenuActions } from "./clipMenu";
 import type { ExportSongTarget } from "../panels/ExportSongModal";
 import { openRenderSong } from "../render/renderStore";
+import { openSongAnalysis } from "../songAnalysis/songAnalysisStore";
 import { openStructureEditor } from "../structure/structureEditor";
 import type { ShortcutActionId } from "../keyboard/actions";
 import { createVideoMenus } from "./videoMenus";
@@ -707,6 +708,12 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
         label: t("transport.menu.renderSong"),
         onSelect: () => {
           openRenderSong({ regionId: region.id, regionName: region.name });
+        },
+      },
+      {
+        label: t("transport.menu.analyzeSong"),
+        onSelect: () => {
+          openSongAnalysis({ regionId: region.id, regionName: region.name });
         },
       },
       {

@@ -2123,11 +2123,14 @@ export function buildSongTempoRegions(
   let startSeconds = 0;
   let bpm = getSongBaseBpm(song);
   let timeSignature = getSongBaseTimeSignature(song);
+  // A time signature marker at the current start: the grid starts a bar there.
+  let startsBar = false;
 
   for (const marker of boundaries) {
     if (marker.startSeconds <= startSeconds) {
       bpm = marker.bpm ?? bpm;
       timeSignature = marker.timeSignature ?? timeSignature;
+      startsBar ||= marker.timeSignature !== null && startSeconds > 0;
       continue;
     }
 
@@ -2139,6 +2142,7 @@ export function buildSongTempoRegions(
       endSeconds: marker.startSeconds,
       bpm: displayBpm,
       timeSignature,
+      startsBar,
       transposeSemitones: 0,
       key: null,
       warpEnabled: false,
@@ -2149,6 +2153,7 @@ export function buildSongTempoRegions(
     startSeconds = marker.startSeconds;
     bpm = marker.bpm ?? bpm;
     timeSignature = marker.timeSignature ?? timeSignature;
+    startsBar = marker.timeSignature !== null;
   }
 
   const displayBpm = applyVarispeedBpmAt(song, startSeconds, bpm);
@@ -2159,6 +2164,7 @@ export function buildSongTempoRegions(
     endSeconds: Math.max(startSeconds, SONG_TEMPO_REGION_VISUAL_END_SECONDS),
     bpm: displayBpm,
     timeSignature,
+    startsBar,
     transposeSemitones: 0,
     key: null,
     warpEnabled: false,

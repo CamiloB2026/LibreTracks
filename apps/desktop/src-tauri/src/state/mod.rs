@@ -73,6 +73,7 @@ mod video_audio;
 mod regions;
 mod session;
 pub use session::ExistingProjectDir;
+mod song_analysis;
 mod song_edit;
 mod song_reorder;
 mod song_structure;

@@ -197,7 +197,10 @@
     "save_settings"
   ],
   "blocked": [
+    "analyze_song_tempo",
     "answer_video_import_question",
+    "apply_song_tempo_analysis",
+    "cancel_analyze_song_tempo",
     "cancel_measure_song_loudness",
     "cancel_render_song_audio",
     "create_audio_tracks_with_clips",

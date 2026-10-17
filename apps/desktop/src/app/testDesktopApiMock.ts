@@ -1288,6 +1288,30 @@ export const testDesktopApiMock = {
     missingFiles: [] as string[],
   }),
   cancelMeasureSongLoudness: async () => {},
+  analyzeSongTempo: async (request: { regionId: string; trackIds: string[] }) => ({
+    cancelled: false,
+    regionId: request.regionId,
+    regionStartSeconds:
+      state.song.regions.find((region) => region.id === request.regionId)?.startSeconds ?? 0,
+    analysis: {
+      segments: [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }],
+      warnings: [],
+      beatCount: 32,
+      downbeatKnown: true,
+    },
+    proposal: {
+      tempoMarkers: [],
+      signatureMarkers: [],
+      currentBpm: state.song.bpm,
+      currentSignature: state.song.timeSignature,
+      unchanged: true,
+    },
+    missingFiles: [] as string[],
+  }),
+  cancelAnalyzeSongTempo: async () => {},
+  listenToSongAnalysisProgress: async (_handler: (event: { fraction: number }) => void) =>
+    () => {},
+  applySongTempoAnalysis: async () => clone(buildSnapshot()),
   listenToLevelSongsProgress: async (
     _handler: (event: { fraction: number; songsDone: number; songCount: number }) => void,
   ) => () => {},
