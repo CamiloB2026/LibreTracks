@@ -459,6 +459,12 @@ const es = {
       audioMulticoreProcessing: "Procesamiento multinúcleo",
       audioMulticoreProcessingHint:
         "Distribuye el procesamiento de audio entre varios núcleos del procesador para dar más margen a las sesiones exigentes. Recomendado.",
+      trackMeterMode: "Vúmetros de pista",
+      trackMeterModeHint:
+        "Dónde miden los vúmetros de pista y de carpeta. Post-fader, como en Ableton: una pista muteada no marca. El vúmetro master no cambia.",
+      trackMeterModePostFader: "Post-fader (paneo, volumen, mute y solo)",
+      trackMeterModePostPan: "Post-paneo (antes del volumen)",
+      trackMeterModePreFader: "Pre-fader (entrada de la pista)",
       diagnosticsTitle: "Registro de errores",
       diagnosticsDescription:
         "Si la aplicación se congela o falla, envíanos este registro para encontrar la causa. Solo guarda errores — sin audio ni datos personales.",
@@ -1207,6 +1213,7 @@ const es = {
         "Comportamiento de pistas al importar actualizado.",
       pauseAtSongEndUpdated: "Pausa al terminar la canción actualizada.",
       vampBetweenSongsUpdated: "Vamp entre canciones actualizado.",
+      trackMeterModeUpdated: "Vúmetros de pista actualizados.",
       fadeOutStopUpdated: "Duración del fade out actualizada.",
       midiSettingsUpdated: "Ajustes MIDI actualizados.",
       referenceImportedAudioUpdated:

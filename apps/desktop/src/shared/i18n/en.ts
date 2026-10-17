@@ -468,6 +468,12 @@ const en = {
       audioMulticoreProcessing: "Multicore processing",
       audioMulticoreProcessingHint:
         "Distributes audio processing across multiple CPU cores to give demanding sessions more headroom. Recommended.",
+      trackMeterMode: "Track meters",
+      trackMeterModeHint:
+        "Where track and folder meters measure. Post-fader, like Ableton: a muted track reads silent. The master meter is not affected.",
+      trackMeterModePostFader: "Post-fader (pan, volume, mute and solo)",
+      trackMeterModePostPan: "Post-pan (before the volume)",
+      trackMeterModePreFader: "Pre-fader (track input)",
       diagnosticsTitle: "Error log",
       diagnosticsDescription:
         "If the app freezes or misbehaves, send us this log so we can find the cause. It records errors only — no audio or personal data.",
@@ -1185,6 +1191,7 @@ const en = {
       importMergeMatchingTracksUpdated: "Import track behaviour updated.",
       pauseAtSongEndUpdated: "Pause at song end updated.",
       vampBetweenSongsUpdated: "Vamp between songs updated.",
+      trackMeterModeUpdated: "Track meters updated.",
       fadeOutStopUpdated: "Fade out length updated.",
       midiSettingsUpdated: "MIDI settings updated.",
       referenceImportedAudioUpdated: "Audio import behaviour updated.",

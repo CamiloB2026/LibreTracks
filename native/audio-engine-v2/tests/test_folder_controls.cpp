@@ -729,7 +729,52 @@ TEST_CASE("mono_or_stereo_is_decided_per_clip_not_per_track") {
     CHECK(peak(right) < 1.0e-6f);
 }
 
-TEST_CASE("track_meter_stays_pre_fader") {
+// ---------------------------------------------------------------------------
+// Punto de medida configurable (TrackMeterMode). Por defecto POST-FADER, como
+// Ableton: paneo + volumen + mute + solo de la propia pista. El fader de la
+// carpeta no entra en el medidor de la hija, pero si en el de la carpeta.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("track_meter_defaults_to_post_fader") {
+    SourceManager sources;
+    add_source(sources, "src-0", 0.5f);
+    add_source(sources, "src-1", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(2));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    CHECK(mixer.track_meter_mode() == TrackMeterMode::PostFader);
+    clock.play();
+
+    // Volumen 0.5 y paneo a la derecha: el medidor sigue a los dos.
+    mixer.set_track_gain("child-0", 0.5f);
+    mixer.set_track_pan("child-0", 1.0f);
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 30, left, right);
+    auto meters = mixer.track_meters();
+    REQUIRE(meters.size() == 3);
+    CHECK(meters[1].right_peak == doctest::Approx(0.25f).epsilon(0.02));
+    CHECK(meters[1].left_peak < 0.005f);
+
+    // Muteada: no suena y el medidor marca 0.
+    mixer.set_track_mute("child-0", true);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].left_peak == 0.0f);
+    CHECK(meters[1].right_peak == 0.0f);
+    CHECK(meters[1].right_rms == 0.0f);
+    CHECK(meters[2].left_peak > 0.4f);       // la otra hija sigue marcando
+    mixer.set_track_mute("child-0", false);
+
+    // Silenciada por el solo de otra pista: tambien 0.
+    mixer.set_track_solo("child-1", true);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].right_peak == 0.0f);
+    CHECK(meters[2].left_peak > 0.4f);
+}
+
+TEST_CASE("post_fader_folder_fader_moves_the_folder_meter_not_the_child") {
     SourceManager sources;
     add_source(sources, "src-0", 0.5f);
     auto session = std::make_shared<Session>(folder_session(1));
@@ -738,8 +783,40 @@ TEST_CASE("track_meter_stays_pre_fader") {
     Mixer mixer(session, &sources, &clock, &scheduler);
     clock.play();
 
+    mixer.set_track_gain("folder", 0.5f);
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 30, left, right);
+    auto meters = mixer.track_meters();
+    REQUIRE(meters.size() == 2);
+    // La hija mide tras SU fader (1.0); la carpeta, tras el suyo (0.5), que
+    // es lo que de verdad sale.
+    CHECK(meters[1].left_peak > 0.45f);
+    CHECK(meters[0].left_peak == doctest::Approx(0.5f * meters[1].left_peak).epsilon(0.01));
+    CHECK(meters[0].left_peak == doctest::Approx(peak(left)).epsilon(0.02));
+
+    // Carpeta muteada: la hija sigue marcando, la carpeta no.
+    mixer.set_track_mute("folder", true);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(peak(left) < 0.005f);
+    CHECK(meters[1].left_peak > 0.45f);
+    CHECK(meters[0].left_peak == 0.0f);
+}
+
+TEST_CASE("post_pan_meter_ignores_volume_mute_and_solo") {
+    SourceManager sources;
+    add_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_track_meter_mode(TrackMeterMode::PostPan);
+    clock.play();
+
+    mixer.set_track_gain("child-0", 0.25f);
     mixer.set_track_mute("child-0", true);
     mixer.set_track_pan("child-0", 1.0f);
+    mixer.set_track_gain("folder", 0.5f);
     std::vector<float> left, right;
     render_blocks(mixer, clock, 30, left, right);
     const auto meters = mixer.track_meters();
@@ -747,4 +824,36 @@ TEST_CASE("track_meter_stays_pre_fader") {
     CHECK(peak(right) < 0.005f);
     CHECK(meters[1].right_peak > 0.4f);
     CHECK(meters[1].left_peak < 0.005f);
+    // La carpeta acumula lo que marcan sus hijas, sin su fader.
+    CHECK(meters[0].right_peak == doctest::Approx(meters[1].right_peak));
+}
+
+TEST_CASE("pre_fader_meter_is_the_raw_track_input") {
+    SourceManager sources;
+    add_left_only_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_track_meter_mode(TrackMeterMode::PreFader);
+    clock.play();
+
+    // Paneada a la derecha, con volumen bajo y sumada a mono: el medidor
+    // ignora todo eso y muestra lo que entregan los clips (solo L).
+    mixer.set_track_pan("child-0", 1.0f);
+    mixer.set_track_gain("child-0", 0.1f);
+    session->songs[0].tracks[1].mono_downmix = true;
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 30, left, right);
+    auto meters = mixer.track_meters();
+    CHECK(meters[1].left_peak > 0.45f);
+    CHECK(meters[1].right_peak < 1.0e-6f);
+    CHECK(meters[0].left_peak == doctest::Approx(meters[1].left_peak));
+
+    // Volver a post-fader en caliente: el siguiente bloque ya mide alli.
+    mixer.set_track_meter_mode(TrackMeterMode::PostFader);
+    render_blocks(mixer, clock, 2, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].left_peak < 0.005f);
+    CHECK(meters[1].right_peak == doctest::Approx(peak(right)).epsilon(0.02));
 }

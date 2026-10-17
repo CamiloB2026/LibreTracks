@@ -24,6 +24,7 @@ import { UI_ZOOM_STEPS, setUiZoom, useUiZoom } from "../../../shared/uiZoom";
 import { TelemetrySettingsField } from "../../telemetry/TelemetryController";
 import { DiagnosticsSettingsTab } from "./DiagnosticsSettingsTab";
 import { MulticoreAudioField } from "./MulticoreAudioField";
+import { TrackMeterModeField } from "./TrackMeterModeField";
 import { SessionStorageVolumeField } from "./SessionStorageVolumeField";
 import { UpdateCheckField } from "./UpdateCheckField";
 import { LibraryModeField } from "../library/folders/LibraryModeField";
@@ -79,6 +80,7 @@ type SettingsPanelProps = {
   onClearOutputChannels: () => void;
   onLowLatencyOutputChange: (checked: boolean) => void;
   onAudioSingleThreadRenderChange: (checked: boolean) => void;
+  onTrackMeterModeChange: (mode: AppSettings["trackMeterMode"]) => void;
 
   midiInputDevices: string[];
   isMidiInputRefreshing: boolean;
@@ -156,6 +158,7 @@ export function SettingsPanel({
   onClearOutputChannels,
   onLowLatencyOutputChange,
   onAudioSingleThreadRenderChange,
+  onTrackMeterModeChange,
   midiInputDevices,
   isMidiInputRefreshing,
   selectedMidiInputDevice,
@@ -595,6 +598,11 @@ export function SettingsPanel({
                       onSingleThreadRenderChange={
                         onAudioSingleThreadRenderChange
                       }
+                    />
+                    <TrackMeterModeField
+                      mode={appSettings.trackMeterMode}
+                      disabled={isSaving}
+                      onModeChange={onTrackMeterModeChange}
                     />
                   </div>
                 </section>

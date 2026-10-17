@@ -2109,6 +2109,11 @@ impl AudioController {
             engine.send_command(&EngineCommand::SetSongGapVamp {
                 enabled: settings.vamp_between_songs,
             })?;
+            // Where the track meters measure: an atomic in the mixer, so it is
+            // a pure flag like the two above.
+            engine.send_command(&EngineCommand::SetTrackMeterMode {
+                mode: settings.track_meter_mode,
+            })?;
             state.settings = settings;
             Ok(())
         })

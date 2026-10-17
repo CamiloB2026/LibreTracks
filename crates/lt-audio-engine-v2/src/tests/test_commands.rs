@@ -585,6 +585,27 @@ fn song_gap_vamp_commands_speak_the_engines_json() {
 }
 
 #[test]
+fn set_track_meter_mode_speaks_the_engines_json() {
+    // The C++ parser reads {"type":"SetTrackMeterMode","mode":"postFader"|
+    // "postPan"|"preFader"}: camelCase strings, not the Rust variant names.
+    for (mode, wire) in [
+        (TrackMeterMode::PostFader, "postFader"),
+        (TrackMeterMode::PostPan, "postPan"),
+        (TrackMeterMode::PreFader, "preFader"),
+    ] {
+        let json =
+            serde_json::to_value(EngineCommand::SetTrackMeterMode { mode }).expect("serialize");
+        assert_eq!(json["type"], "SetTrackMeterMode");
+        assert_eq!(json["mode"], wire);
+        assert!(matches!(
+            round_trip(&EngineCommand::SetTrackMeterMode { mode }),
+            EngineCommand::SetTrackMeterMode { mode: back } if back == mode
+        ));
+    }
+    assert_eq!(TrackMeterMode::default(), TrackMeterMode::PostFader);
+}
+
+#[test]
 fn set_sample_rate_round_trip() {
     let cmd = EngineCommand::SetSampleRate { sample_rate: 44100 };
     let rt = round_trip(&cmd);

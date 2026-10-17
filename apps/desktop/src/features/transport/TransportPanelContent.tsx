@@ -2090,6 +2090,7 @@ export function TransportPanelContent() {
     handleTimelinePlayheadFollowModeChange,
     handlePauseAtSongEndChange,
     handleVampBetweenSongsChange,
+    handleTrackMeterModeChange,
     handleFadeOutStopSecondsChange,
     handleMidiPlatformSettingsChange,
     handleImportMergeMatchingTracksChange,
@@ -8096,6 +8097,7 @@ export function TransportPanelContent() {
               onClearOutputChannels={handleClearOutputChannels}
               onLowLatencyOutputChange={handleLowLatencyOutputChange}
               onAudioSingleThreadRenderChange={handleAudioSingleThreadRenderChange}
+              onTrackMeterModeChange={handleTrackMeterModeChange}
               midiInputDevices={midiInputDevices}
               isMidiInputRefreshing={isMidiInputRefreshing}
               selectedMidiInputDevice={selectedMidiInputDevice}

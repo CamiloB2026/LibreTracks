@@ -492,6 +492,13 @@ EngineCommand command_from_json(const std::string& raw) {
     if (type == "EndSongGapVamp")
         return CmdEndSongGapVamp{};
 
+    if (type == "SetTrackMeterMode") {
+        const std::string mode = j.value("mode", std::string{"postFader"});
+        CmdSetTrackMeterMode c;
+        c.mode = mode == "postPan" ? 1 : mode == "preFader" ? 2 : 0;
+        return c;
+    }
+
     if (type == "SetLowLatency")
         return CmdSetLowLatency{ j.at("enabled").get<bool>() };
 
@@ -585,6 +592,10 @@ std::string command_to_json(const EngineCommand& cmd) {
         }
         else if constexpr (std::is_same_v<T, CmdEndSongGapVamp>) {
             j["type"] = "EndSongGapVamp";
+        }
+        else if constexpr (std::is_same_v<T, CmdSetTrackMeterMode>) {
+            j["type"] = "SetTrackMeterMode";
+            j["mode"] = c.mode == 1 ? "postPan" : c.mode == 2 ? "preFader" : "postFader";
         }
         else if constexpr (std::is_same_v<T, CmdLoadPadClip>) {
             j["type"] = "LoadPadClip";

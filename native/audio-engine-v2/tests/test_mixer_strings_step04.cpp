@@ -168,17 +168,23 @@ TEST_CASE("step04 fallback preserves gain pan mute and solo") {
     const bool expected_has_audio = expected[last] != 0.0f
         || expected[last + kFrames] != 0.0f;
     CHECK(expected_has_audio);
-    // The fallback still exposes the same per-track meter values; the muted
-    // track is therefore present in the source meter while its mixed output is
-    // suppressed, and the soloed track remains audible.
-    const auto meters = fallback.track_meters();
-    CHECK(meters[1].left_peak == 0.1f);
-    // El medidor de pista es post-paneo (pre-fader): con pan -0.75 el lado
-    // derecho queda a 1 - 0.75 = 0.25 de la fuente.
-    CHECK(meters[1].right_peak == doctest::Approx(0.1f * 0.25f));
+    // Por defecto el medidor de pista es post-fader: la pista muteada marca 0
+    // y la que esta en solo sigue marcando.
+    auto meters = fallback.track_meters();
+    CHECK(meters[1].left_peak == 0.0f);
+    CHECK(meters[1].right_peak == 0.0f);
     const bool solo_has_audio = meters[2].left_peak != 0.0f
         || meters[2].right_peak != 0.0f;
     CHECK(solo_has_audio);
+
+    // En post-paneo (pre-fader) el fallback expone los mismos valores que el
+    // camino normal: la pista muteada sigue presente en su medidor mientras su
+    // salida se suprime. Con pan -0.75 el lado derecho queda a 1 - 0.75 = 0.25.
+    fallback.set_track_meter_mode(TrackMeterMode::PostPan);
+    (void)render_session(fallback, clock_b, 2);
+    meters = fallback.track_meters();
+    CHECK(meters[1].left_peak == doctest::Approx(0.1f));
+    CHECK(meters[1].right_peak == doctest::Approx(0.1f * 0.25f));
 }
 
 TEST_CASE("step04 fallback effective gain and pan are exact") {

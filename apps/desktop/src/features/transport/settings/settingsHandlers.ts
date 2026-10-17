@@ -281,6 +281,13 @@ export function createSettingsHandlers(deps: SettingsHandlerDeps) {
       );
     },
 
+    handleTrackMeterModeChange(nextValue: AppSettings["trackMeterMode"]) {
+      persistAudioPatch(
+        { trackMeterMode: nextValue },
+        t("transport.status.trackMeterModeUpdated"),
+      );
+    },
+
     handleFadeOutStopSecondsChange(nextValue: number) {
       // normalizeAppSettings clamps to 0.1–30 s, so a cleared input is safe.
       persistAudioPatch(

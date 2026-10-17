@@ -339,6 +339,12 @@ pub struct AppSettings {
     /// default.
     #[serde(default)]
     pub vamp_between_songs: bool,
+    /// Where the track and folder meters measure (`postFader`, the default and
+    /// Ableton's choice; `postPan`; `preFader`). Global, not per session: it is
+    /// how this user reads meters, not a property of a song. The master meter
+    /// is not affected.
+    #[serde(default)]
+    pub track_meter_mode: lt_audio_engine_v2::TrackMeterMode,
     #[serde(default = "default_timeline_navigation_scheme")]
     pub timeline_navigation_scheme: String,
     #[serde(default = "default_timeline_playhead_follow_mode")]
@@ -486,6 +492,7 @@ impl Default for AppSettings {
             vamp_bars: default_vamp_bars(),
             pause_at_song_end: false,
             vamp_between_songs: false,
+            track_meter_mode: lt_audio_engine_v2::TrackMeterMode::PostFader,
             timeline_navigation_scheme: default_timeline_navigation_scheme(),
             timeline_playhead_follow_mode: default_timeline_playhead_follow_mode(),
             import_merge_matching_tracks: default_import_merge_matching_tracks(),
@@ -728,6 +735,33 @@ mod tests {
         assert_eq!(displayed_ui_language().as_deref(), Some("es"));
         set_displayed_ui_language("");
         assert_eq!(displayed_ui_language(), None);
+    }
+
+    /// The meter point defaults to post-fader (Ableton), also for a settings
+    /// file written before the setting existed, and persists as camelCase.
+    #[test]
+    fn track_meter_mode_defaults_to_post_fader_and_persists() {
+        use lt_audio_engine_v2::TrackMeterMode;
+        assert_eq!(
+            AppSettings::default().track_meter_mode,
+            TrackMeterMode::PostFader
+        );
+
+        let legacy: AppSettings = serde_json::from_str("{}").expect("legacy settings");
+        assert_eq!(legacy.track_meter_mode, TrackMeterMode::PostFader);
+
+        let saved = AppSettings {
+            track_meter_mode: TrackMeterMode::PreFader,
+            ..AppSettings::default()
+        };
+        let json = serde_json::to_value(&saved).expect("serialize");
+        assert_eq!(json["trackMeterMode"], "preFader");
+        let back: AppSettings = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(back.track_meter_mode, TrackMeterMode::PreFader);
+
+        let post_pan: AppSettings =
+            serde_json::from_str(r#"{"trackMeterMode":"postPan"}"#).expect("postPan");
+        assert_eq!(post_pan.track_meter_mode, TrackMeterMode::PostPan);
     }
 
     #[test]

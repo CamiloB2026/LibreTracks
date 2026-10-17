@@ -148,6 +148,13 @@ pub enum EngineCommand {
     /// Stop. Never sent for the host's own mirror of the song-end pause.
     EndSongGapVamp,
 
+    /// Where the track (and folder) meters measure. A global app setting; the
+    /// engine keeps it in an atomic the audio thread reads once per block. The
+    /// master meter never changes.
+    SetTrackMeterMode {
+        mode: TrackMeterMode,
+    },
+
     /// Set the ambient-pad config (enable/volume/route/key). Applied
     /// realtime-safely on the next audio block.
     SetPadConfig {
@@ -485,6 +492,23 @@ pub struct TimeSignatureMarkerUpdate {
     pub frame: i64,
     pub beats_per_bar: i32,
     pub beat_unit: i32,
+}
+
+/// Metering point of the track meters (`lt::TrackMeterMode` in the engine).
+/// Crosses the FFI as camelCase strings ("postFader", "postPan", "preFader");
+/// the C++ parser falls back to post-fader for anything else.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TrackMeterMode {
+    /// After the track's own pan, volume, mute and solo (Ableton's meter). A
+    /// muted track, or one silenced by another track's solo, reads 0. Parent
+    /// folder faders are left out of the track meter and go into the folder's.
+    #[default]
+    PostFader,
+    /// After the pan, before the volume (mute and solo do not move it).
+    PostPan,
+    /// The raw track input: what its clips deliver, before mono, pan and volume.
+    PreFader,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

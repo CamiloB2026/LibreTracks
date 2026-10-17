@@ -51,6 +51,23 @@ TEST_CASE("parse SetSongGapVamp and EndSongGapVamp") {
     CHECK(std::holds_alternative<CmdEndSongGapVamp>(end));
 }
 
+TEST_CASE("parse SetTrackMeterMode: camelCase names, unknown falls back to postFader") {
+    auto mode_of = [](const char* json) {
+        auto cmd = command_from_json(json);
+        REQUIRE(std::holds_alternative<CmdSetTrackMeterMode>(cmd));
+        return std::get<CmdSetTrackMeterMode>(cmd).mode;
+    };
+    CHECK(mode_of(R"({"type":"SetTrackMeterMode","mode":"postFader"})") == 0);
+    CHECK(mode_of(R"({"type":"SetTrackMeterMode","mode":"postPan"})") == 1);
+    CHECK(mode_of(R"({"type":"SetTrackMeterMode","mode":"preFader"})") == 2);
+    CHECK(mode_of(R"({"type":"SetTrackMeterMode","mode":"nope"})") == 0);
+    CHECK(mode_of(R"({"type":"SetTrackMeterMode"})") == 0);
+
+    auto again = command_from_json(command_to_json(CmdSetTrackMeterMode{2}));
+    REQUIRE(std::holds_alternative<CmdSetTrackMeterMode>(again));
+    CHECK(std::get<CmdSetTrackMeterMode>(again).mode == 2);
+}
+
 TEST_CASE("parse Pause command") {
     auto cmd = command_from_json(R"({"type":"Pause"})");
     CHECK(std::holds_alternative<CmdPause>(cmd));

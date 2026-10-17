@@ -25,6 +25,21 @@
 
 namespace lt {
 
+// Punto de medida del vumetro de PISTA (y de carpeta). Ajuste global de la app
+// (CmdSetTrackMeterMode). El master no cambia nunca.
+//
+//   PostFader (por defecto, como Ableton): lo que la pista manda a la mezcla
+//     tras su paneo, su volumen, su mute y el solo (una pista muteada o
+//     silenciada por el solo de otra marca 0). La ganancia y el mute de las
+//     CARPETAS padre NO entran en el medidor de la pista: igual que en
+//     Ableton/Reaper/Logic, el fader del grupo va despues y se ve en el medidor
+//     del grupo. El medidor de carpeta si lleva su propio fader (y los de sus
+//     carpetas padre).
+//   PostPan: post-paneo, pre-fader (no lo mueven volumen, mute ni solo).
+//   PreFader: la entrada cruda de la pista, lo que entregan sus clips, antes
+//     de suma a mono, paneo y volumen.
+enum class TrackMeterMode : int { PostFader = 0, PostPan = 1, PreFader = 2 };
+
 // ---------------------------------------------------------------------------
 // Mixer — JUCE AudioRenderCallback implementation.
 //
@@ -66,6 +81,10 @@ public:
     // the next Play or end_song_gap_vamp() (a user Pause/Stop). Command thread.
     void set_song_gap_vamp(bool enabled) noexcept;
     void end_song_gap_vamp() noexcept;
+    // Punto de medida de los vumetros de pista y carpeta (ver TrackMeterMode).
+    // Hebra de control; el hilo de audio lo lee una vez por bloque.
+    void set_track_meter_mode(TrackMeterMode mode) noexcept;
+    TrackMeterMode track_meter_mode() const noexcept;
     bool song_gap_vamp_active() const noexcept;
     // preserve_realtime_state=true: keep existing gain/pan/mute/solo atomics for known tracks
     //   (used for session pointer swaps during transpose/region changes — slider state survives).
@@ -315,7 +334,7 @@ private:
         float start_pan = 0.f, end_pan = 0.f;
         float start_mute_gain = 0.f, end_mute_gain = 0.f;
         float start_solo_gain = 0.f, end_solo_gain = 0.f;
-        // Lo que marca el medidor de la pista (post-paneo, pre-fader); las
+        // Lo que marca el medidor de la pista (segun TrackMeterMode); las
         // carpetas acumulan esto.
         float meter_peak_l = 0.f, meter_peak_r = 0.f;
         float meter_rms_l = 0.f, meter_rms_r = 0.f;
@@ -323,6 +342,9 @@ private:
         const Track* track = nullptr;
         std::size_t  map_index = 0;
         bool         has_ancestor_map = false;
+        // Modo de medida con el que se midio este bloque: las carpetas lo
+        // siguen (en PostFader aplican su propio fader).
+        TrackMeterMode meter_mode = TrackMeterMode::PostFader;
     };
     std::vector<TrackBlockState> track_block_state_;
 
@@ -413,6 +435,7 @@ private:
     std::atomic<bool> pause_at_song_end_{false};
     std::atomic<std::uint64_t> song_end_pause_count_{0};
     std::atomic<bool> song_gap_vamp_enabled_{false};
+    std::atomic<int> track_meter_mode_{static_cast<int>(TrackMeterMode::PostFader)};
     // Set by the audio thread when it pauses on a song end with the vamp on;
     // cleared by Play (either thread) or end_song_gap_vamp().
     std::atomic<bool> song_gap_vamp_active_{false};
@@ -455,7 +478,9 @@ private:
                                        float right_peak,
                                        float left_rms,
                                        float right_rms,
-                                       const std::array<int, kMaxFolderDepth>* precomputed_ancestors = nullptr) noexcept;
+                                       const std::array<int, kMaxFolderDepth>* precomputed_ancestors = nullptr,
+                                       bool apply_folder_faders = false,
+                                       std::size_t song_slot_base = 0) noexcept;
     void render_timeline_span(float** output_channels,
                               int num_channels,
                               int num_frames,

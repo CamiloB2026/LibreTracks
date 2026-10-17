@@ -458,6 +458,7 @@ function buildInitialState(): DesktopApiMockState {
       vampBars: 4,
       pauseAtSongEnd: false,
       vampBetweenSongs: false,
+      trackMeterMode: "postFader",
       timelineNavigationScheme: "ableton",
       timelinePlayheadFollowMode: "ahead",
       importMergeMatchingTracks: true,

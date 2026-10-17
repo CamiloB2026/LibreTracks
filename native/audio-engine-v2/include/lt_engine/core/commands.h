@@ -154,6 +154,12 @@ struct CmdSetPauseAtSongEnd { bool enabled = false; };
 struct CmdSetSongGapVamp { bool enabled = false; };
 struct CmdEndSongGapVamp {};
 
+// Punto de medida de los vumetros de pista y carpeta (ajuste global de la
+// app). JSON: {"type":"SetTrackMeterMode","mode":"postFader"|"postPan"|
+// "preFader"}; un valor desconocido cae en postFader. Ver lt::TrackMeterMode
+// (render/mixer.h): 0 = PostFader, 1 = PostPan, 2 = PreFader.
+struct CmdSetTrackMeterMode { int mode = 0; };
+
 // Decode a single pad key from disk and hand it to the renderer. Runs the
 // (slow) decode on the command thread; the resulting clip is swapped in
 // realtime-safely. `pads_dir/<pad_id>/<key>.<ext>`.
@@ -406,6 +412,7 @@ using EngineCommand = std::variant<
     CmdSetVoiceGuideConfig, CmdLoadVoiceGuideBank,
     CmdSetPadConfig, CmdLoadPadClip,
     CmdSetPauseAtSongEnd, CmdSetSongGapVamp, CmdEndSongGapVamp,
+    CmdSetTrackMeterMode,
     CmdSetSongTranspose, CmdSetRegionTranspose, CmdSetRegionWarp, CmdSetRegionMasterGain, CmdSetSongRegions,
     CmdSetSongClips, CmdSetSongMarkers, CmdSetSongTiming, CmdSetSongTimelineWindow,
     CmdUpsertSongTracks, CmdPrepareSources,

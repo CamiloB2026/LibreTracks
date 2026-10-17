@@ -1630,10 +1630,11 @@ pub(crate) fn plan_audio_settings_change(
         || previous.voice_guide_count_in_enabled != next.voice_guide_count_in_enabled
         || previous.voice_guide_count_style != next.voice_guide_count_style;
 
-    // Pure mixer flags (pause at song end, vamp between songs), flipped
-    // between blocks: go to the engine, never reopen the stream.
+    // Pure mixer flags (pause at song end, vamp between songs, meter point),
+    // flipped between blocks: go to the engine, never reopen the stream.
     let pause_at_song_end_changed = previous.pause_at_song_end != next.pause_at_song_end
-        || previous.vamp_between_songs != next.vamp_between_songs;
+        || previous.vamp_between_songs != next.vamp_between_songs
+        || previous.track_meter_mode != next.track_meter_mode;
 
     AudioSettingsChangePlan {
         apply: device_changed

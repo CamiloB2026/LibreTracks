@@ -2207,6 +2207,17 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
             if (mixer_) mixer_->end_song_gap_vamp();
             return Result<void>::ok();
         }
+        else if constexpr (std::is_same_v<T, CmdSetTrackMeterMode>) {
+            // Un atomico que el hilo de audio lee una vez por bloque: sin
+            // locks ni reservas de memoria.
+            if (mixer_) {
+                mixer_->set_track_meter_mode(
+                    c.mode == 1 ? TrackMeterMode::PostPan
+                    : c.mode == 2 ? TrackMeterMode::PreFader
+                    : TrackMeterMode::PostFader);
+            }
+            return Result<void>::ok();
+        }
         else if constexpr (std::is_same_v<T, CmdLoadPadClip>) {
             // NOTE: prefer the dedicated FFI (lt_audio_engine_load_pad_clip),
             // which runs off the Rust engine lock. This command path is kept for

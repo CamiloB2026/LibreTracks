@@ -84,6 +84,8 @@ export type E2ETransportSnapshot = {
 export type E2ESettings = {
   metronomeEnabled: boolean;
   voiceGuideEnabled: boolean;
+  /** Where the track meters measure; absent in builds older than the setting. */
+  trackMeterMode?: "postFader" | "postPan" | "preFader";
 };
 
 export type E2ETimelineView = {
@@ -1374,7 +1376,11 @@ class AppPage {
     );
   }
 
-  /** Read the latest per-track peaks emitted by the native engine (post-pan, pre-fader). */
+  /**
+   * Read the latest per-track peaks emitted by the native engine. They measure
+   * where the app setting `trackMeterMode` says: post-fader by default (pan,
+   * volume, mute and solo), so a muted or soloed-away track reads 0.
+   */
   async trackMeters(): Promise<E2ETrackMeters> {
     return browser.execute(
       () =>
@@ -1502,12 +1508,23 @@ class AppPage {
     );
   }
 
-  /** Require several native meter samples at zero to reject transient silence. */
+  /**
+   * Require several native meter samples at zero to reject transient silence.
+   * Mute/solo only silence the meter in the default post-fader mode. Specs do
+   * not write the user's real settings (wdio runs on them), so a machine set to
+   * another meter point fails here with a clear message instead of a timeout.
+   */
   async waitForTrackSilence(
     trackId: string,
     consecutiveSamples = 3,
     timeout = 30_000,
   ) {
+    const meterMode = (await this.settings()).trackMeterMode ?? "postFader";
+    if (meterMode !== "postFader") {
+      throw new Error(
+        `waitForTrackSilence needs post-fader track meters, but this machine's settings use "${meterMode}". Set Settings > Audio > Track meters to post-fader to run this spec.`,
+      );
+    }
     let silentSamples = 0;
     await browser.waitUntil(
       async () => {

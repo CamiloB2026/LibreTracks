@@ -320,6 +320,25 @@ export function isVoiceGuideCountStyle(
   );
 }
 
+/**
+ * Where the track and folder meters measure (`lt::TrackMeterMode` in the
+ * engine). Mirrors Rust `lt_audio_engine_v2::TrackMeterMode` (camelCase).
+ */
+export type TrackMeterMode = "postFader" | "postPan" | "preFader";
+
+export const TRACK_METER_MODES: readonly TrackMeterMode[] = [
+  "postFader",
+  "postPan",
+  "preFader",
+];
+
+export function isTrackMeterMode(value: unknown): value is TrackMeterMode {
+  return (
+    typeof value === "string" &&
+    (TRACK_METER_MODES as readonly string[]).includes(value)
+  );
+}
+
 /** Which section of the chart plays from a marker. Anchored to the ORIGINAL
  * marker id: a repeat `"{id}~{n}"` created by an arrangement uses the link of
  * `id`. Mirrors Rust `ChartLink`. */
@@ -1390,6 +1409,14 @@ export type AppSettings = {
    * pad keeps sounding until Play starts the next song. Off by default.
    */
   vampBetweenSongs: boolean;
+  /**
+   * Where the track and folder meters measure. `postFader` (default, as in
+   * Ableton): after the track's own pan, volume, mute and solo; parent folder
+   * faders show on the folder meter, not on the track's. `postPan`: after the
+   * pan, before the volume. `preFader`: the raw track input. Global; the
+   * master meter is not affected.
+   */
+  trackMeterMode: TrackMeterMode;
   timelineNavigationScheme: "ableton" | "libretracks";
   timelinePlayheadFollowMode: "ahead" | "center";
   /**
@@ -1515,6 +1542,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   vampBars: 4,
   pauseAtSongEnd: false,
   vampBetweenSongs: false,
+  trackMeterMode: "postFader",
   timelineNavigationScheme: "ableton",
   timelinePlayheadFollowMode: "ahead",
   importMergeMatchingTracks: true,
@@ -1771,6 +1799,11 @@ export function normalizeAppSettings(settings: AppSettings): AppSettings {
     ),
     pauseAtSongEnd: Boolean(settings.pauseAtSongEnd),
     vampBetweenSongs: Boolean(settings.vampBetweenSongs),
+    // Absent in settings written before the meter point was configurable, or
+    // unknown: post-fader, matching the engine and the Rust default.
+    trackMeterMode: isTrackMeterMode(settings.trackMeterMode)
+      ? settings.trackMeterMode
+      : DEFAULT_APP_SETTINGS.trackMeterMode,
     timelineNavigationScheme,
     timelinePlayheadFollowMode,
     // Defaults to true when absent (older settings files) so existing users

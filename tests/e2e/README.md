@@ -268,11 +268,14 @@ exposes:
   `getTimelineView()` — read-only backend observations used to prove commands
   completed beyond the DOM.
 - `getTrackMeters()` — the latest native per-track peaks, used to assert
-  rendered track activity and mute/solo suppression. These meters are post-pan
-  but pre-fader (a muted track still meters its signal).
+  rendered track activity and mute/solo suppression. They measure at the app's
+  `trackMeterMode` setting, post-fader by default (pan, volume, mute and solo:
+  a muted or soloed-away track reads 0). `waitForTrackSilence` refuses to run
+  on a machine set to another meter point, since specs must not write the
+  user's real settings.
 - `getAudioOutputMeter()` — final left/right output peaks after track mix,
   routing, pan and master gain; used when a test must measure the audible stereo
-  result rather than the pre-fader track meter.
+  result rather than one track's meter.
 - `getLibraryState()` — assets and virtual folders read from the native
   library manifest after organization and deletion flows.
 - `activatePadWithTone(path)` / `deactivatePad(id)` — create a user pad from an

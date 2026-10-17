@@ -82,6 +82,35 @@ describe("App / settings", () => {
     );
   });
 
+  it("track meters are post-fader by default and the Audio selector persists the choice", async () => {
+    const desktopApi = await import("../features/transport/desktopApi");
+    const updateSpy = vi.mocked(desktopApi.updateAudioSettings);
+    updateSpy.mockClear();
+    await renderApp();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: /^Settings$/i }));
+    });
+    await act(async () => {
+      fireEvent.click(await screen.findByRole("tab", { name: /^Audio$/i }));
+    });
+
+    const select = (await screen.findByRole("combobox", {
+      name: textMatcher(en.transport.settingsModal.trackMeterMode),
+    })) as HTMLSelectElement;
+    expect(select.value).toBe("postFader");
+
+    await act(async () => {
+      fireEvent.change(select, { target: { value: "postPan" } });
+    });
+
+    await waitFor(() =>
+      expect(updateSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ trackMeterMode: "postPan" }),
+      ),
+    );
+  });
+
   it("saves live jump settings through the host in guest mirror mode", async () => {
     const desktopApi = await import("../features/transport/desktopApi");
     const sharedDesktopApi = await import("@libretracks/shared/desktopApi");

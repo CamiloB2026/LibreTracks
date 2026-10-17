@@ -5719,6 +5719,26 @@ fn toggling_vamp_between_songs_reaches_the_engine_without_reopening_the_device()
 }
 
 #[test]
+fn changing_the_track_meter_mode_reaches_the_engine_without_reopening_the_device() {
+    let previous = crate::infra::settings::AppSettings::default();
+    assert_eq!(
+        previous.track_meter_mode,
+        lt_audio_engine_v2::TrackMeterMode::PostFader,
+        "el vúmetro de pista es post-fader por defecto, como en Ableton"
+    );
+    let mut next = previous.clone();
+    next.track_meter_mode = lt_audio_engine_v2::TrackMeterMode::PreFader;
+
+    let plan = plan_audio_settings_change(&previous, &next);
+
+    assert!(plan.apply, "el punto de medida tiene que llegar al mezclador");
+    assert!(
+        !plan.rebuild_stream,
+        "es un atómico del mezclador: reabrir el dispositivo cortaría el audio"
+    );
+}
+
+#[test]
 fn unchanged_audio_settings_do_not_touch_the_engine() {
     let settings = crate::infra::settings::AppSettings::default();
 
