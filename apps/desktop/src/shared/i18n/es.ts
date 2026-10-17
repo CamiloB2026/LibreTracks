@@ -566,6 +566,12 @@ const es = {
       voiceGuideCountIn: "Conteo",
       voiceGuideCountInDescription:
         "Cuenta los beats restantes tras el nombre de la sección.",
+      voiceGuideCountStyle: "Estilo de conteo",
+      voiceGuideCountStyleFull: "1-2-3-4",
+      voiceGuideCountStyleHalfThenFull: "1 · 2 · 1-2-3-4",
+      voiceGuideCountStyleHalfTime: "Medio tiempo (1 · 2 · 3 · 4 ·)",
+      voiceGuideCountStyleHint:
+        "Para tempos rápidos: un compás a medio tiempo antes del conteo, o todo a medio tiempo. Cada canción puede cambiarlo desde su menú. En 3/4 o 6/8 se cuenta normal.",
       voiceGuideVolume: "Volumen de la voz",
       metronomeAccentEnabled: "Acento activado",
       metronomeAccentSound: "Sonido del acento",
@@ -822,6 +828,8 @@ const es = {
       songFades: "Fades de la canción",
       songFadeIn: "Fade de entrada: {{seconds}} s",
       songFadeOut: "Fade de salida: {{seconds}} s",
+      songCountStyle: "Conteo de la voz guía",
+      songCountStyleDefault: "Como el ajuste global ({{style}})",
       renderSong: "Renderizar audio…",
       levelSongs: "Nivelar volumen de canciones…",
       exportSong: "Exportar Cancion",
@@ -1125,6 +1133,7 @@ const es = {
       songDeleted: "Cancion eliminada: {{name}}.",
       tempoMarkerUpdated: "Marca de BPM actualizada a {{bpm}} BPM.",
       songFadesUpdated: "Fades de «{{name}}» actualizados.",
+      songCountStyleUpdated: "Conteo de «{{name}}»: {{style}}.",
       regionWarpSourceBpmUpdated:
         "BPM original actualizado a {{bpm}} para {{name}}.",
       tempoMarkerDeleted: "Marca de BPM borrada en {{time}}.",

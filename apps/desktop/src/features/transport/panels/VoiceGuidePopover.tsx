@@ -1,7 +1,11 @@
 import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { AppSettings } from "@libretracks/shared/models";
+import {
+  VOICE_GUIDE_COUNT_STYLES,
+  isVoiceGuideCountStyle,
+  type AppSettings,
+} from "@libretracks/shared/models";
 import {
   AUX_FADER_SCALE,
   formatGainDb,
@@ -9,6 +13,7 @@ import {
   positionToGain,
 } from "@libretracks/shared/faderScale";
 import { PopoverShell } from "./PopoverShell";
+import { voiceGuideCountStyleLabel } from "../songs/songCountStyle";
 
 type RouteOption = { value: string; label: string };
 
@@ -159,6 +164,31 @@ function VoiceGuidePopoverImpl({
                 })}
               </span>
             </label>
+
+            <div className="lt-pads-field">
+              <span className="lt-pads-field-label">
+                {t("transport.settingsModal.voiceGuideCountStyle")}
+              </span>
+              <select
+                className="lt-pads-select"
+                value={settings.voiceGuideCountStyle}
+                disabled={!settings.voiceGuideCountInEnabled}
+                title={t("transport.settingsModal.voiceGuideCountStyleHint")}
+                aria-label={t("transport.settingsModal.voiceGuideCountStyle")}
+                onChange={(event) => {
+                  const style = event.target.value;
+                  if (isVoiceGuideCountStyle(style)) {
+                    onChange({ voiceGuideCountStyle: style });
+                  }
+                }}
+              >
+                {VOICE_GUIDE_COUNT_STYLES.map((style) => (
+                  <option key={style} value={style}>
+                    {voiceGuideCountStyleLabel(t, style)}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <div className="lt-pads-field">
               <span className="lt-pads-field-label">

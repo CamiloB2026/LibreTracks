@@ -1026,6 +1026,7 @@ impl AudioController {
                         region.1,
                         region.0.master.fade_out_seconds,
                     ),
+                    voice_guide_count_style: region_voice_guide_count_style(region.0),
                 })
                 .collect();
             engine.send_command(&EngineCommand::SetSongRegions {
@@ -1137,6 +1138,7 @@ impl AudioController {
                         region.1,
                         region.0.master.fade_out_seconds,
                     ),
+                    voice_guide_count_style: region_voice_guide_count_style(region.0),
                 })
                 .collect();
             let markers = song
@@ -1319,6 +1321,7 @@ impl AudioController {
                         region.1,
                         region.0.master.fade_out_seconds,
                     ),
+                    voice_guide_count_style: region_voice_guide_count_style(region.0),
                 })
                 .collect();
             let markers = song
@@ -1584,6 +1587,7 @@ impl AudioController {
                 route: settings.voice_guide_output.clone(),
                 lead_bars: settings.voice_guide_lead_bars,
                 count_in_enabled: settings.voice_guide_count_in_enabled,
+                count_style: settings.voice_guide_count_style.as_engine_value(),
             })?;
             Ok(())
         })
@@ -1601,6 +1605,7 @@ impl AudioController {
                 route: settings.voice_guide_output.clone(),
                 lead_bars: settings.voice_guide_lead_bars,
                 count_in_enabled: settings.voice_guide_count_in_enabled,
+                count_style: settings.voice_guide_count_style.as_engine_value(),
             })?;
             Ok(())
         })
@@ -2082,6 +2087,7 @@ impl AudioController {
                 route: settings.voice_guide_output.clone(),
                 lead_bars: settings.voice_guide_lead_bars,
                 count_in_enabled: settings.voice_guide_count_in_enabled,
+                count_style: settings.voice_guide_count_style.as_engine_value(),
             })?;
             // Ambient-pad config (the key clip is decoded separately via the
             // command layer, which knows the installed-pads path).
@@ -3473,6 +3479,15 @@ fn marker_category_token(category: MarkerCategory) -> String {
         MarkerCategory::Section => "section".to_string(),
         MarkerCategory::Cue => "cue".to_string(),
     }
+}
+
+/// The song's own voice-guide count style for the engine, or -1 to follow the
+/// global setting (`SetVoiceGuideConfig::count_style`).
+fn region_voice_guide_count_style(region: &libretracks_core::SongRegion) -> i32 {
+    region
+        .voice_guide_count_style
+        .map(|style| style.as_engine_value())
+        .unwrap_or(-1)
 }
 
 /// A song fade, in engine frames. The fade is set in the song's own seconds;

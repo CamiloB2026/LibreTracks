@@ -115,6 +115,7 @@ struct CmdSetVoiceGuideConfig {
     std::string route = "monitor";
     int lead_bars = 1;
     bool count_in_enabled = true;
+    int count_style = 0;   // VoiceGuideCountStyle (0 = Full)
 };
 
 struct CmdLoadVoiceGuideBank {
@@ -197,6 +198,7 @@ struct CmdSetSongRegions {
         float       master_gain = 1.0f;
         Frame       fade_in_frames = 0;
         Frame       fade_out_frames = 0;
+        int         voice_guide_count_style = -1;   // -1 = follow global
     };
     Id song_id;
     std::vector<RegionUpdate> regions;

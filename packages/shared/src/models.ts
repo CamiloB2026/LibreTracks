@@ -288,7 +288,37 @@ export type SongRegionSummary = {
    * sections). Absent when no original has been captured. Mirrors Rust
    * `SongStructureSummary`; the original snapshot itself never reaches the UI. */
   structure?: SongStructureSummary;
+  /** How the voice guide counts into this song's sections, or `null`/absent
+   * to follow the global `AppSettings.voiceGuideCountStyle`. */
+  voiceGuideCountStyle?: VoiceGuideCountStyle | null;
 };
+
+/**
+ * How the voice guide lays out the spoken count-in before a section. Mirrors
+ * Rust `VoiceGuideCountStyle` (camelCase on the wire):
+ * - `full`: "1 2 3 4", one number per beat (the original).
+ * - `halfThenFull`: "1 · 2 · | 1 2 3 4", a bar in half notes first, then the
+ *   normal count. What bands do at fast tempos.
+ * - `halfTime`: "1 · 2 · | 3 · 4 ·", the whole count at half speed.
+ * The half styles only apply in even simple meters (2/4, 4/4); in 3/4 or 6/8
+ * the engine falls back to `full`.
+ */
+export type VoiceGuideCountStyle = "full" | "halfThenFull" | "halfTime";
+
+export const VOICE_GUIDE_COUNT_STYLES: readonly VoiceGuideCountStyle[] = [
+  "full",
+  "halfThenFull",
+  "halfTime",
+];
+
+export function isVoiceGuideCountStyle(
+  value: unknown,
+): value is VoiceGuideCountStyle {
+  return (
+    typeof value === "string" &&
+    (VOICE_GUIDE_COUNT_STYLES as readonly string[]).includes(value)
+  );
+}
 
 /** Which section of the chart plays from a marker. Anchored to the ORIGINAL
  * marker id: a repeat `"{id}~{n}"` created by an arrangement uses the link of
@@ -1308,6 +1338,8 @@ export type AppSettings = {
   voiceGuideVolume: number;
   voiceGuideLeadBars: number;
   voiceGuideCountInEnabled: boolean;
+  /** Default count-in layout; each song may override it. */
+  voiceGuideCountStyle: VoiceGuideCountStyle;
   voiceGuideLanguage: string;
   padEnabled: boolean;
   /** Installed pad folder id currently selected ("" = none). */
@@ -1460,6 +1492,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   voiceGuideVolume: 1.0,
   voiceGuideLeadBars: 1,
   voiceGuideCountInEnabled: true,
+  voiceGuideCountStyle: "full",
   voiceGuideLanguage: "es",
   padEnabled: false,
   padId: "",
@@ -1687,6 +1720,11 @@ export function normalizeAppSettings(settings: AppSettings): AppSettings {
       ? Math.min(4, Math.max(1, Math.round(settings.voiceGuideLeadBars)))
       : DEFAULT_APP_SETTINGS.voiceGuideLeadBars,
     voiceGuideCountInEnabled: settings.voiceGuideCountInEnabled ?? true,
+    // Settings saved before the count styles existed (or by a newer version
+    // with a style this one does not know) count "1 2 3 4" as always.
+    voiceGuideCountStyle: isVoiceGuideCountStyle(settings.voiceGuideCountStyle)
+      ? settings.voiceGuideCountStyle
+      : DEFAULT_APP_SETTINGS.voiceGuideCountStyle,
     voiceGuideLanguage:
       settings.voiceGuideLanguage ?? DEFAULT_APP_SETTINGS.voiceGuideLanguage,
     padEnabled: Boolean(settings.padEnabled),

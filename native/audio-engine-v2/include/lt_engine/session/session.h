@@ -246,6 +246,10 @@ struct Region {
     // render/region_envelope.h.
     Frame fade_in_frames  = 0;
     Frame fade_out_frames = 0;
+
+    // Voice-guide count-in style for this song (VoiceGuideCountStyle value),
+    // or -1 to follow the global setting. Only the voice guide reads it.
+    int voice_guide_count_style = -1;
 };
 
 // ---------------------------------------------------------------------------

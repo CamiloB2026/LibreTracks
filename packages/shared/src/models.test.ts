@@ -235,6 +235,27 @@ describe("normalizeAppSettings", () => {
     expect(normalized.videoAudioOnImport).toBe("extract");
   });
 
+  it("keeps the voice-guide count style and defaults old or unknown ones to 1-2-3-4", () => {
+    expect(
+      normalizeAppSettings({
+        ...DEFAULT_APP_SETTINGS,
+        voiceGuideCountStyle: "halfThenFull",
+      }).voiceGuideCountStyle,
+    ).toBe("halfThenFull");
+    // Settings saved before the field existed.
+    const legacy = { ...DEFAULT_APP_SETTINGS } as Partial<AppSettings>;
+    delete legacy.voiceGuideCountStyle;
+    expect(
+      normalizeAppSettings(legacy as AppSettings).voiceGuideCountStyle,
+    ).toBe("full");
+    expect(
+      normalizeAppSettings({
+        ...DEFAULT_APP_SETTINGS,
+        voiceGuideCountStyle: "triplets" as AppSettings["voiceGuideCountStyle"],
+      }).voiceGuideCountStyle,
+    ).toBe("full");
+  });
+
   it("clamps metronome volume into [0, +20 dB headroom]", () => {
     // The click fader is an aux dB fader reaching +20 dB (linear gain ≈ 10),
     // so anything above that headroom clamps to it, not to unity.

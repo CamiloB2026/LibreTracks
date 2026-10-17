@@ -722,6 +722,7 @@ mod tests {
                 master: SongMaster::default(),
                 compact_column_width_rem: None,
                 chart: None,
+                voice_guide_count_style: None,
                 structure: None,
             }],
             tracks: vec![track("top", mute_first, false), track("bottom", false, solo_second)],

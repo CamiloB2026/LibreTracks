@@ -1059,6 +1059,7 @@ Result<OfflineRenderRequest> offline_render_request_from_json(const std::string&
             req.voice_guide.volume = v.value("volume", 1.0f);
             req.voice_guide.lead_bars = v.value("lead_bars", 1);
             req.voice_guide.count_in_enabled = v.value("count_in_enabled", true);
+            req.voice_guide.count_style = voice_guide_count_style_from_int(v.value("count_style", 0));
             req.voice_guide_dir = v.value("voices_dir", std::string());
             req.voice_guide_lang = v.value("lang", std::string());
         }

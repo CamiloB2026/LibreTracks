@@ -188,6 +188,7 @@ impl DesktopSession {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         };
 
@@ -269,6 +270,7 @@ impl DesktopSession {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         };
 
@@ -350,6 +352,7 @@ impl DesktopSession {
             compact_column_width_rem: existing_region.compact_column_width_rem,
             structure: existing_region.structure.clone(),
             chart: existing_region.chart.clone(),
+            voice_guide_count_style: existing_region.voice_guide_count_style,
         };
 
         // Resizing a region NEVER moves its contents — the region is
@@ -596,6 +599,7 @@ impl DesktopSession {
             compact_column_width_rem: existing_region.compact_column_width_rem,
             structure: existing_region.structure.clone(),
             chart: existing_region.chart.clone(),
+            voice_guide_count_style: existing_region.voice_guide_count_style,
         };
 
         // Same rebuild flow as update_song_region: drop the old copy
@@ -1046,6 +1050,36 @@ impl DesktopSession {
         Ok(self.snapshot())
     }
 
+    /// How the voice guide counts into this song's sections; `None` = follow
+    /// the global setting. An edit like any other: undo, autosave,
+    /// `project_revision`. Pushed to the engine with the rest of the regions.
+    pub fn update_song_region_voice_guide_count_style(
+        &mut self,
+        region_id: &str,
+        count_style: Option<libretracks_core::VoiceGuideCountStyle>,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        let region = song
+            .regions
+            .iter_mut()
+            .find(|region| region.id == region_id)
+            .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+        if region.voice_guide_count_style == count_style {
+            return Ok(self.snapshot());
+        }
+        region.voice_guide_count_style = count_style;
+
+        audio.update_live_song_regions(&song)?;
+        self.persist_song_update(song, audio, AudioChangeImpact::MixerOnly, true)?;
+
+        Ok(self.snapshot())
+    }
+
     pub fn update_track_transpose_enabled(
         &mut self,
         track_id: &str,
@@ -1207,6 +1241,7 @@ impl DesktopSession {
             // width than the one it came from would read as a glitch.
             compact_column_width_rem: region.compact_column_width_rem,
             chart: region.chart.clone(),
+            voice_guide_count_style: region.voice_guide_count_style,
             // El original capturado describe la canción entera: ninguna de
             // las dos mitades lo hereda.
             structure: None,

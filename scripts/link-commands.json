@@ -175,6 +175,7 @@
     "update_song_region_master_gain",
     "update_song_region_master_gains",
     "update_song_region_transpose",
+    "update_song_region_voice_guide_count_style",
     "update_song_region_warp",
     "update_song_tempo",
     "update_song_time_signature",

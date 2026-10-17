@@ -77,6 +77,15 @@ static std::vector<json> collect_song_json(const json& root) {
     return {};
 }
 
+// SongRegion.voiceGuideCountStyle token -> VoiceGuideCountStyle value
+// (render/voice_guide_renderer.h). Unknown or empty = -1, follow the global.
+static int voice_guide_count_style_token(const std::string& token) {
+    if (token == "full") return 0;
+    if (token == "halfThenFull" || token == "half_then_full") return 1;
+    if (token == "halfTime" || token == "half_time") return 2;
+    return -1;
+}
+
 Result<Session> session_from_project_json(const std::string& project_json,
                                            int engine_sample_rate) {
     try {
@@ -344,6 +353,11 @@ Result<Session> session_from_project_json(const std::string& project_json,
                             std::max(0.0, value_any<double>(master, "fade_out_seconds", "fadeOutSeconds", 0.0)),
                             engine_sample_rate);
                     }
+                    // Per-song voice-guide count style (SongRegion.voiceGuideCountStyle,
+                    // a camelCase token). Absent = follow the global setting.
+                    region.voice_guide_count_style = voice_guide_count_style_token(
+                        value_any<std::string>(jr, "voice_guide_count_style",
+                                               "voiceGuideCountStyle", std::string{}));
                     // Only add the region if end_frame > start_frame (otherwise it is malformed
                     // and would never match in resolve_region_transpose).
                     if (region.end_frame > region.start_frame)

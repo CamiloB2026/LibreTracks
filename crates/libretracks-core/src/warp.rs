@@ -254,6 +254,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }
     }
@@ -398,6 +399,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         };
         s.regions.push(r.clone());
@@ -423,6 +425,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
 
@@ -449,6 +452,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
         s
@@ -517,6 +521,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
 
@@ -547,6 +552,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
 
@@ -575,6 +581,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
         assert!((warp_timeline_seconds_at(&s, 10.0) - 10.0).abs() < 1e-9);
@@ -597,6 +604,7 @@ mod tests {
             master: crate::model::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
 

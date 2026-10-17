@@ -68,12 +68,48 @@ struct VoiceGuideClipBank {
 std::shared_ptr<VoiceGuideClipBank> load_voice_guide_bank(
     const std::string& voices_dir, const std::string& lang, int target_sample_rate);
 
+// How the spoken count-in is laid out over the lead bars. The integer values
+// cross the FFI (SetVoiceGuideConfig.count_style, region
+// voice_guide_count_style), so never reorder them; append only.
+//   Full         "1 2 3 4"            every beat of each lead bar (the original)
+//   HalfThenFull "1 . 2 . | 1 2 3 4"  one bar counted in half notes, then the
+//                                     lead bar(s) in full. What bands do at
+//                                     fast tempos: the slow pair sets the pulse.
+//   HalfTime     "1 . 2 . | 3 . 4 ."  the whole count at half speed (every
+//                                     other beat), so it lasts twice as long.
+// The half styles only make sense in simple meters with an even number of
+// beats (2/4, 4/4, 2/2...). In 3/4, 6/8, 7/8... "every other beat" breaks the
+// bar, so they fall back to Full there (like Ableton disabling metronome
+// divisions that do not fit the bar).
+enum class VoiceGuideCountStyle : int { Full = 0, HalfThenFull = 1, HalfTime = 2 };
+
+// Clamp an integer coming from a command/JSON to a known style (unknown = Full).
+VoiceGuideCountStyle voice_guide_count_style_from_int(int value) noexcept;
+
+// The style actually used for a meter: the half styles degrade to Full when
+// the bar can't be halved (odd beat count or compound/eighth-note meters).
+VoiceGuideCountStyle effective_count_style(VoiceGuideCountStyle style,
+                                           int beats_per_bar, int beat_unit) noexcept;
+
+// Bars the spoken count occupies before the target downbeat:
+//   Full = lead_bars, HalfThenFull = lead_bars + 1, HalfTime = 2 * lead_bars.
+// `style` must already be the effective style.
+int voice_guide_count_span_bars(VoiceGuideCountStyle style, int lead_bars) noexcept;
+
+// Number spoken on beat `beat_index` (0-based from the start of the count
+// span), or 0 when that beat is silent. `style` must be the effective style.
+int voice_guide_count_number(VoiceGuideCountStyle style, int beats_per_bar,
+                             int beat_index) noexcept;
+
 struct VoiceGuideConfig {
     bool  enabled = false;
     float volume = 1.0f;
     std::string output_route = "monitor";  // defaults to the monitor bus
     int   lead_bars = 1;                    // bars of announcement before a marker
     bool  count_in_enabled = true;          // false = section name only, no count
+    // Global count style; a song (region) may override it with its own
+    // `voice_guide_count_style` (>= 0).
+    VoiceGuideCountStyle count_style = VoiceGuideCountStyle::Full;
 };
 
 struct VoiceGuideDiagnostics {
@@ -188,6 +224,7 @@ private:
     std::atomic<float> volume_{1.0f};
     std::atomic<int> lead_bars_{1};
     std::atomic<bool> count_in_enabled_{true};
+    std::atomic<int> count_style_{static_cast<int>(VoiceGuideCountStyle::Full)};
     std::atomic<int> route_mode_{static_cast<int>(RouteMode::Monitor)};
     std::atomic<int> route_start_{2};
     std::atomic<int> route_end_{3};

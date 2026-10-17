@@ -987,3 +987,168 @@ TEST_CASE("an arrangement with a repeated verse announces Verse, Verse, Chorus i
         CHECK(levels[2] == doctest::Approx(levels[0] * 2.0f).epsilon(0.05));
     }
 }
+
+// ── Count styles ────────────────────────────────────────────────────────────
+// At fast tempos bands count "1 . 2 . | 1 2 3 4" (a half-note bar first) or the
+// whole count in half time, instead of a rushed "1 2 3 4". These pin where each
+// number lands. The bank marks count n with amplitude 0.10 * n, so the sample a
+// few frames after each beat says which number (if any) was spoken there.
+
+namespace {
+
+std::shared_ptr<VoiceGuideClipBank> make_count_bank() {
+    auto bank = make_marked_bank();
+    bank->counts[1].samples.assign(240, 0.10f);   // make "1" audible too
+    return bank;
+}
+
+// The number spoken at `seconds` (0 = silence, -1 = the section name), read
+// off the marked amplitudes.
+int spoken_at(const std::vector<float>& ch, double seconds) {
+    const auto frame = static_cast<std::size_t>(std::llround(seconds * kSampleRate)) + 20;
+    const float v = std::abs(ch[frame]) / 0.9f;   // clips fire at gain 0.9
+    if (v < 0.02f) return 0;
+    if (std::abs(v - 0.50f) < 0.01f) return -1;
+    return static_cast<int>(std::lround(v / 0.10f));
+}
+
+// Numbers spoken on each half-second beat in [from, to) at 120 BPM.
+std::vector<int> spoken_beats(const std::vector<float>& ch, double from, double to) {
+    std::vector<int> out;
+    for (double t = from; t < to - 1e-9; t += 0.5) out.push_back(spoken_at(ch, t));
+    return out;
+}
+
+VoiceGuideConfig style_config(VoiceGuideCountStyle style, int lead_bars = 1) {
+    VoiceGuideConfig config{true, 1.0f, "monitor", lead_bars, true};
+    config.count_style = style;
+    return config;
+}
+
+// A region covering the whole song, optionally overriding the count style.
+void add_region(Session& session, int count_style) {
+    Region region;
+    region.id = "r1";
+    region.name = "Song";
+    region.start_frame = 0;
+    region.end_frame = session.songs[0].end_frame;
+    region.voice_guide_count_style = count_style;
+    session.songs[0].regions.push_back(region);
+}
+
+} // namespace
+
+TEST_CASE("count style numbers per beat") {
+    using S = VoiceGuideCountStyle;
+    std::vector<int> full, half_then_full, half_time;
+    for (int b = 0; b < 4; ++b) full.push_back(voice_guide_count_number(S::Full, 4, b));
+    for (int b = 0; b < 8; ++b)
+        half_then_full.push_back(voice_guide_count_number(S::HalfThenFull, 4, b));
+    for (int b = 0; b < 8; ++b) half_time.push_back(voice_guide_count_number(S::HalfTime, 4, b));
+    CHECK(full == std::vector<int>{1, 2, 3, 4});
+    CHECK(half_then_full == std::vector<int>{1, 0, 2, 0, 1, 2, 3, 4});
+    CHECK(half_time == std::vector<int>{1, 0, 2, 0, 3, 0, 4, 0});
+
+    CHECK(voice_guide_count_span_bars(S::Full, 1) == 1);
+    CHECK(voice_guide_count_span_bars(S::HalfThenFull, 1) == 2);
+    CHECK(voice_guide_count_span_bars(S::HalfTime, 1) == 2);
+    CHECK(voice_guide_count_span_bars(S::HalfThenFull, 2) == 3);
+    CHECK(voice_guide_count_span_bars(S::HalfTime, 2) == 4);
+
+    // Meters that can't be halved fall back to the plain count.
+    CHECK(effective_count_style(S::HalfTime, 3, 4) == S::Full);
+    CHECK(effective_count_style(S::HalfThenFull, 6, 8) == S::Full);
+    CHECK(effective_count_style(S::HalfThenFull, 4, 4) == S::HalfThenFull);
+    CHECK(effective_count_style(S::HalfTime, 2, 4) == S::HalfTime);
+    CHECK(voice_guide_count_style_from_int(7) == S::Full);
+}
+
+TEST_CASE("full count style keeps the original single-bar 1 2 3 4") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_count_bank());
+    r.set_config(style_config(VoiceGuideCountStyle::Full));
+    auto session = make_session(MarkerKind::Chorus, 8.0);   // 120 BPM, 4/4
+    auto ch = render_all(r, session, kSampleRate * 9);
+    CHECK(spoken_beats(ch[2], 6.0, 8.0) == std::vector<int>{1, 2, 3, 4});
+    CHECK(spoken_beats(ch[2], 4.0, 5.5) == std::vector<int>{0, 0, 0});
+    CHECK(r.diagnostics().counts_fired == 4);
+}
+
+TEST_CASE("half-then-full count style speaks 1 . 2 . | 1 2 3 4 over two bars") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_count_bank());
+    r.set_config(style_config(VoiceGuideCountStyle::HalfThenFull));
+    auto session = make_session(MarkerKind::Chorus, 8.0);
+    auto ch = render_all(r, session, kSampleRate * 9);
+    CHECK(spoken_beats(ch[2], 4.0, 8.0) == std::vector<int>{1, 0, 2, 0, 1, 2, 3, 4});
+    CHECK(r.diagnostics().counts_fired == 6);
+    CHECK(r.diagnostics().announcements_fired == 1);
+    // The name moves back with the count: it ends right where the "1" of the
+    // slow bar starts (4 s), not before the fast bar.
+    CHECK(spoken_at(ch[2], 4.0 - 0.003) == -1);
+    CHECK(spoken_at(ch[2], 6.0 - 0.003) == 0);
+}
+
+TEST_CASE("half-time count style spreads 1 2 3 4 over two bars of half notes") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_count_bank());
+    r.set_config(style_config(VoiceGuideCountStyle::HalfTime));
+    auto session = make_session(MarkerKind::Chorus, 8.0);
+    auto ch = render_all(r, session, kSampleRate * 9);
+    CHECK(spoken_beats(ch[2], 4.0, 8.0) == std::vector<int>{1, 0, 2, 0, 3, 0, 4, 0});
+    CHECK(r.diagnostics().counts_fired == 4);
+}
+
+TEST_CASE("a song's own count style overrides the global one") {
+    SUBCASE("region asks for half time, global is full") {
+        VoiceGuideRenderer r;
+        r.set_clip_bank(make_count_bank());
+        r.set_config(style_config(VoiceGuideCountStyle::Full));
+        auto session = make_session(MarkerKind::Chorus, 8.0);
+        add_region(session, static_cast<int>(VoiceGuideCountStyle::HalfTime));
+        auto ch = render_all(r, session, kSampleRate * 9);
+        CHECK(spoken_beats(ch[2], 4.0, 8.0) == std::vector<int>{1, 0, 2, 0, 3, 0, 4, 0});
+    }
+    SUBCASE("region follows the global setting (-1)") {
+        VoiceGuideRenderer r;
+        r.set_clip_bank(make_count_bank());
+        r.set_config(style_config(VoiceGuideCountStyle::HalfThenFull));
+        auto session = make_session(MarkerKind::Chorus, 8.0);
+        add_region(session, -1);
+        auto ch = render_all(r, session, kSampleRate * 9);
+        CHECK(spoken_beats(ch[2], 4.0, 8.0) == std::vector<int>{1, 0, 2, 0, 1, 2, 3, 4});
+    }
+    SUBCASE("region forces the plain count while the global is half time") {
+        VoiceGuideRenderer r;
+        r.set_clip_bank(make_count_bank());
+        r.set_config(style_config(VoiceGuideCountStyle::HalfTime));
+        auto session = make_session(MarkerKind::Chorus, 8.0);
+        add_region(session, static_cast<int>(VoiceGuideCountStyle::Full));
+        auto ch = render_all(r, session, kSampleRate * 9);
+        CHECK(spoken_beats(ch[2], 6.0, 8.0) == std::vector<int>{1, 2, 3, 4});
+        CHECK(spoken_beats(ch[2], 4.0, 5.5) == std::vector<int>{0, 0, 0});
+    }
+}
+
+TEST_CASE("half count styles fall back to the plain count in 3/4") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_count_bank());
+    r.set_config(style_config(VoiceGuideCountStyle::HalfTime));
+    // 120 BPM 3/4: one bar = 1.5 s, so the plain count is 6.5, 7.0, 7.5.
+    auto session = make_session(MarkerKind::Chorus, 8.0, 120.0, 3, 4);
+    auto ch = render_all(r, session, kSampleRate * 9);
+    CHECK(spoken_beats(ch[2], 6.5, 8.0) == std::vector<int>{1, 2, 3});
+    CHECK(r.diagnostics().counts_fired == 3);
+}
+
+TEST_CASE("with the count off a count style does not move the section name") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_count_bank());
+    VoiceGuideConfig config = style_config(VoiceGuideCountStyle::HalfThenFull);
+    config.count_in_enabled = false;
+    r.set_config(config);
+    auto session = make_session(MarkerKind::Chorus, 8.0);
+    auto ch = render_all(r, session, kSampleRate * 9);
+    CHECK(r.diagnostics().counts_fired == 0);
+    CHECK(spoken_at(ch[2], 6.0 - 0.003) == -1);   // ends one bar before, as before
+}

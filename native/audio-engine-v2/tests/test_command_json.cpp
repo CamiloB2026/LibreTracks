@@ -317,6 +317,52 @@ TEST_CASE("every region parser keeps the song fades") {
     check(std::get<CmdUpsertSongTracks>(upsert_cmd).regions);
 }
 
+// The per-song voice-guide count style rides the same three region parsers. A
+// parser that drops it makes the song fall back to the global count style on
+// that path (e.g. after a warp/transpose edit), which is the desync that the
+// master_gain bug already showed.
+TEST_CASE("every region parser keeps the voice-guide count style") {
+    const char* region = R"({"id":"reg1","name":"A","start_frame":0,"end_frame":480000,
+                             "voice_guide_count_style":2})";
+    const char* legacy = R"({"id":"reg2","name":"B","start_frame":480000,"end_frame":960000})";
+    auto check = [](const auto& regions) {
+        REQUIRE(regions.size() == 2);
+        CHECK(regions[0].voice_guide_count_style == 2);
+        CHECK(regions[1].voice_guide_count_style == -1);   // absent = follow global
+    };
+    const std::string list = std::string(region) + "," + legacy;
+    const std::string tail = R"(,"markers":[],"bpm":128.0,"beats_per_bar":4,"beat_unit":4,
+                                "tempo_markers":[],"time_signature_markers":[]})";
+
+    auto regions_cmd = command_from_json(
+        std::string(R"({"type":"SetSongRegions","song_id":"s","regions":[)") + list + "]}");
+    check(std::get<CmdSetSongRegions>(regions_cmd).regions);
+
+    auto window_cmd = command_from_json(
+        std::string(R"({"type":"SetSongTimelineWindow","song_id":"s","clips":[],"regions":[)")
+        + list + "]" + tail);
+    check(std::get<CmdSetSongTimelineWindow>(window_cmd).regions);
+
+    auto upsert_cmd = command_from_json(
+        std::string(R"({"type":"UpsertSongTracks","song_id":"s","tracks":[],"sources":[],"regions":[)")
+        + list + "]" + tail);
+    check(std::get<CmdUpsertSongTracks>(upsert_cmd).regions);
+}
+
+TEST_CASE("parse SetVoiceGuideConfig keeps the count style and round-trips it") {
+    auto cmd = command_from_json(
+        R"({"type":"SetVoiceGuideConfig","enabled":true,"volume":1.0,"route":"monitor",)"
+        R"("lead_bars":1,"count_in_enabled":true,"count_style":1})");
+    CHECK(std::get<CmdSetVoiceGuideConfig>(cmd).count_style == 1);
+    auto again = command_from_json(command_to_json(cmd));
+    CHECK(std::get<CmdSetVoiceGuideConfig>(again).count_style == 1);
+
+    // Older hosts never send it: the original "1 2 3 4".
+    auto legacy = command_from_json(
+        R"({"type":"SetVoiceGuideConfig","enabled":true,"volume":1.0})");
+    CHECK(std::get<CmdSetVoiceGuideConfig>(legacy).count_style == 0);
+}
+
 TEST_CASE("parse SetTrackGain") {
     auto cmd = command_from_json(R"({"type":"SetTrackGain","track_id":"t1","gain":0.75})");
     REQUIRE(std::holds_alternative<CmdSetTrackGain>(cmd));

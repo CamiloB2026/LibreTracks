@@ -82,6 +82,7 @@ fn demo_song() -> Song {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }],
         tracks: vec![Track {
@@ -152,6 +153,7 @@ fn demo_song_with_varispeed_region() -> Song {
         master: libretracks_core::SongMaster::default(),
         compact_column_width_rem: None,
         chart: None,
+        voice_guide_count_style: None,
         structure: None,
     }];
     // Keep the clip inside the varispeed region ([5, 20]) so the song
@@ -251,6 +253,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
         SongRegion {
@@ -265,6 +268,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
         SongRegion {
@@ -279,6 +283,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
     ];
@@ -404,6 +409,7 @@ fn hierarchy_song() -> Song {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }],
         tracks: vec![
@@ -998,6 +1004,7 @@ fn song_to_view_preserves_track_ids_and_parent_ids_verbatim() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }],
         tracks: vec![
@@ -1495,6 +1502,7 @@ fn varispeed_expansion_next_to_another_song_returns_descriptive_overlap_error() 
         master: libretracks_core::SongMaster::default(),
         compact_column_width_rem: None,
         chart: None,
+        voice_guide_count_style: None,
         structure: None,
     });
     let mut session = session_with_song_dir("transpose-overlap-demo", song);
@@ -3869,6 +3877,7 @@ fn reconcile_regions_and_clips_keeps_a_clip_from_crossing_into_the_next_song() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
         SongRegion {
@@ -3883,6 +3892,7 @@ fn reconcile_regions_and_clips_keeps_a_clip_from_crossing_into_the_next_song() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
     ];
@@ -4080,6 +4090,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
         SongRegion {
@@ -4094,6 +4105,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
         SongRegion {
@@ -4108,6 +4120,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         },
     ];
@@ -4705,6 +4718,42 @@ fn song_region_fades_are_stored_capped_and_validated() {
         .is_err());
     assert!(session
         .update_song_region_fades("region_1", f64::NAN, 0.0, &audio)
+        .is_err());
+}
+
+/// A song's own voice-guide count style is an edit like any other (undo,
+/// `project_revision`) and `None` puts the song back on the global setting.
+#[test]
+fn song_region_voice_guide_count_style_is_stored_and_undoable() {
+    use libretracks_core::VoiceGuideCountStyle;
+    let mut session = session_with_song_dir("count-style-demo", demo_song());
+    let audio = crate::audio::engine::AudioController::default();
+    let revision = session.snapshot().project_revision;
+
+    session
+        .update_song_region_voice_guide_count_style(
+            "region_1",
+            Some(VoiceGuideCountStyle::HalfThenFull),
+            &audio,
+        )
+        .expect("count style should be stored");
+    let song = session.engine.song().unwrap();
+    assert_eq!(
+        song.regions[0].voice_guide_count_style,
+        Some(VoiceGuideCountStyle::HalfThenFull)
+    );
+    assert_eq!(
+        crate::models::view::region_to_summary(song, &song.regions[0]).voice_guide_count_style,
+        Some(VoiceGuideCountStyle::HalfThenFull),
+        "the view carries it so the menu can tick the current style"
+    );
+    assert!(session.snapshot().project_revision > revision, "it is an edit");
+
+    session.undo_action(&audio).expect("undo");
+    assert_eq!(session.engine.song().unwrap().regions[0].voice_guide_count_style, None);
+
+    assert!(session
+        .update_song_region_voice_guide_count_style("missing", None, &audio)
         .is_err());
 }
 

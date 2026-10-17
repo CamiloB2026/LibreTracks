@@ -113,6 +113,11 @@ pub enum EngineCommand {
         lead_bars: i32,
         /// false = speak the section name only, no beat count.
         count_in_enabled: bool,
+        /// Global count layout (`lt::VoiceGuideCountStyle`: 0 = "1 2 3 4",
+        /// 1 = "1 . 2 . | 1 2 3 4", 2 = half time). A song may override it
+        /// with `RegionUpdate::voice_guide_count_style`.
+        #[serde(default)]
+        count_style: i32,
     },
 
     /// Decode and install the voice-guide clip bank for a language. The engine
@@ -341,6 +346,14 @@ pub struct RegionUpdate {
     pub fade_in_frames: i64,
     #[serde(default)]
     pub fade_out_frames: i64,
+    /// This song's voice-guide count style (`lt::VoiceGuideCountStyle`), or
+    /// -1 to follow the global `SetVoiceGuideConfig::count_style`.
+    #[serde(default = "default_region_voice_guide_count_style")]
+    pub voice_guide_count_style: i32,
+}
+
+fn default_region_voice_guide_count_style() -> i32 {
+    -1
 }
 
 fn default_region_master_gain() -> f32 {

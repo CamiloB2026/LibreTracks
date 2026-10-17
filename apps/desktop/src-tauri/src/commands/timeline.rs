@@ -623,6 +623,22 @@ pub fn update_song_region_fades(
 }
 
 #[tauri::command(async)]
+pub fn update_song_region_voice_guide_count_style(
+    region_id: String,
+    count_style: Option<libretracks_core::VoiceGuideCountStyle>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .update_song_region_voice_guide_count_style(&region_id, count_style, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command(async)]
 pub fn delete_song_region(
     region_id: String,
     state: State<'_, DesktopState>,

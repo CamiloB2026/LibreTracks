@@ -1201,6 +1201,7 @@ pub fn merge_extracted_song_package(
         master: libretracks_core::SongMaster::default(),
         compact_column_width_rem: None,
         chart: manifest.region_chart.clone(),
+        voice_guide_count_style: None,
         structure: manifest
             .structure
             .clone()
@@ -1410,6 +1411,7 @@ mod tests {
             master: SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }
     }

@@ -54,6 +54,7 @@ import type {
   VideoImportResult,
   VideoLibraryStatus,
   VideoThumbnailStrip,
+  VoiceGuideCountStyle,
   WaveformProgressEvent,
   WaveformReadyEvent,
   WaveformSummaryDto,
@@ -1934,6 +1935,20 @@ export async function updateLiveRegionMasterGain(
     regionId,
     masterGain,
   });
+}
+
+/**
+ * Set how the voice guide counts into this song's sections; `null` puts the
+ * song back on the global setting. Records undo and returns the new snapshot.
+ */
+export async function updateSongRegionVoiceGuideCountStyle(
+  regionId: string,
+  countStyle: VoiceGuideCountStyle | null,
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>(
+    "update_song_region_voice_guide_count_style",
+    { regionId, countStyle },
+  );
 }
 
 /**

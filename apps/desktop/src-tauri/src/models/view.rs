@@ -340,6 +340,8 @@ pub struct SongRegionSummary {
     pub compact_column_width_rem: Option<f64>,
     /// Partitura PDF de la canción y sus puntos por marca; `None` sin partitura.
     pub chart: Option<libretracks_core::SongChart>,
+    /// Estilo de conteo de la voz guía propio de la canción; `None` = el global.
+    pub voice_guide_count_style: Option<libretracks_core::VoiceGuideCountStyle>,
     /// Lo que pinta el editor de arreglos. No lleva la instantánea del
     /// original, que puede ser grande: sólo secciones y arreglos.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1230,6 +1232,7 @@ pub(crate) fn region_to_summary(song: &Song, region: &SongRegion) -> SongRegionS
         },
         compact_column_width_rem: region.compact_column_width_rem,
         chart: region.chart.clone(),
+        voice_guide_count_style: region.voice_guide_count_style,
         structure: region
             .structure
             .as_ref()
@@ -1602,6 +1605,7 @@ mod tests {
             master: SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }
     }

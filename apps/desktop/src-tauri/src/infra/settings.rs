@@ -261,6 +261,10 @@ pub struct AppSettings {
     pub voice_guide_lead_bars: i32,
     #[serde(default = "default_voice_guide_count_in_enabled")]
     pub voice_guide_count_in_enabled: bool,
+    /// How the count-in is laid out ("1 2 3 4", "1 · 2 · | 1 2 3 4", half
+    /// time). Each song may override it (`SongRegion.voice_guide_count_style`).
+    #[serde(default)]
+    pub voice_guide_count_style: libretracks_core::VoiceGuideCountStyle,
     #[serde(default = "default_voice_guide_language")]
     pub voice_guide_language: String,
     #[serde(default)]
@@ -459,6 +463,7 @@ impl Default for AppSettings {
             voice_guide_volume: default_voice_guide_volume(),
             voice_guide_lead_bars: default_voice_guide_lead_bars(),
             voice_guide_count_in_enabled: default_voice_guide_count_in_enabled(),
+            voice_guide_count_style: libretracks_core::VoiceGuideCountStyle::default(),
             voice_guide_language: default_voice_guide_language(),
             pad_enabled: false,
             pad_id: String::new(),

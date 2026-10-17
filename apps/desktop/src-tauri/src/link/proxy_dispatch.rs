@@ -111,6 +111,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "update_song_region_master_gain"
         | "update_song_region_master_gains"
         | "update_song_region_transpose"
+        | "update_song_region_voice_guide_count_style"
         | "update_song_region_warp"
         | "update_song_tempo"
         | "update_song_time_signature"
@@ -236,6 +237,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "update_song_region_master_gain",
     "update_song_region_master_gains",
     "update_song_region_transpose",
+    "update_song_region_voice_guide_count_style",
     "update_song_region_warp",
     "update_song_tempo",
     "update_song_time_signature",
@@ -969,6 +971,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
                 into_value_result(crate::commands::timeline::update_song_region_transpose(arg(&args, "regionId")?, arg(&args, "transposeSemitones")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
+        "update_song_region_voice_guide_count_style" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::update_song_region_voice_guide_count_style(arg(&args, "regionId")?, arg(&args, "countStyle")?, app.state()))
             })
             .await
             .map_err(|error| error.to_string())?

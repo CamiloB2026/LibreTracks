@@ -268,3 +268,31 @@ TEST_CASE("loading a session keeps a marker's category override") {
     CHECK(plain.category_override == MarkerCategoryOverride::Inherit);
     CHECK_FALSE(plain.is_cue());
 }
+
+// Opening a session (and the offline render) reads regions here, not through
+// the three realtime parsers. A song's voice-guide count style must survive
+// that path too, and a session saved before the field follows the global one.
+TEST_CASE("loading a session keeps each song's voice-guide count style") {
+    const std::string project = R"({
+        "id":"s1","title":"Song","sampleRate":48000,
+        "songs":[{
+            "id":"song1","title":"Song","durationSeconds":30.0,
+            "tracks":[],"clips":[],
+            "regions":[
+                {"id":"r1","name":"Fast","startSeconds":0.0,"endSeconds":10.0,
+                 "voiceGuideCountStyle":"halfThenFull"},
+                {"id":"r2","name":"Half","startSeconds":10.0,"endSeconds":20.0,
+                 "voiceGuideCountStyle":"halfTime"},
+                {"id":"r3","name":"Old","startSeconds":20.0,"endSeconds":30.0}
+            ]
+        }]
+    })";
+
+    auto result = session_from_project_json(project, 48000);
+    REQUIRE(result.is_ok());
+    auto session = result.take();
+    REQUIRE(session.songs[0].regions.size() == 3);
+    CHECK(session.songs[0].regions[0].voice_guide_count_style == 1);
+    CHECK(session.songs[0].regions[1].voice_guide_count_style == 2);
+    CHECK(session.songs[0].regions[2].voice_guide_count_style == -1);
+}

@@ -18,7 +18,7 @@ pub use model::{
     OriginalSnapshot, SongStructure, SongChart, ChartLink, chart_link_marker_id, parse_audio_output_route, Clip, Marker, MarkerCategory, MarkerKind, MidiClip,
     MidiEvent, MidiEventKind, Project, Song, SongMaster, SongRegion, TempoMarker, TempoMetadata,
     is_video_file_path, TempoSource, TimeSignatureMarker, Track, TrackKind, VideoAssetInfo, VideoClip,
-    VideoFit, MAX_MIDI_CHANNEL, MAX_MIDI_DATA_VALUE, MIN_MIDI_CHANNEL,
+    VideoFit, VoiceGuideCountStyle, MAX_MIDI_CHANNEL, MAX_MIDI_DATA_VALUE, MIN_MIDI_CHANNEL,
     SLOW_SEEK_KEYFRAME_INTERVAL_SECONDS, VIDEO_FILE_EXTENSIONS,
 };
 pub use validation::{
@@ -62,6 +62,7 @@ mod tests {
                 master: SongMaster::default(),
                 compact_column_width_rem: None,
                 chart: None,
+                voice_guide_count_style: None,
                 structure: None,
             }],
             tracks: vec![
@@ -154,6 +155,7 @@ mod tests {
             master: SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
 
@@ -210,6 +212,7 @@ mod tests {
             master: SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
         // Clip starts inside region_intro [0, 240) but extends past 240.
@@ -239,6 +242,7 @@ mod tests {
             master: SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         });
         song.clips[0].timeline_start_seconds = 0.0;

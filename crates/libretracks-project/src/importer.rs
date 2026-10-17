@@ -261,6 +261,7 @@ pub fn import_wav_song(
             master: libretracks_core::SongMaster::default(),
             compact_column_width_rem: None,
             chart: None,
+            voice_guide_count_style: None,
             structure: None,
         }],
         tracks: imported_files

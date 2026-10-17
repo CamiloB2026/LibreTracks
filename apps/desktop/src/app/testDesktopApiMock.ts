@@ -433,6 +433,7 @@ function buildInitialState(): DesktopApiMockState {
       voiceGuideVolume: 1.0,
       voiceGuideLeadBars: 1,
       voiceGuideCountInEnabled: true,
+      voiceGuideCountStyle: "full",
       voiceGuideLanguage: "es",
       padEnabled: false,
       padId: "",

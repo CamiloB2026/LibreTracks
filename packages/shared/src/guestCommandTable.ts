@@ -173,6 +173,7 @@ export const GUEST_COMMAND_ROUTES: Readonly<Record<string, GuestCommandRoute>> =
   update_song_region_master_gain: "edit",
   update_song_region_master_gains: "edit",
   update_song_region_transpose: "edit",
+  update_song_region_voice_guide_count_style: "edit",
   update_song_region_warp: "edit",
   update_song_tempo: "edit",
   update_song_time_signature: "edit",

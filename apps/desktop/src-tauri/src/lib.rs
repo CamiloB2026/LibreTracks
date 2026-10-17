@@ -488,6 +488,7 @@ pub fn run() {
             commands::timeline::update_song_region_master_gain,
             commands::timeline::update_song_region_master_gains,
             commands::timeline::update_song_region_fades,
+            commands::timeline::update_song_region_voice_guide_count_style,
             commands::timeline::delete_song_region,
             commands::timeline::split_song_region,
             commands::timeline::upsert_midi_clip,

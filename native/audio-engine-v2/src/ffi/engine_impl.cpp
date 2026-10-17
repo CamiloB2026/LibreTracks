@@ -2163,6 +2163,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
             voice_guide_config_.output_route = c.route.empty() ? std::string("monitor") : c.route;
             voice_guide_config_.lead_bars = std::clamp(c.lead_bars, 1, 4);
             voice_guide_config_.count_in_enabled = c.count_in_enabled;
+            voice_guide_config_.count_style = voice_guide_count_style_from_int(c.count_style);
             if (mixer_) mixer_->set_voice_guide_config(voice_guide_config_);
             return Result<void>::ok();
         }
@@ -3046,6 +3047,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                         region.master_gain = update.master_gain;
                         region.fade_in_frames = update.fade_in_frames;
                         region.fade_out_frames = update.fade_out_frames;
+                        region.voice_guide_count_style = update.voice_guide_count_style;
                         song.regions.push_back(std::move(region));
                     }
                     changed = true;
@@ -3315,6 +3317,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                         region.master_gain = update.master_gain;
                         region.fade_in_frames = update.fade_in_frames;
                         region.fade_out_frames = update.fade_out_frames;
+                        region.voice_guide_count_style = update.voice_guide_count_style;
                         song.regions.push_back(std::move(region));
                     }
 
@@ -3477,6 +3480,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                     region.master_gain = update.master_gain;
                     region.fade_in_frames = update.fade_in_frames;
                     region.fade_out_frames = update.fade_out_frames;
+                    region.voice_guide_count_style = update.voice_guide_count_style;
                     song.regions.push_back(std::move(region));
                 }
 

@@ -152,6 +152,7 @@ EngineCommand command_from_json(const std::string& raw) {
         c.route = j.value("route", std::string{"monitor"});
         c.lead_bars = j.value("lead_bars", 1);
         c.count_in_enabled = j.value("count_in_enabled", true);
+        c.count_style = j.value("count_style", 0);
         return c;
     }
 
@@ -220,6 +221,7 @@ EngineCommand command_from_json(const std::string& raw) {
             region.master_gain = item.value("master_gain", 1.0f);
             region.fade_in_frames = item.value("fade_in_frames", static_cast<Frame>(0));
             region.fade_out_frames = item.value("fade_out_frames", static_cast<Frame>(0));
+            region.voice_guide_count_style = item.value("voice_guide_count_style", -1);
             cmd.regions.push_back(std::move(region));
         }
         return cmd;
@@ -319,6 +321,7 @@ EngineCommand command_from_json(const std::string& raw) {
             region.master_gain = item.value("master_gain", 1.0f);
             region.fade_in_frames = item.value("fade_in_frames", static_cast<Frame>(0));
             region.fade_out_frames = item.value("fade_out_frames", static_cast<Frame>(0));
+            region.voice_guide_count_style = item.value("voice_guide_count_style", -1);
             cmd.regions.push_back(std::move(region));
         }
         for (const auto& item : j.at("markers")) {
@@ -404,6 +407,7 @@ EngineCommand command_from_json(const std::string& raw) {
                 region.master_gain = item.value("master_gain", 1.0f);
                 region.fade_in_frames = item.value("fade_in_frames", static_cast<Frame>(0));
                 region.fade_out_frames = item.value("fade_out_frames", static_cast<Frame>(0));
+                region.voice_guide_count_style = item.value("voice_guide_count_style", -1);
                 cmd.regions.push_back(std::move(region));
             }
         }
@@ -553,6 +557,7 @@ std::string command_to_json(const EngineCommand& cmd) {
             j["route"] = c.route;
             j["lead_bars"] = c.lead_bars;
             j["count_in_enabled"] = c.count_in_enabled;
+            j["count_style"] = c.count_style;
         }
         else if constexpr (std::is_same_v<T, CmdLoadVoiceGuideBank>) {
             j["type"] = "LoadVoiceGuideBank";

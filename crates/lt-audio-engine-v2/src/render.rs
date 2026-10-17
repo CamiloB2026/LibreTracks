@@ -51,6 +51,10 @@ pub struct RenderVoiceGuide {
     pub volume: f32,
     pub lead_bars: i32,
     pub count_in_enabled: bool,
+    /// Global count layout (`lt::VoiceGuideCountStyle`); songs may override it
+    /// through their region in the project JSON.
+    #[serde(default)]
+    pub count_style: i32,
     pub voices_dir: String,
     pub lang: String,
 }

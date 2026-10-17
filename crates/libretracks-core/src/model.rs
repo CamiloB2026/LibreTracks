@@ -114,6 +114,40 @@ pub struct SongRegion {
     /// la sesión igual.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chart: Option<SongChart>,
+    /// Cómo cuenta la voz guía la entrada de las secciones de ESTA canción.
+    /// `None` —y lo que deserializan las sesiones de antes— sigue el ajuste
+    /// global (`AppSettings.voice_guide_count_style`). Se omite al guardar, así
+    /// que una canción sin preferencia se escribe igual que antes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub voice_guide_count_style: Option<VoiceGuideCountStyle>,
+}
+
+/// Cómo se reparte el conteo hablado de la voz guía en los compases previos a
+/// una sección. A tempos rápidos las bandas no cuentan "1 2 3 4" en negras: o
+/// marcan primero un compás a medio tiempo ("1 · 2 · | 1 2 3 4") o cuentan todo
+/// a medio tiempo. El motor lo recibe como entero (`as_engine_value`): ese
+/// orden es ABI, sólo se añade al final.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum VoiceGuideCountStyle {
+    /// "1 2 3 4": una cifra por pulso (el comportamiento de siempre).
+    #[default]
+    Full,
+    /// "1 · 2 · | 1 2 3 4": un compás en blancas y luego el conteo normal.
+    HalfThenFull,
+    /// "1 · 2 · | 3 · 4 ·": todo el conteo a medio tiempo (dura el doble).
+    HalfTime,
+}
+
+impl VoiceGuideCountStyle {
+    /// Valor de `lt::VoiceGuideCountStyle` en el motor C++.
+    pub fn as_engine_value(self) -> i32 {
+        match self {
+            Self::Full => 0,
+            Self::HalfThenFull => 1,
+            Self::HalfTime => 2,
+        }
+    }
 }
 
 /// Letra y acordes de una canción, y su sincronía con la secuencia.
@@ -1104,6 +1138,40 @@ mod tests {
     // A session without song fades must be written exactly as before, so the
     // file does not change and an older app reads it untouched; one saved
     // before the fades existed must load with none.
+    // Una canción sin estilo de conteo propio se escribe igual que antes (sin
+    // el campo) y una sesión vieja carga con `None` = sigue el ajuste global.
+    // Los valores viajan en camelCase, como el resto de la sesión.
+    #[test]
+    fn region_voice_guide_count_style_is_optional_and_camel_case() {
+        let style = serde_json::to_value(VoiceGuideCountStyle::HalfThenFull).unwrap();
+        assert_eq!(style, serde_json::json!("halfThenFull"));
+        assert_eq!(
+            serde_json::to_value(VoiceGuideCountStyle::HalfTime).unwrap(),
+            serde_json::json!("halfTime")
+        );
+
+        let legacy: SongRegion = serde_json::from_value(serde_json::json!({
+            "id": "r1", "name": "A", "startSeconds": 0.0, "endSeconds": 10.0
+        }))
+        .unwrap();
+        assert_eq!(legacy.voice_guide_count_style, None);
+        let written = serde_json::to_value(&legacy).unwrap();
+        assert!(written.get("voiceGuideCountStyle").is_none());
+
+        let with_style = SongRegion {
+            voice_guide_count_style: Some(VoiceGuideCountStyle::HalfTime),
+            ..legacy
+        };
+        let json = serde_json::to_value(&with_style).unwrap();
+        assert_eq!(json["voiceGuideCountStyle"], "halfTime");
+        let back: SongRegion = serde_json::from_value(json).unwrap();
+        assert_eq!(back.voice_guide_count_style, Some(VoiceGuideCountStyle::HalfTime));
+
+        assert_eq!(VoiceGuideCountStyle::Full.as_engine_value(), 0);
+        assert_eq!(VoiceGuideCountStyle::HalfThenFull.as_engine_value(), 1);
+        assert_eq!(VoiceGuideCountStyle::HalfTime.as_engine_value(), 2);
+    }
+
     #[test]
     fn song_master_fades_are_omitted_when_zero_and_default_when_absent() {
         let plain = serde_json::to_value(SongMaster::default()).unwrap();

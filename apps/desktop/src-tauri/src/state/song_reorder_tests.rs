@@ -25,6 +25,7 @@ fn region(id: &str, start: f64, end: f64) -> SongRegion {
         master: SongMaster::default(),
         compact_column_width_rem: None,
         chart: None,
+        voice_guide_count_style: None,
         structure: None,
     }
 }

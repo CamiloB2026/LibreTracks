@@ -351,6 +351,7 @@ fn set_song_timeline_window_round_trip() {
             master_gain: 1.0,
             fade_in_frames: 0,
             fade_out_frames: 0,
+            voice_guide_count_style: -1,
         }],
         markers: vec![MarkerUpdate {
             id: "section_a".into(),
@@ -768,6 +769,7 @@ fn set_song_regions_round_trips_region_updates() {
             master_gain: 1.0,
             fade_in_frames: 4_800,
             fade_out_frames: 9_600,
+            voice_guide_count_style: 1,
         }],
     };
     assert_eq!(round_trip_type(&cmd), "SetSongRegions");
@@ -779,8 +781,37 @@ fn set_song_regions_round_trips_region_updates() {
             assert_eq!(regions[0].transpose_semitones, 3);
             assert_eq!(regions[0].fade_in_frames, 4_800);
             assert_eq!(regions[0].fade_out_frames, 9_600);
+            assert_eq!(regions[0].voice_guide_count_style, 1);
         }
         other => panic!("expected SetSongRegions, got {other:?}"),
+    }
+}
+
+// The C++ parsers read `voice_guide_count_style` with -1 ("follow the global
+// setting") as the default; the Rust side must agree, or a region sent without
+// the field would force the plain count on every song.
+#[test]
+fn region_update_voice_guide_count_style_defaults_to_follow_global() {
+    let json = r#"{"id":"r1","name":"A","start_frame":0,"end_frame":10,"transpose_semitones":0}"#;
+    let region: RegionUpdate = serde_json::from_str(json).expect("deserialize");
+    assert_eq!(region.voice_guide_count_style, -1);
+}
+
+#[test]
+fn set_voice_guide_config_carries_the_count_style() {
+    let cmd = EngineCommand::SetVoiceGuideConfig {
+        enabled: true,
+        volume: 1.0,
+        route: "monitor".into(),
+        lead_bars: 1,
+        count_in_enabled: true,
+        count_style: 2,
+    };
+    let json = serde_json::to_value(&cmd).expect("serialize");
+    assert_eq!(json["count_style"], 2);
+    match round_trip(&cmd) {
+        EngineCommand::SetVoiceGuideConfig { count_style, .. } => assert_eq!(count_style, 2),
+        other => panic!("expected SetVoiceGuideConfig, got {other:?}"),
     }
 }
 

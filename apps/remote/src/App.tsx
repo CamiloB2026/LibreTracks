@@ -24,6 +24,8 @@ import {
   METRONOME_SOUND_PRESETS,
   markerColor,
   regionEffectiveKey,
+  isVoiceGuideCountStyle,
+  VOICE_GUIDE_COUNT_STYLES,
   type AppSettings,
   type AudioMeterLevel,
   type PadsCatalog,
@@ -3639,6 +3641,7 @@ function PerformanceSettingsWidget({ mode = "combined" }: { mode?: "combined" | 
           <label className="performance-setting-field"><span>{STRINGS.guideLeadBars}</span><select value={settings.voiceGuideLeadBars} onChange={(event) => patch({ voiceGuideLeadBars: Number(event.currentTarget.value) })}>{[1, 2, 3, 4].map((bars) => <option key={bars} value={bars}>{bars}</option>)}</select></label>
         </div>
         <label className="performance-switch is-row"><input type="checkbox" checked={settings.voiceGuideCountInEnabled} onChange={(event) => patch({ voiceGuideCountInEnabled: event.currentTarget.checked })} /><span>{STRINGS.guideCountIn}</span></label>
+        <label className="performance-setting-field"><span>{STRINGS.guideCountStyle}</span><select value={settings.voiceGuideCountStyle ?? "full"} disabled={!settings.voiceGuideCountInEnabled} onChange={(event) => { const style = event.currentTarget.value; if (isVoiceGuideCountStyle(style)) patch({ voiceGuideCountStyle: style }); }}>{VOICE_GUIDE_COUNT_STYLES.map((style) => <option key={style} value={style}>{style === "halfThenFull" ? STRINGS.guideCountStyleHalfThenFull : style === "halfTime" ? STRINGS.guideCountStyleHalfTime : STRINGS.guideCountStyleFull}</option>)}</select></label>
       </section>
       ) : null}
     </div>
