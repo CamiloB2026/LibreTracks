@@ -1470,16 +1470,30 @@ fn spawn_open_project_worker(app: &AppHandle, song_file: std::path::PathBuf) {
         // ready — so it is always visible that the audio is NOT ready yet.
         //
         // Playback is progressive: decoded blocks sound, the rest is silent.
-        let result = (|| -> Result<TransportSnapshot, String> {
-            let mut session = state
-                .session
-                .lock()
-                .map_err(|_| DesktopError::StatePoisoned.to_string())?;
-            let snapshot = session
-                .begin_open_project_from_path(&worker_app, &state.audio, song_file)
-                .map_err(|error| error.to_string())?;
-            Ok(snapshot)
-        })();
+        //
+        // A panic inside the load must still end in a load-complete event:
+        // without it the frontend never leaves "Cargando sesion de audio..."
+        // and the only trace is a PANIC line in errors.log.
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || -> Result<TransportSnapshot, String> {
+                let mut session = state
+                    .session
+                    .lock()
+                    .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+                let snapshot = session
+                    .begin_open_project_from_path(&worker_app, &state.audio, song_file)
+                    .map_err(|error| error.to_string())?;
+                Ok(snapshot)
+            },
+        ))
+        .unwrap_or_else(|payload| {
+            let message = payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_string())
+                .or_else(|| payload.downcast_ref::<String>().cloned())
+                .unwrap_or_else(|| "error interno".to_string());
+            Err(format!("No se pudo abrir la sesion: {message}"))
+        });
 
         match result {
             Ok(snapshot) => {
