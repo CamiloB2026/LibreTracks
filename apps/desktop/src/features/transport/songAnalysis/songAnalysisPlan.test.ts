@@ -7,7 +7,10 @@ import {
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
+  assignmentForLabel,
+  guideTrackOptions,
   keyTrackOptions,
+  placeGuideSections,
   musicTempoTrackIds,
   scaleTempoRows,
   parseBpm,
@@ -121,6 +124,39 @@ describe("tempo from the music", () => {
     // Out of range stays.
     const tooFast = scaleTempoRows(scaled, 2);
     expect(tooFast.find((row) => row.kind === "tempo")?.text).toBe("184");
+  });
+});
+
+describe("guide", () => {
+  it("preselects the guide-named track", () => {
+    expect(guideTrackOptions(song(), "b").preselected).toBe("guide");
+  });
+
+  it("reads a voice clip's label as a marker", () => {
+    expect(assignmentForLabel("chorus_2")).toEqual({ kind: "chorus", variant: 2 });
+    expect(assignmentForLabel("drums_in")).toEqual({ kind: "drums_in", variant: null });
+    expect(assignmentForLabel("count")).toBe("ignore");
+    expect(assignmentForLabel(null)).toBeNull();
+    expect(assignmentForLabel("not_a_kind")).toBeNull();
+    // A variant the picker does not offer becomes the plain kind.
+    expect(assignmentForLabel("verse_9")).toEqual({ kind: "verse", variant: null });
+  });
+
+  it("follows the tempo the review is about to write", () => {
+    const analysis = {
+      announcements: [{ startSeconds: 4.8, endSeconds: 5.3, group: 0 }],
+      groups: [{ label: "intro", matchCost: 0.5, occurrences: 1, firstStartSeconds: 4.8, firstEndSeconds: 5.3 }],
+    };
+    const assignments = [{ kind: "intro" as const, variant: null }];
+    const plain = { ...song(), tempoMarkers: [], timeSignatureMarkers: [] };
+    // The song's own grid: 120 BPM, bars of 2 s → 106.
+    expect(placeGuideSections(plain, "b", 100, analysis, assignments, null)[0].startSeconds).toBe(106);
+    // With a 60 BPM marker at the song start: bars of 4 s → 108.
+    const tempo = {
+      tempoMarkers: [{ startSeconds: 100, bpm: 60, restoresNextSong: false }],
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+    };
+    expect(placeGuideSections(plain, "b", 100, analysis, assignments, tempo)[0].startSeconds).toBe(108);
   });
 });
 

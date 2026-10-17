@@ -1,11 +1,15 @@
 use std::fs;
 
 use libretracks_analysis::{ProposedSignatureMarker, ProposedTempoMarker};
-use libretracks_core::{Song, SongMaster, SongRegion, TempoMarker, TimeSignatureMarker};
+use libretracks_core::{
+    Marker, MarkerKind, Song, SongMaster, SongRegion, TempoMarker, TimeSignatureMarker,
+};
 use libretracks_project::{create_song_folder, save_song, SONG_FILE_NAME};
 use tempfile::tempdir;
 
-use super::{apply_key_to_song, apply_tempo_analysis_to_song};
+use super::{
+    apply_key_to_song, apply_sections_to_song, apply_tempo_analysis_to_song, AnalysedSection,
+};
 use crate::audio::engine::AudioController;
 use crate::state::DesktopSession;
 
@@ -189,6 +193,66 @@ fn the_key_is_written_or_cleared_on_its_song_only() {
     assert!(apply_key_to_song(&mut song, "nope", "D").is_err());
 }
 
+fn marker(id: &str, start: f64) -> Marker {
+    Marker {
+        id: id.into(),
+        name: id.into(),
+        start_seconds: start,
+        digit: None,
+        kind: MarkerKind::Custom,
+        variant: None,
+        color: None,
+        category_override: None,
+    }
+}
+
+fn section(start: f64, kind: MarkerKind, variant: Option<u8>, name: &str) -> AnalysedSection {
+    AnalysedSection {
+        start_seconds: start,
+        kind,
+        variant,
+        name: name.into(),
+    }
+}
+
+#[test]
+fn guide_sections_replace_the_song_s_own_markers_only() {
+    let mut song = setlist();
+    song.section_markers = vec![
+        marker("before", 10.0),
+        marker("inside", 70.0),
+        marker("after", 130.0),
+    ];
+    apply_sections_to_song(
+        &mut song,
+        "r2",
+        &[
+            section(64.0, MarkerKind::Intro, None, "Intro"),
+            section(80.0, MarkerKind::Chorus, Some(2), "Coro 2"),
+            // Outside the song: dropped.
+            section(125.0, MarkerKind::Outro, None, "Outro"),
+        ],
+    )
+    .expect("apply");
+    let names: Vec<(&str, f64)> = song
+        .section_markers
+        .iter()
+        .map(|m| (m.name.as_str(), m.start_seconds))
+        .collect();
+    assert_eq!(
+        names,
+        vec![
+            ("before", 10.0),
+            ("Intro", 64.0),
+            ("Coro 2", 80.0),
+            ("after", 130.0)
+        ]
+    );
+    let chorus = &song.section_markers[2];
+    assert_eq!((chorus.kind, chorus.variant), (MarkerKind::Chorus, Some(2)));
+    assert_ne!(song.section_markers[1].id, song.section_markers[2].id);
+}
+
 #[test]
 fn applying_is_one_undo_step() {
     let song = setlist();
@@ -210,6 +274,7 @@ fn applying_is_one_undo_step() {
                 &[proposed_signature(60.0, "6/8")],
             )),
             Some("Dm".into()),
+            None,
             &audio,
         )
         .expect("apply");

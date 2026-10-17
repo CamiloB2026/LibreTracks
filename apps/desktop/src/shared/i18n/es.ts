@@ -691,6 +691,27 @@ const es = {
       intro:
         "Lee la pista de click para proponer las marcas de tempo y de compás, y las pistas armónicas para proponer la nota. Revisa la propuesta antes de aplicarla; se puede deshacer.",
       noTempo: "No analizar el tempo",
+      guideTrack: "Pista de guía",
+      noGuide: "No analizar las guías",
+      guideTrackHint:
+        "La voz que anuncia las secciones. Cada anuncio se coloca en el primer tiempo siguiente.",
+      applySections_one: "Aplicar {{count}} marca de sección",
+      applySections_other: "Aplicar {{count}} marcas de sección",
+      noAnnouncements: "No se ha encontrado ningún anuncio en la pista de guía.",
+      sectionsHint:
+        "Los anuncios repetidos se han agrupado: elige una vez qué es cada uno y se aplica a todas sus apariciones. Pulsa ▶ para oírlo.",
+      unrecognised_one: "{{count}} anuncio sin reconocer: escúchalo y elige qué es, o no se pondrá.",
+      unrecognised_other:
+        "{{count}} anuncios sin reconocer: escúchalos y elige qué son, o no se pondrán.",
+      replacesMarkers_one: "Sustituye la marca que la canción tiene ahora.",
+      replacesMarkers_other: "Sustituye las {{count}} marcas que la canción tiene ahora.",
+      colAnnouncement: "Anuncio",
+      colTimes: "Veces",
+      colMarker: "Marca",
+      unassigned: "⚠ Sin reconocer",
+      ignore: "Ignorar (conteo, otro)",
+      listen: "Escuchar el anuncio de {{position}}",
+      markerFor: "Marca para el anuncio de {{position}}",
       fromMusic: "Sin click: estimarlo de la música",
       fromMusicHint:
         "Se estima con todas las pistas menos las de cues. Es menos fiable que un click: revisa el resultado.",
@@ -915,7 +936,7 @@ const es = {
       songCountStyle: "Conteo de la voz guía",
       songCountStyleDefault: "Como el ajuste global ({{style}})",
       renderSong: "Renderizar audio…",
-      analyzeSong: "Analizar canción (tempo, compás y nota)…",
+      analyzeSong: "Analizar canción (tempo, nota y secciones)…",
       levelSongs: "Nivelar volumen de canciones…",
       exportSong: "Exportar Cancion",
       deleteSong: "Borrar Cancion",

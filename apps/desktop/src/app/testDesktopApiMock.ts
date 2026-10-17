@@ -1293,12 +1293,14 @@ export const testDesktopApiMock = {
     clickTrackIds: string[];
     musicTempoTrackIds: string[];
     keyTrackIds: string[];
+    guideTrackIds: string[];
   }) => {
     const region = state.song.regions.find((candidate) => candidate.id === request.regionId);
     return {
       cancelled: false,
       regionId: request.regionId,
       regionStartSeconds: region?.startSeconds ?? 0,
+      renderStartSeconds: region?.startSeconds ?? 0,
       tempo:
         request.clickTrackIds.length > 0 || request.musicTempoTrackIds.length > 0
           ? {
@@ -1318,6 +1320,10 @@ export const testDesktopApiMock = {
             }
           : null,
       tempoUnavailable: null,
+      guide:
+        request.guideTrackIds.length > 0
+          ? { analysis: { announcements: [], groups: [] } }
+          : null,
       key:
         request.keyTrackIds.length > 0
           ? {

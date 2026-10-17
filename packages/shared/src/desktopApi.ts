@@ -1470,12 +1470,42 @@ export type AnalyzeSongRequest = {
   musicTempoTrackIds: string[];
   /** Empty: no key analysis. */
   keyTrackIds: string[];
+  /** The guide (cue) track. Empty: no section analysis. */
+  guideTrackIds: string[];
+};
+
+/** A section announcement on the guide track (seconds from `renderStartSeconds`). */
+export type GuideAnnouncement = { startSeconds: number; endSeconds: number; group: number };
+
+/**
+ * The announcements that are the same recording said again. `label` is the
+ * app's voice clip that matched (`chorus_2`, `drums_in`, `count`), null when
+ * none did: the user names the group in the review.
+ */
+export type GuideGroup = {
+  label: string | null;
+  matchCost: number | null;
+  occurrences: number;
+  firstStartSeconds: number;
+  firstEndSeconds: number;
+};
+
+export type GuideAnalysis = { announcements: GuideAnnouncement[]; groups: GuideGroup[] };
+
+/** A section marker to write, in rendered-timeline seconds. */
+export type SectionChange = {
+  startSeconds: number;
+  kind: MarkerKind;
+  variant: number | null;
+  name: string;
 };
 
 export type AnalyzeSongResult = {
   cancelled: boolean;
   regionId: string;
   regionStartSeconds: number;
+  /** The song's start on the rendered timeline (differs with warp/varispeed). */
+  renderStartSeconds: number;
   tempo: { analysis: ClickAnalysis; proposal: TempoProposal } | null;
   /** Why a chosen click was not analysed: "song_analysis_warp" | "song_analysis_varispeed". */
   tempoUnavailable: string | null;
@@ -1485,6 +1515,7 @@ export type AnalyzeSongResult = {
     currentKey: string | null;
     transposeSemitones: number;
   } | null;
+  guide: { analysis: GuideAnalysis } | null;
   missingFiles: string[];
 };
 
@@ -1507,8 +1538,8 @@ export async function listenToSongAnalysisProgress(
 
 /**
  * Applies the reviewed analysis as ONE undo step: `tempo` replaces the tempo
- * and meter markers inside the song, `key` sets its original key. Null leaves
- * that part alone.
+ * and meter markers inside the song, `key` sets its original key, `sections`
+ * replaces its section and cue markers. Null leaves that part alone.
  */
 export async function applySongAnalysis(
   regionId: string,
@@ -1517,8 +1548,14 @@ export async function applySongAnalysis(
     signatureMarkers: ProposedSignatureMarker[];
   } | null,
   key: string | null,
+  sections: SectionChange[] | null = null,
 ): Promise<TransportSnapshot> {
-  return invokeCommand<TransportSnapshot>("apply_song_analysis", { regionId, tempo, key });
+  return invokeCommand<TransportSnapshot>("apply_song_analysis", {
+    regionId,
+    tempo,
+    key,
+    sections,
+  });
 }
 
 // Export the WHOLE session as a single portable .ltset (every region + library

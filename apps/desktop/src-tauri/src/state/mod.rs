@@ -74,6 +74,7 @@ mod regions;
 mod session;
 pub use session::ExistingProjectDir;
 mod song_analysis;
+pub use song_analysis::AnalysedSection;
 mod song_edit;
 mod song_reorder;
 mod song_structure;

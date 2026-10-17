@@ -1,10 +1,16 @@
+import { buildSongTempoRegions } from "@libretracks/shared/models";
+import { nextDownbeatAfter } from "@libretracks/shared/timelineMath";
+
 import type {
+  GuideAnalysis,
+  MarkerKind,
   ProposedSignatureMarker,
   ProposedTempoMarker,
   SongView,
   TempoProposal,
 } from "../desktopApi";
 import { isCueTrackName } from "../levelSongs/levelSongsPlan";
+import { CUE_KINDS, MARKER_KINDS, markerKindVariants } from "../markerKinds";
 
 /**
  * Pure helpers of "Analizar canción": which track is the click, which tracks
@@ -125,6 +131,115 @@ export function scaleTempoRows(rows: ReviewRow[], factor: number): ReviewRow[] {
     const scaled = Math.round(bpm * factor * 100) / 100;
     return scaled >= 20 && scaled <= 300 ? { ...row, text: String(scaled) } : row;
   });
+}
+
+/** The guide stem: a voice announcing the sections. */
+const GUIDE_NAME = /\b(guides?|gu[ií]as?|cues?)\b/i;
+
+/** Audio tracks with sound in the song, the guide-named one preselected. */
+export function guideTrackOptions(
+  song: SongView,
+  regionId: string,
+): { options: { id: string; name: string }[]; preselected: string | null } {
+  const options = keyTrackOptions(song, regionId).map(({ id, name }) => ({ id, name }));
+  const named = options.find((option) => GUIDE_NAME.test(option.name.normalize("NFC")));
+  return { options, preselected: named?.id ?? null };
+}
+
+/** What a guide group is: a marker kind (and variant), or ignored. */
+export type GroupAssignment = { kind: MarkerKind; variant: number | null } | "ignore" | null;
+
+/**
+ * A matched voice clip's label as a marker: `chorus_2` → chorus, variant 2;
+ * `count` (the count-in) → ignored; an unknown label → unassigned.
+ */
+export function assignmentForLabel(label: string | null): GroupAssignment {
+  if (!label) return null;
+  if (label === "count") return "ignore";
+  const match = /^([a-z_]+?)(?:_(\d+))?$/.exec(label);
+  if (!match) return null;
+  const kind = match[1] as MarkerKind;
+  if (!MARKER_KINDS.includes(kind) && !CUE_KINDS.includes(kind)) return null;
+  const variant = match[2] ? Number(match[2]) : null;
+  return { kind, variant: variant && markerKindVariants(kind).includes(variant) ? variant : null };
+}
+
+/** `chorus` / `chorus:2` / `ignore` / "" (unassigned): the review's select values. */
+export function assignmentValue(assignment: GroupAssignment): string {
+  if (assignment === null) return "";
+  if (assignment === "ignore") return "ignore";
+  return assignment.variant ? `${assignment.kind}:${assignment.variant}` : assignment.kind;
+}
+
+export function parseAssignmentValue(value: string): GroupAssignment {
+  if (value === "") return null;
+  if (value === "ignore") return "ignore";
+  const [kind, variant] = value.split(":");
+  return { kind: kind as MarkerKind, variant: variant ? Number(variant) : null };
+}
+
+/**
+ * Where each assigned announcement's marker goes: on the first downbeat after
+ * the announcement ends (the voice speaks in the bar before its section). The
+ * grid is the song's, or the one the tempo review is about to write when
+ * `tempo` is given. Returns rendered-timeline seconds.
+ */
+export function placeGuideSections(
+  song: SongView,
+  regionId: string,
+  renderStartSeconds: number,
+  analysis: GuideAnalysis,
+  assignments: GroupAssignment[],
+  tempo: { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] } | null,
+): { startSeconds: number; kind: MarkerKind; variant: number | null }[] {
+  const region = song.regions.find((candidate) => candidate.id === regionId);
+  if (!region) return [];
+  let grid = song;
+  if (tempo) {
+    const inside = (seconds: number) =>
+      seconds >= region.startSeconds - SAME_POSITION_SECONDS &&
+      seconds < region.endSeconds - SAME_POSITION_SECONDS;
+    grid = {
+      ...song,
+      tempoMarkers: [
+        ...song.tempoMarkers.filter((marker) => !inside(marker.startSeconds)),
+        ...tempo.tempoMarkers.map((marker, index) => ({
+          id: `proposed-tempo-${index}`,
+          startSeconds: marker.startSeconds,
+          bpm: marker.bpm,
+        })),
+      ].sort((a, b) => a.startSeconds - b.startSeconds),
+      timeSignatureMarkers: [
+        ...song.timeSignatureMarkers.filter((marker) => !inside(marker.startSeconds)),
+        ...tempo.signatureMarkers.map((marker, index) => ({
+          id: `proposed-signature-${index}`,
+          startSeconds: marker.startSeconds,
+          signature: marker.signature,
+        })),
+      ].sort((a, b) => a.startSeconds - b.startSeconds),
+    };
+  }
+  const regions = buildSongTempoRegions(grid);
+  const placed: { startSeconds: number; kind: MarkerKind; variant: number | null }[] = [];
+  for (const announcement of analysis.announcements) {
+    const assignment = assignments[announcement.group];
+    if (!assignment || assignment === "ignore") continue;
+    const startSeconds = nextDownbeatAfter(
+      renderStartSeconds + announcement.endSeconds,
+      grid.bpm,
+      grid.timeSignature,
+      regions,
+    );
+    // The same marker twice on one downbeat ("Coro 1." … "Coro 1.") is one.
+    const duplicate = placed.some(
+      (other) =>
+        Math.abs(other.startSeconds - startSeconds) < SAME_POSITION_SECONDS &&
+        other.kind === assignment.kind &&
+        other.variant === assignment.variant,
+    );
+    if (!duplicate) placed.push({ startSeconds, ...assignment });
+  }
+  return placed;
 }
 
 /** "1:05.3", from the song start. */

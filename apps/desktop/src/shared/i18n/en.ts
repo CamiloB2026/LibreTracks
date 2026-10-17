@@ -678,6 +678,27 @@ const en = {
       intro:
         "Reads the click track to propose the tempo and time signature markers, and the harmonic tracks to propose the key. Review the proposal before applying it; it can be undone.",
       noTempo: "Don't analyze the tempo",
+      guideTrack: "Guide track",
+      noGuide: "Don't analyze the guide",
+      guideTrackHint:
+        "The voice announcing the sections. Each announcement goes on the next downbeat.",
+      applySections_one: "Apply {{count}} section marker",
+      applySections_other: "Apply {{count}} section markers",
+      noAnnouncements: "No announcements found on the guide track.",
+      sectionsHint:
+        "Repeated announcements are grouped: choose once what each one is and it applies to every time it is said. Press ▶ to hear it.",
+      unrecognised_one: "{{count}} announcement not recognised: listen and choose what it is, or it is left out.",
+      unrecognised_other:
+        "{{count}} announcements not recognised: listen and choose what they are, or they are left out.",
+      replacesMarkers_one: "Replaces the song's current marker.",
+      replacesMarkers_other: "Replaces the song's {{count}} current markers.",
+      colAnnouncement: "Announcement",
+      colTimes: "Times",
+      colMarker: "Marker",
+      unassigned: "⚠ Not recognised",
+      ignore: "Ignore (count-in, other)",
+      listen: "Hear the announcement at {{position}}",
+      markerFor: "Marker for the announcement at {{position}}",
       fromMusic: "No click: estimate it from the music",
       fromMusicHint:
         "Estimated from every track but the cues. Less reliable than a click: check the result.",
@@ -900,7 +921,7 @@ const en = {
       songCountStyle: "Voice Guide Count-in",
       songCountStyleDefault: "Global setting ({{style}})",
       renderSong: "Render audio…",
-      analyzeSong: "Analyze song (tempo, meter and key)…",
+      analyzeSong: "Analyze song (tempo, key and sections)…",
       levelSongs: "Level song volumes…",
       exportSong: "Export Song",
       deleteSong: "Delete Song",

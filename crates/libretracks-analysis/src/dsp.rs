@@ -4,9 +4,16 @@
 /// lives below ~5 kHz.
 pub(crate) const TARGET_RATE: f64 = 11_025.0;
 
-/// Low-pass (windowed sinc) and keep one sample in `factor`.
+/// Low-pass (windowed sinc) and keep one sample in `factor`, to about
+/// `TARGET_RATE`.
 pub(crate) fn decimate(samples: &[f32], rate: f64) -> (Vec<f32>, f64) {
-    let factor = (rate / TARGET_RATE).round().max(1.0) as usize;
+    decimate_to(samples, rate, TARGET_RATE)
+}
+
+/// Low-pass and keep one sample in `factor`, the integer factor that lands
+/// closest to `target` (48 kHz → 16 kHz exactly; 44.1 kHz → 14.7 kHz).
+pub(crate) fn decimate_to(samples: &[f32], rate: f64, target: f64) -> (Vec<f32>, f64) {
+    let factor = (rate / target).round().max(1.0) as usize;
     if factor == 1 {
         return (samples.to_vec(), rate);
     }

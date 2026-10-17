@@ -7,6 +7,7 @@ import type {
   AnalyzeSongResult,
   ProposedSignatureMarker,
   ProposedTempoMarker,
+  SectionChange,
 } from "@libretracks/shared/desktopApi";
 import type { SongView, TransportSnapshot } from "@libretracks/shared/models";
 
@@ -22,7 +23,12 @@ type TempoChange = {
 const analyzeSong = vi.fn<(request: AnalyzeSongRequest) => Promise<AnalyzeSongResult>>();
 const applySongAnalysis =
   vi.fn<
-    (regionId: string, tempo: TempoChange | null, key: string | null) => Promise<TransportSnapshot>
+    (
+      regionId: string,
+      tempo: TempoChange | null,
+      key: string | null,
+      sections?: SectionChange[] | null,
+    ) => Promise<TransportSnapshot>
   >();
 
 vi.mock("react-i18next", () => ({
@@ -37,8 +43,12 @@ vi.mock("@libretracks/shared/desktopApi", async (importOriginal) => ({
   analyzeSong: (request: AnalyzeSongRequest) => analyzeSong(request),
   cancelAnalyzeSong: async () => {},
   listenToSongAnalysisProgress: async () => () => {},
-  applySongAnalysis: (regionId: string, tempo: TempoChange | null, key: string | null) =>
-    applySongAnalysis(regionId, tempo, key),
+  applySongAnalysis: (
+    regionId: string,
+    tempo: TempoChange | null,
+    key: string | null,
+    sections: SectionChange[] | null,
+  ) => applySongAnalysis(regionId, tempo, key, sections),
   seekTransport: async () => ({}) as TransportSnapshot,
 }));
 
@@ -70,11 +80,17 @@ function song(): SongView {
         transposeSemitones: 0,
       } as never,
     ],
-    tracks: [audioTrack("keys", "Keys"), audioTrack("drums", "Drums"), audioTrack("click", "Click")],
+    tracks: [
+      audioTrack("keys", "Keys"),
+      audioTrack("drums", "Drums"),
+      audioTrack("click", "Click"),
+      audioTrack("guide", "Guide"),
+    ],
     clips: [
       { id: "c1", trackId: "keys", timelineStartSeconds: 0, durationSeconds: 200 } as never,
       { id: "c2", trackId: "drums", timelineStartSeconds: 0, durationSeconds: 200 } as never,
       { id: "c3", trackId: "click", timelineStartSeconds: 0, durationSeconds: 200 } as never,
+      { id: "c4", trackId: "guide", timelineStartSeconds: 0, durationSeconds: 200 } as never,
     ],
     projectRevision: 1,
   };
@@ -85,6 +101,7 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
     cancelled: false,
     regionId: "b",
     regionStartSeconds: 100,
+    renderStartSeconds: 100,
     tempo: {
       analysis: {
         segments: [{ startSeconds: 0.5, bpm: 92, beatsPerBar: 6, beatUnit: 8, bars: 40 }],
@@ -120,6 +137,7 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
       currentKey: "C",
       transposeSemitones: 0,
     },
+    guide: null,
     missingFiles: [],
     ...overrides,
   };
@@ -162,6 +180,7 @@ describe("SongAnalysisModal", () => {
       clickTrackIds: ["click"],
       musicTempoTrackIds: [],
       keyTrackIds: ["keys"],
+      guideTrackIds: ["guide"],
     });
     await screen.findByText("transport.songAnalysis.warning.clickGap");
     // Positions are read from the song start: 1:01.0, not 2:41.0.
@@ -198,6 +217,7 @@ describe("SongAnalysisModal", () => {
         ],
       },
       "Bm",
+      null,
     );
     expect(onApplied).toHaveBeenCalledWith(snapshot);
     await screen.findByText("transport.songAnalysis.applied");
@@ -215,7 +235,7 @@ describe("SongAnalysisModal", () => {
 
     await screen.findByLabelText("transport.songAnalysis.key");
     fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
-    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledWith("b", null, "D"));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledWith("b", null, "D", null));
   });
 
   it("leaves the key alone when it is unticked", async () => {
@@ -263,6 +283,54 @@ describe("SongAnalysisModal", () => {
     expect(tempo?.tempoMarkers[0].bpm).toBe(46);
     // Meter left as it is: none inside the song today.
     expect(tempo?.signatureMarkers).toEqual([]);
+  });
+
+  it("places the guide's announcements on the next downbeat and asks about the unknown ones", async () => {
+    analyzeSong.mockResolvedValue(
+      result({
+        tempo: null,
+        key: null,
+        guide: {
+          analysis: {
+            announcements: [
+              { startSeconds: 4.8, endSeconds: 5.3, group: 0 },
+              { startSeconds: 11.9, endSeconds: 12.4, group: 1 },
+              { startSeconds: 24.6, endSeconds: 25.1, group: 0 },
+              { startSeconds: 40.0, endSeconds: 41.0, group: 2 },
+            ],
+            groups: [
+              { label: "chorus_2", matchCost: 0.4, occurrences: 2, firstStartSeconds: 4.8, firstEndSeconds: 5.3 },
+              { label: null, matchCost: 2.8, occurrences: 1, firstStartSeconds: 11.9, firstEndSeconds: 12.4 },
+              { label: "count", matchCost: 0.1, occurrences: 1, firstStartSeconds: 40, firstEndSeconds: 41 },
+            ],
+          },
+        },
+      }),
+    );
+    applySongAnalysis.mockResolvedValue({} as TransportSnapshot);
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    expect(
+      (screen.getByLabelText("transport.songAnalysis.guideTrack") as HTMLSelectElement).value,
+    ).toBe("guide");
+    await analyzeAndReview();
+
+    await screen.findByText(/transport\.songAnalysis\.unrecognised.*"count":1/);
+    const unknown = screen.getByLabelText(/transport\.songAnalysis\.markerFor.*0:11\.9/);
+    fireEvent.change(unknown, { target: { value: "verse:1" } });
+    fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
+
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
+    // 120 BPM 4/4: bars every 2 s. Song at 100 s; ends at 105.3, 112.4, 125.1.
+    const sections = applySongAnalysis.mock.calls[0][3] ?? [];
+    expect(sections.map((s) => [s.startSeconds, s.kind, s.variant])).toEqual([
+      [106, "chorus", 2],
+      [114, "verse", 1],
+      [126, "chorus", 2],
+    ]);
+    expect(sections[0].name).toMatch(/markerKind\.chorus.* 2$/);
+    // No tempo and no key were analysed: those stay untouched.
+    expect(applySongAnalysis.mock.calls[0][1]).toBeNull();
+    expect(applySongAnalysis.mock.calls[0][2]).toBeNull();
   });
 
   it("will not apply an invalid value", async () => {

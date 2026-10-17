@@ -1,6 +1,7 @@
 //! "Analizar canción": read a song's audio and propose its tempo and time
-//! signature markers (from the click track) and its key (from the harmonic
-//! tracks). See `docs/plans/song-analysis/`.
+//! signature markers (from the click track, or the music without one), its
+//! key (from the harmonic tracks) and its section markers (from the guide
+//! track). See `docs/plans/song-analysis/`.
 //!
 //! Both are bounced in one pass of the engine's offline renderer (one output
 //! file each), so clip offsets, trims and fades are already resolved, and with
@@ -12,9 +13,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
-    analyze_click, analyze_key, analyze_music_tempo, propose_tempo_markers, ClickAnalysis,
-    ExistingTiming, KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker, SongSpan,
-    TempoProposal,
+    analyze_click, analyze_guide, analyze_key, analyze_music_tempo, propose_tempo_markers,
+    ClickAnalysis, ExistingTiming, GuideAnalysis, GuideTemplate, KeyAnalysis,
+    ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -69,6 +70,10 @@ pub struct AnalyzeSongRequest {
     /// The harmonic tracks the key is read from. Empty: no key analysis.
     #[serde(default)]
     pub key_track_ids: Vec<String>,
+    /// The guide (cue) track the section announcements are read from.
+    /// Empty: no section analysis.
+    #[serde(default)]
+    pub guide_track_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -91,15 +96,27 @@ pub struct KeyResult {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct GuideResult {
+    /// Times from `render_start_seconds` (the rendered timeline).
+    pub analysis: GuideAnalysis,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnalyzeSongResult {
     pub cancelled: bool,
     pub region_id: String,
     pub region_start_seconds: f64,
+    /// Where the song starts on the rendered timeline: the origin of the
+    /// guide's times. Equal to `region_start_seconds` without warp or
+    /// varispeed.
+    pub render_start_seconds: f64,
     pub tempo: Option<TempoResult>,
     /// Why the tempo was not analysed though a click was chosen
     /// (`song_analysis_warp`, `song_analysis_varispeed`).
     pub tempo_unavailable: Option<String>,
     pub key: Option<KeyResult>,
+    pub guide: Option<GuideResult>,
     pub missing_files: Vec<String>,
 }
 
@@ -109,9 +126,11 @@ impl AnalyzeSongResult {
             cancelled: true,
             region_id,
             region_start_seconds: 0.0,
+            render_start_seconds: 0.0,
             tempo: None,
             tempo_unavailable: None,
             key: None,
+            guide: None,
             missing_files: Vec::new(),
         }
     }
@@ -156,6 +175,8 @@ struct AnalysisJob {
     tempo: Option<TempoJob>,
     tempo_unavailable: Option<String>,
     key: Option<KeyJob>,
+    /// The guide track(s): the section announcements.
+    guide_track_ids: Vec<String>,
 }
 
 fn prepare_job(
@@ -269,7 +290,11 @@ fn prepare_job(
         }
     });
 
-    if tempo.is_none() && key.is_none() && tempo_unavailable.is_none() {
+    if tempo.is_none()
+        && key.is_none()
+        && tempo_unavailable.is_none()
+        && request.guide_track_ids.is_empty()
+    {
         return Err("Nothing to analyze".to_string());
     }
     Ok(AnalysisJob {
@@ -281,7 +306,48 @@ fn prepare_job(
         tempo,
         tempo_unavailable,
         key,
+        guide_track_ids: request.guide_track_ids.clone(),
     })
+}
+
+/// The app's voice-guide clips, every language, as templates for the guide
+/// analysis: `sections/<kind>[_<n>].wav`, `cues/<kind>.wav` and the count
+/// clips (labelled `count`). A missing folder is skipped: with no templates
+/// the announcements are still found and grouped, just not labelled.
+fn load_guide_templates(voices_dir: &std::path::Path) -> Vec<GuideTemplate> {
+    let mut templates = Vec::new();
+    let Ok(languages) = std::fs::read_dir(voices_dir) else {
+        return templates;
+    };
+    for language in languages.flatten() {
+        for folder in ["sections", "cues", "counts"] {
+            let Ok(entries) = std::fs::read_dir(language.path().join(folder)) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("wav") {
+                    continue;
+                }
+                let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+                    continue;
+                };
+                let label = if folder == "counts" {
+                    "count".to_string()
+                } else {
+                    stem.to_string()
+                };
+                if let Ok((samples, sample_rate)) = read_mono_wav(&path) {
+                    templates.push(GuideTemplate {
+                        label,
+                        samples,
+                        sample_rate,
+                    });
+                }
+            }
+        }
+    }
+    templates
 }
 
 /// Read a float WAV written by the offline renderer as mono samples.
@@ -318,18 +384,21 @@ fn run_job(
     job: &AnalysisJob,
     sample_rate: u32,
     scratch_dir: &std::path::Path,
+    voices_dir: Option<&std::path::Path>,
     on_progress: &mut dyn FnMut(f64) -> bool,
 ) -> Result<AnalyzeSongResult, JobError> {
     let mut result = AnalyzeSongResult {
         cancelled: false,
         region_id: job.region_id.clone(),
         region_start_seconds: job.region_start_seconds,
+        render_start_seconds: job.render_start_seconds,
         tempo: None,
         tempo_unavailable: job.tempo_unavailable.clone(),
         key: None,
+        guide: None,
         missing_files: Vec::new(),
     };
-    if job.tempo.is_none() && job.key.is_none() {
+    if job.tempo.is_none() && job.key.is_none() && job.guide_track_ids.is_empty() {
         return Ok(result);
     }
 
@@ -343,6 +412,7 @@ fn run_job(
     };
     let click_path = path_for("click");
     let key_path = path_for("key");
+    let guide_path = path_for("guide");
     let mut outputs = Vec::new();
     if let Some(tempo) = &job.tempo {
         outputs.push(RenderOutput {
@@ -360,9 +430,18 @@ fn run_job(
             include_voice_guide: false,
         });
     }
+    if !job.guide_track_ids.is_empty() {
+        outputs.push(RenderOutput {
+            path: guide_path.to_string_lossy().into_owned(),
+            track_ids: job.guide_track_ids.clone(),
+            include_metronome: false,
+            include_voice_guide: false,
+        });
+    }
     let cleanup = || {
         let _ = std::fs::remove_file(&click_path);
         let _ = std::fs::remove_file(&key_path);
+        let _ = std::fs::remove_file(&guide_path);
     };
     let engine_request = RenderRequest {
         project_json: job.project_json.clone(),
@@ -418,6 +497,16 @@ fn run_job(
                 transpose_semitones: key.transpose_semitones,
             });
         }
+        if !job.guide_track_ids.is_empty() {
+            if !on_progress(0.95) {
+                return Err(JobError::Cancelled);
+            }
+            let (samples, rate) = read(&guide_path)?;
+            let templates = voices_dir.map(load_guide_templates).unwrap_or_default();
+            result.guide = Some(GuideResult {
+                analysis: analyze_guide(&samples, rate, &templates),
+            });
+        }
         Ok(())
     })();
     cleanup();
@@ -435,6 +524,7 @@ pub async fn analyze_song(
     if request.click_track_ids.is_empty()
         && request.music_tempo_track_ids.is_empty()
         && request.key_track_ids.is_empty()
+        && request.guide_track_ids.is_empty()
     {
         return Err("Nothing to analyze".to_string());
     }
@@ -465,6 +555,7 @@ pub async fn analyze_song(
         .app_cache_dir()
         .map_err(|error| error.to_string())?
         .join("song-analysis");
+    let voices_dir = crate::commands::settings::voice_guide_voices_dir(&app);
 
     tauri::async_runtime::spawn_blocking(move || {
         let _active = active;
@@ -477,7 +568,8 @@ pub async fn analyze_song(
             );
             !ANALYSIS_CANCEL.load(Ordering::Acquire)
         };
-        match run_job(&job, sample_rate, &scratch_dir, &mut on_progress) {
+        let voices = voices_dir.as_deref().map(std::path::Path::new);
+        match run_job(&job, sample_rate, &scratch_dir, voices, &mut on_progress) {
             Ok(result) => Ok(result),
             Err(JobError::Cancelled) => Ok(AnalyzeSongResult::cancelled(job.region_id.clone())),
             Err(JobError::Failed(error)) => Err(error),
@@ -485,6 +577,19 @@ pub async fn analyze_song(
     })
     .await
     .map_err(|error| error.to_string())?
+}
+
+/// A section marker to write inside the song (from the guide), in the
+/// rendered timeline's seconds.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SectionChange {
+    pub start_seconds: f64,
+    pub kind: libretracks_core::MarkerKind,
+    #[serde(default)]
+    pub variant: Option<u8>,
+    /// The localized name, like the marker menus give it.
+    pub name: String,
 }
 
 /// The tempo and meter markers to write inside the song.
@@ -496,12 +601,14 @@ pub struct TempoChange {
 }
 
 /// Apply what the user ticked in the review, as ONE undo step: the tempo map
-/// (when `tempo` is given) and the key (when `key` is given).
+/// (when `tempo` is given), the key (when `key` is given) and the section
+/// markers (when `sections` is given: they replace the song's own).
 #[tauri::command(async)]
 pub fn apply_song_analysis(
     region_id: String,
     tempo: Option<TempoChange>,
     key: Option<String>,
+    sections: Option<Vec<SectionChange>>,
     state: State<'_, DesktopState>,
 ) -> Result<TransportSnapshot, String> {
     let mut session = state
@@ -514,8 +621,18 @@ pub fn apply_song_analysis(
             change.signature_markers.as_slice(),
         )
     });
+    let sections = sections.map(|list| {
+        list.into_iter()
+            .map(|section| crate::state::AnalysedSection {
+                start_seconds: section.start_seconds,
+                kind: section.kind,
+                variant: section.variant,
+                name: section.name,
+            })
+            .collect::<Vec<_>>()
+    });
     session
-        .apply_song_analysis(&region_id, tempo, key, &state.audio)
+        .apply_song_analysis(&region_id, tempo, key, sections.as_deref(), &state.audio)
         .map_err(|error| error.to_string())
 }
 
@@ -604,6 +721,7 @@ mod tests {
             click_track_ids: vec!["click".into()],
             music_tempo_track_ids: vec![],
             key_track_ids: vec!["keys".into(), "pad".into()],
+            guide_track_ids: vec![],
         }
     }
 

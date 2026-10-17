@@ -7,7 +7,9 @@
 //! undoable edit. See `docs/plans/song-analysis/00-DISENO.md`.
 
 use libretracks_analysis::{ProposedSignatureMarker, ProposedTempoMarker};
-use libretracks_core::{Song, TempoMarker, TimeSignatureMarker};
+use libretracks_core::{
+    source_seconds_at_view, Marker, MarkerKind, Song, TempoMarker, TimeSignatureMarker,
+};
 
 use crate::audio::engine::AudioController;
 use crate::infra::error::DesktopError;
@@ -111,6 +113,71 @@ pub(super) fn apply_tempo_analysis_to_song(
     Ok(())
 }
 
+/// A section marker read from the guide track, positioned on the rendered
+/// timeline (view seconds), named in the UI's language.
+#[derive(Debug, Clone)]
+pub struct AnalysedSection {
+    pub start_seconds: f64,
+    pub kind: MarkerKind,
+    pub variant: Option<u8>,
+    pub name: String,
+}
+
+/// Replace the section and cue markers inside the song with `sections`.
+/// Positions come in view time (the guide was read off the rendered
+/// timeline) and are stored in source time, like `create_section_marker`.
+pub(super) fn apply_sections_to_song(
+    song: &mut Song,
+    region_id: &str,
+    sections: &[AnalysedSection],
+) -> Result<(), DesktopError> {
+    let region = song
+        .regions
+        .iter()
+        .find(|region| region.id == region_id)
+        .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+    let (start, end) = (region.start_seconds, region.end_seconds);
+    let inside = |position: f64| {
+        position >= start - SAME_POSITION_SECONDS && position < end - SAME_POSITION_SECONDS
+    };
+    let stored: Vec<(f64, &AnalysedSection)> = sections
+        .iter()
+        .filter(|section| section.start_seconds.is_finite())
+        .map(|section| {
+            (
+                source_seconds_at_view(song, section.start_seconds).max(0.0),
+                section,
+            )
+        })
+        .collect();
+    song.section_markers
+        .retain(|marker| !inside(marker.start_seconds));
+    let suffix = timestamp_suffix();
+    for (index, (position, section)) in stored.into_iter().enumerate() {
+        if !inside(position) {
+            continue;
+        }
+        let name = section.name.trim();
+        song.section_markers.push(Marker {
+            id: format!("section_{suffix}_{index}"),
+            name: if name.is_empty() {
+                format!("{:?}", section.kind)
+            } else {
+                name.to_string()
+            },
+            start_seconds: position,
+            digit: None,
+            kind: section.kind,
+            variant: section.variant,
+            color: None,
+            category_override: None,
+        });
+    }
+    song.section_markers
+        .sort_by(|left, right| left.start_seconds.total_cmp(&right.start_seconds));
+    Ok(())
+}
+
 /// Write the song's original key (sharp spelling, as the key picker stores
 /// it). An empty key clears it, like `update_song_region_key`.
 pub(super) fn apply_key_to_song(
@@ -130,12 +197,14 @@ pub(super) fn apply_key_to_song(
 
 impl DesktopSession {
     /// The reviewed analysis, as ONE undo step: the tempo map when `tempo` is
-    /// given (tempo and meter markers), the key when `key` is.
+    /// given (tempo and meter markers), the key when `key` is, the section
+    /// markers when `sections` is.
     pub fn apply_song_analysis(
         &mut self,
         region_id: &str,
         tempo: Option<(&[ProposedTempoMarker], &[ProposedSignatureMarker])>,
         key: Option<String>,
+        sections: Option<&[AnalysedSection]>,
         audio: &AudioController,
     ) -> Result<TransportSnapshot, DesktopError> {
         let mut song = self
@@ -149,6 +218,10 @@ impl DesktopSession {
         }
         if let Some(key) = key.as_deref() {
             apply_key_to_song(&mut song, region_id, key)?;
+        }
+        if let Some(sections) = sections {
+            apply_sections_to_song(&mut song, region_id, sections)?;
+            audio.update_live_section_markers(&song)?;
         }
         realign_regions_after_warp_tempo_change(&previous_song, &mut song);
 

@@ -13,13 +13,20 @@ import {
   type SongView,
   type TransportSnapshot,
 } from "../desktopApi";
+import { CUE_KINDS, MARKER_KINDS, markerKindLabel, markerKindVariants } from "../markerKinds";
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { useSongStore } from "../songStore";
 import {
+  assignmentForLabel,
+  assignmentValue,
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
+  guideTrackOptions,
   keyTrackOptions,
+  parseAssignmentValue,
+  placeGuideSections,
+  type GroupAssignment,
   musicTempoTrackIds,
   reviewRows,
   rowIsValid,
@@ -92,6 +99,11 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
   const [keyOptions] = useState(() => keyTrackOptions(song, regionId));
   const [musicTrackIds] = useState(() => musicTempoTrackIds(song, regionId));
+  const [{ options: guideOptions, preselected: guidePreselected }] = useState(() =>
+    guideTrackOptions(song, regionId),
+  );
+  const [guideTrackId, setGuideTrackId] = useState<string>(guidePreselected ?? "");
+  const [assignments, setAssignments] = useState<GroupAssignment[]>([]);
   // No click-named track: estimating from the music is the useful default.
   const [clickTrackId, setClickTrackId] = useState<string>(
     preselected ?? (musicTrackIds.length > 0 ? FROM_MUSIC : ""),
@@ -102,7 +114,12 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const [analyzeKeyToo, setAnalyzeKeyToo] = useState(keyOptions.length > 0);
   const [phase, setPhase] = useState<Phase>({ kind: "setup", notice: null });
   const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [include, setInclude] = useState({ tempo: true, signature: true, key: true });
+  const [include, setInclude] = useState({
+    tempo: true,
+    signature: true,
+    key: true,
+    sections: true,
+  });
   const [keyChoice, setKeyChoice] = useState<string>("");
   const [applying, setApplying] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
@@ -125,7 +142,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   useDismissOnBack(dismiss);
 
   const wantsKey = analyzeKeyToo && keyTrackIds.size > 0;
-  const canAnalyze = clickTrackId !== "" || wantsKey;
+  const canAnalyze = clickTrackId !== "" || wantsKey || guideTrackId !== "";
 
   const analyze = async () => {
     if (!canAnalyze || analyzing) return;
@@ -146,6 +163,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         keyTrackIds: wantsKey
           ? keyOptions.filter((option) => keyTrackIds.has(option.id)).map((option) => option.id)
           : [],
+        guideTrackIds: guideTrackId ? [guideTrackId] : [],
       });
       if (result.cancelled) {
         setPhase({ kind: "setup", notice: t("transport.songAnalysis.cancelled") });
@@ -157,11 +175,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
       setRows(proposalRows);
       setKeyChoice(detectedKey ?? "");
+      const groups = result.guide?.analysis.groups ?? [];
+      setAssignments(groups.map((group) => assignmentForLabel(group.label)));
       setInclude({
         tempo: proposalRows.some((row) => row.kind === "tempo"),
         // Without a click the meter is a guess: the user opts in.
         signature: !estimated && proposalRows.some((row) => row.kind === "signature"),
         key: detectedKey !== null && detectedKey !== result.key?.currentKey,
+        sections: groups.length > 0,
       });
       setPhase({ kind: "review", result });
     } catch (error) {
@@ -187,8 +208,24 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
   const appliesKey =
     phase.kind === "review" && phase.result.key !== null && include.key && keyChoice !== "";
+  // Where the guide's markers land, on the grid the tempo review writes.
+  const sections = useMemo(() => {
+    if (phase.kind !== "review" || !phase.result.guide) return [];
+    return placeGuideSections(
+      song,
+      regionId,
+      phase.result.renderStartSeconds,
+      phase.result.guide.analysis,
+      assignments,
+      touchesTempo ? tempoPayload : null,
+    );
+  }, [phase, song, regionId, assignments, touchesTempo, tempoPayload]);
+  const appliesSections =
+    phase.kind === "review" && phase.result.guide !== null && include.sections;
   const canApply =
-    !applying && (touchesTempo ? tempoPayload !== null : appliesKey) && (touchesTempo || appliesKey);
+    !applying &&
+    (!touchesTempo || tempoPayload !== null) &&
+    (touchesTempo || appliesKey || appliesSections);
 
   const apply = async () => {
     if (!canApply) return;
@@ -198,6 +235,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         regionId,
         touchesTempo ? tempoPayload : null,
         appliesKey ? keyChoice : null,
+        appliesSections
+          ? sections.map((section) => ({
+              ...section,
+              name: section.variant
+                ? `${markerKindLabel(section.kind, t)} ${section.variant}`
+                : markerKindLabel(section.kind, t),
+            }))
+          : null,
       );
       onApplied(snapshot);
       setPhase({ kind: "applied" });
@@ -317,6 +362,25 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                     </ul>
                   ) : null}
                 </fieldset>
+
+                <label className="lt-settings-field">
+                  <span className="lt-settings-field-label">
+                    {t("transport.songAnalysis.guideTrack")}
+                  </span>
+                  <select
+                    aria-label={t("transport.songAnalysis.guideTrack")}
+                    value={guideTrackId}
+                    onChange={(event) => setGuideTrackId(event.target.value)}
+                  >
+                    <option value="">{t("transport.songAnalysis.noGuide")}</option>
+                    {guideOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="lt-render-hint">{t("transport.songAnalysis.guideTrackHint")}</span>
+                </label>
               </>
             )}
           </div>
@@ -365,6 +429,33 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 onChoice={setKeyChoice}
                 included={include.key}
                 onInclude={(key) => setInclude({ ...include, key })}
+              />
+            ) : null}
+            {phase.result.guide ? (
+              <GuideReview
+                result={phase.result}
+                assignments={assignments}
+                onAssign={(group, assignment) =>
+                  setAssignments((previous) =>
+                    previous.map((current, index) => (index === group ? assignment : current)),
+                  )
+                }
+                placedCount={sections.length}
+                existingCount={
+                  song.sectionMarkers.filter((marker) => {
+                    const region = song.regions.find((r) => r.id === regionId);
+                    return (
+                      region !== undefined &&
+                      marker.startSeconds >= region.startSeconds &&
+                      marker.startSeconds < region.endSeconds
+                    );
+                  }).length
+                }
+                included={include.sections}
+                onInclude={(sectionsIncluded) =>
+                  setInclude({ ...include, sections: sectionsIncluded })
+                }
+                onSeek={(seconds) => void seekTo(seconds)}
               />
             ) : null}
             {phase.result.missingFiles.length > 0 ? (
@@ -454,6 +545,132 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         </div>
       </section>
     </div>
+  );
+}
+
+type GuideReviewProps = {
+  result: AnalyzeSongResult;
+  assignments: GroupAssignment[];
+  onAssign: (group: number, assignment: GroupAssignment) => void;
+  placedCount: number;
+  existingCount: number;
+  included: boolean;
+  onInclude: (included: boolean) => void;
+  onSeek: (absoluteSeconds: number) => void;
+};
+
+/** Every section kind (with its numbered variants), then every cue, as
+ * select options. */
+function kindOptions(t: (key: string, options?: { defaultValue?: string }) => string) {
+  const kinds = [...MARKER_KINDS, ...CUE_KINDS.filter((kind) => !MARKER_KINDS.includes(kind))];
+  return kinds.filter((kind) => kind !== "custom").flatMap((kind) => {
+    const label = markerKindLabel(kind, t);
+    return [
+      { value: kind, label },
+      ...markerKindVariants(kind).map((variant) => ({
+        value: `${kind}:${variant}`,
+        label: `${label} ${variant}`,
+      })),
+    ];
+  });
+}
+
+function GuideReview({
+  result,
+  assignments,
+  onAssign,
+  placedCount,
+  existingCount,
+  included,
+  onInclude,
+  onSeek,
+}: GuideReviewProps) {
+  const { t } = useTranslation();
+  if (!result.guide) return null;
+  const { groups } = result.guide.analysis;
+  const options = kindOptions(t);
+  const unassigned = assignments.filter((assignment) => assignment === null).length;
+  return (
+    <section className="lt-song-analysis-part">
+      <h3>
+        <label>
+          <input
+            type="checkbox"
+            checked={included}
+            disabled={groups.length === 0}
+            onChange={(event) => onInclude(event.target.checked)}
+          />{" "}
+          {t("transport.songAnalysis.applySections", { count: placedCount })}
+        </label>
+      </h3>
+      {groups.length === 0 ? (
+        <p className="lt-render-notice">{t("transport.songAnalysis.noAnnouncements")}</p>
+      ) : (
+        <>
+          <p className="lt-render-hint">{t("transport.songAnalysis.sectionsHint")}</p>
+          {unassigned > 0 ? (
+            <p className="lt-render-warning">
+              {t("transport.songAnalysis.unrecognised", { count: unassigned })}
+            </p>
+          ) : null}
+          {existingCount > 0 && included ? (
+            <p className="lt-render-hint">
+              {t("transport.songAnalysis.replacesMarkers", { count: existingCount })}
+            </p>
+          ) : null}
+          <div className="lt-level-songs-table-wrap">
+            <table className="lt-level-songs-table lt-song-analysis-table">
+              <thead>
+                <tr>
+                  <th>{t("transport.songAnalysis.colAnnouncement")}</th>
+                  <th>{t("transport.songAnalysis.colTimes")}</th>
+                  <th>{t("transport.songAnalysis.colMarker")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map((group, index) => {
+                  const assignment = assignments[index] ?? null;
+                  const position = formatSongPosition(group.firstStartSeconds);
+                  return (
+                    <tr key={index} className={assignment === null ? "is-unassigned" : undefined}>
+                      <td>
+                        <button
+                          type="button"
+                          className="lt-link-button"
+                          aria-label={t("transport.songAnalysis.listen", { position })}
+                          onClick={() => onSeek(result.renderStartSeconds + group.firstStartSeconds)}
+                        >
+                          ▶ {position}
+                        </button>
+                      </td>
+                      <td>×{group.occurrences}</td>
+                      <td>
+                        <select
+                          aria-label={t("transport.songAnalysis.markerFor", { position })}
+                          value={assignmentValue(assignment)}
+                          disabled={!included}
+                          onChange={(event) =>
+                            onAssign(index, parseAssignmentValue(event.target.value))
+                          }
+                        >
+                          <option value="">{t("transport.songAnalysis.unassigned")}</option>
+                          <option value="ignore">{t("transport.songAnalysis.ignore")}</option>
+                          {options.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   );
 }
 

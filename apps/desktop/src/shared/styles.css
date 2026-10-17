@@ -2366,6 +2366,10 @@ html.lt-ios body {
   font-weight: 600;
 }
 
+.lt-song-analysis-table tr.is-unassigned td {
+  background: rgb(255 183 77 / 0.08);
+}
+
 .lt-song-analysis-tracks {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
