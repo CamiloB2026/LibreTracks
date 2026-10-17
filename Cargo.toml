@@ -28,3 +28,9 @@ thiserror = "2"
 # the upload. See vendor/midir/LIBRETRACKS_PATCH.md.
 [patch.crates-io]
 midir = { path = "vendor/midir" }
+
+# "Analizar canción" is number crunching (FFT, MFCC, DTW): unoptimised it runs
+# ~30x slower (grouping a guide: 23 s instead of 0.7 s), which made `tauri dev`
+# useless for trying it. Only this crate, so dev builds stay quick.
+[profile.dev.package.libretracks-analysis]
+opt-level = 3

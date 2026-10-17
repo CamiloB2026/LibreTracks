@@ -10,6 +10,9 @@ LT_ENGINE_V2_LIB_DIR = { value = "native/audio-engine-v2/build-rb-on/Release", r
 # CMP0091 forced on. Both are ignored outside MSVC.
 CMAKE_MSVC_RUNTIME_LIBRARY = "MultiThreaded"
 CMAKE_POLICY_DEFAULT_CMP0091 = "NEW"
+# The same crate also drops the optimisation flags on MSVC; this puts them
+# back (see the file).
+CMAKE_PROJECT_INCLUDE = { value = ".cargo/whisper-msvc-release.cmake", relative = true }
 
 [target.'cfg(all(target_os = "windows", target_env = "msvc"))']
 rustflags = ["-C", "target-feature=+crt-static"]

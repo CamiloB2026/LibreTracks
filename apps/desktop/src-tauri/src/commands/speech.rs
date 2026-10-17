@@ -199,8 +199,24 @@ mod desktop {
         // transcripts on the validation guides, with or without them).
         params.set_no_timestamps(true);
         params.set_temperature_inc(0.0);
+        // A few words: a runaway repetition ("Bridge, Bridge, …") stops here
+        // instead of costing seconds.
+        params.set_max_tokens(MAX_TOKENS);
         params
     }
+
+    /// Encoder window for an announcement, in 20 ms frames: 15 s instead of
+    /// whisper's 30 s halves the time per announcement (Digno es el Señor
+    /// 19.9 → 9.3 s, same labels on the three validation guides). 10 s
+    /// started to fail ("Deguitara", "Bridge, Bridge, …"). Always the same
+    /// size: a size that changes per call rebuilds whisper's graph each time
+    /// and was slower than the full window.
+    const ANNOUNCEMENT_AUDIO_CTX: i32 = 750;
+    /// Longer speech than this keeps the full window.
+    const ANNOUNCEMENT_CTX_MAX_SECONDS: f64 = 14.0;
+    const MAX_TOKENS: i32 = 48;
+    /// Whisper's input rate (the analysis hands it 16 kHz mono).
+    const WHISPER_RATE: f64 = 16_000.0;
 
     impl Transcriber for WhisperTranscriber {
         fn detect_language(&mut self, speech: &[f32]) {
@@ -228,6 +244,9 @@ mod desktop {
             }
             let language = self.language;
             let mut params = params(self.threads, language);
+            if speech.len() as f64 <= ANNOUNCEMENT_CTX_MAX_SECONDS * WHISPER_RATE {
+                params.set_audio_ctx(ANNOUNCEMENT_AUDIO_CTX);
+            }
             params.set_initial_prompt(if language == "en" {
                 PROMPT_EN
             } else {

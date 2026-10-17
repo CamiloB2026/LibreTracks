@@ -30,11 +30,6 @@ pub const SONG_ANALYSIS_PROGRESS_EVENT: &str = "song-analysis-progress";
 
 /// Runtime bounds may differ from the stored ones by float noise only.
 const SAME_BOUND_SECONDS: f64 = 0.001;
-/// Rate the tracks are bounced at for analysis. Every analysis works at
-/// 11–16 kHz, and the results at 22.05 kHz matched the original rates on the
-/// validation songs exactly, for under half the resampling and memory of
-/// rendering at the device rate.
-const ANALYSIS_RENDER_RATE: u32 = 22_050;
 
 static ANALYSIS_ACTIVE: AtomicBool = AtomicBool::new(false);
 static ANALYSIS_CANCEL: AtomicBool = AtomicBool::new(false);
@@ -657,7 +652,12 @@ pub async fn analyze_song(
         drop(session);
         prepare_job(&song_dir, &song, &request)?
     };
-    let sample_rate = ANALYSIS_RENDER_RATE;
+    // The engine's rate, not a lower one: at this rate the render reads the
+    // PCM cache playback already decoded. At 22.05 kHz it decoded and
+    // resampled every MP3 again (0.65 s a track on a desktop, ~30 s a track
+    // through Android's MediaCodec).
+    let engine_rate = state.audio.current_sample_rate_capabilities().0;
+    let sample_rate = if engine_rate > 0 { engine_rate } else { 48_000 };
     let scratch_dir = app
         .path()
         .app_cache_dir()
