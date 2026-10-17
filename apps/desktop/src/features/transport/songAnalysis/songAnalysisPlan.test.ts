@@ -7,6 +7,7 @@ import {
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
+  keyTrackOptions,
   parseBpm,
   parseSignature,
   reviewRows,
@@ -72,6 +73,34 @@ describe("clickTrackOptions", () => {
     const withoutClick = song();
     withoutClick.tracks = withoutClick.tracks.filter((track) => track.id !== "metro");
     expect(clickTrackOptions(withoutClick, "b").preselected).toBeNull();
+  });
+});
+
+describe("keyTrackOptions", () => {
+  it("preselects the harmonic tracks and leaves out click, guide and percussion", () => {
+    const withDrums = song();
+    withDrums.tracks.push(audioTrack("drums-folder", "Drums", "folder"));
+    withDrums.tracks.push({
+      ...(audioTrack("kick", "Kick In") as object),
+      parentTrackId: "drums-folder",
+    } as never);
+    withDrums.tracks.push({
+      ...(audioTrack("tom", "Low") as object),
+      parentTrackId: "drums-folder",
+    } as never);
+    withDrums.clips.push(
+      { id: "c5", trackId: "kick", timelineStartSeconds: 100, durationSeconds: 100 } as never,
+      { id: "c6", trackId: "tom", timelineStartSeconds: 100, durationSeconds: 100 } as never,
+    );
+    const options = keyTrackOptions(withDrums, "b");
+    expect(options.map((option) => [option.id, option.preselected])).toEqual([
+      ["keys", true],
+      ["metro", false],
+      ["guide", false],
+      ["kick", false],
+      // Its own name says nothing; its folder does.
+      ["tom", false],
+    ]);
   });
 });
 

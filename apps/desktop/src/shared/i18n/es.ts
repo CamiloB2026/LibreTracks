@@ -687,9 +687,24 @@ const es = {
       midiLearnListeningShort: "Escuchando",
     },
     songAnalysis: {
-      title: "Analizar tempo y compás",
+      title: "Analizar canción",
       intro:
-        "Lee la pista de click de la canción y propone sus marcas de tempo y de compás. Revisa la propuesta antes de aplicarla; se puede deshacer.",
+        "Lee la pista de click para proponer las marcas de tempo y de compás, y las pistas armónicas para proponer la nota. Revisa la propuesta antes de aplicarla; se puede deshacer.",
+      noTempo: "No analizar el tempo",
+      analyzeKey: "Analizar la nota",
+      keyTracksHint:
+        "Pistas con armonía. Se han quitado el click, la guía y la percusión porque emborronan la nota.",
+      tempoAndMeter: "Tempo y compás",
+      key: "Nota",
+      applyKey: "Aplicar nota",
+      noKey: "No se ha encontrado una nota clara en estas pistas.",
+      keyUnchanged: "La canción ya tiene esta nota.",
+      keyDoubt: "Dudosa: también podría ser {{key}}.",
+      keyRelativeDoubt:
+        "Dudosa: también podría ser {{key}}, su relativa (mismas notas, otra tónica).",
+      keyTransposed: "Con la transposición de {{semitones}} suena en {{key}}.",
+      tuningFlat: "La banda está afinada {{cents}} cents por debajo de La 440.",
+      tuningSharp: "La banda está afinada {{cents}} cents por encima de La 440.",
       clickTrack: "Pista de click",
       clickTrackHint: "Se ha elegido por su nombre. Cámbiala si no es el click.",
       clickTrackNotFound:
@@ -707,9 +722,9 @@ const es = {
       applied: "Marcas aplicadas. Puedes deshacerlo con Deshacer.",
       failed: "No se pudo analizar: {{error}}",
       errorWarp:
-        "La canción tiene el warp activado. Desactívalo para analizar el tempo del click tal cual.",
+        "La canción tiene el warp activado, así que no se ha analizado el tempo. Desactívalo para leer el click tal cual.",
       errorVarispeed:
-        "Hay una transposición por varispeed que estira el timeline. Quítala para analizar el tempo.",
+        "Una transposición por varispeed estira el timeline, así que no se ha analizado el tempo. Quítala para leer el click.",
       tempo: "Tempo",
       signature: "Compás",
       changes: "Cambios",
@@ -890,7 +905,7 @@ const es = {
       songCountStyle: "Conteo de la voz guía",
       songCountStyleDefault: "Como el ajuste global ({{style}})",
       renderSong: "Renderizar audio…",
-      analyzeSong: "Analizar tempo y compás…",
+      analyzeSong: "Analizar canción (tempo, compás y nota)…",
       levelSongs: "Nivelar volumen de canciones…",
       exportSong: "Exportar Cancion",
       deleteSong: "Borrar Cancion",

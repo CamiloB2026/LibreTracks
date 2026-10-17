@@ -4,11 +4,12 @@ import type {
   SongView,
   TempoProposal,
 } from "../desktopApi";
+import { isCueTrackName } from "../levelSongs/levelSongsPlan";
 
 /**
- * Pure helpers of "Analizar canción" (tempo and meter from the click): which
- * track is the click, and what to send to `applySongTempoAnalysis` once the
- * user has reviewed and edited the proposal.
+ * Pure helpers of "Analizar canción": which track is the click, which tracks
+ * carry the harmony the key is read from, and what to send to
+ * `applySongAnalysis` once the user has reviewed and edited the proposal.
  */
 
 /** The click stem, Spanish and English, as `isCueTrackName` spells it. */
@@ -50,6 +51,52 @@ export function clickTrackOptions(
   options.sort((a, b) => Number(b.looksLikeClick) - Number(a.looksLikeClick));
   const preselected = options[0]?.looksLikeClick ? options[0].id : null;
   return { options, preselected };
+}
+
+/**
+ * Drums and percussion: pitched noise that only blurs the chromagram. A name
+ * test, like the click's; the user can tick them back.
+ */
+const PERCUSSION_NAME =
+  /\b(drums?|bater[ií]a|kick|bombo|snare|caja|perc\w*|hi-?hats?|hats?|loops?|toms?|overheads?|oh|cymbals?|platos?|shakers?|pandero\w*|tamb\w*|claps?|room)\b/i;
+
+export type KeyTrackOption = { id: string; name: string; preselected: boolean };
+
+/**
+ * Audio tracks with sound inside the song, for the key. Preselected: all but
+ * the click, cues, guide and percussion (the folder a track sits in counts,
+ * so "Drums / Kick" is out).
+ */
+export function keyTrackOptions(song: SongView, regionId: string): KeyTrackOption[] {
+  const region = song.regions.find((candidate) => candidate.id === regionId);
+  if (!region) return [];
+  const byId = new Map(song.tracks.map((track) => [track.id, track]));
+  const names = (trackId: string) => {
+    const chain: string[] = [];
+    let current = byId.get(trackId);
+    // Bounded like the engine's folder walk.
+    for (let depth = 0; current && depth < 8; depth += 1) {
+      chain.push(current.name);
+      current = current.parentTrackId ? byId.get(current.parentTrackId) : undefined;
+    }
+    return chain;
+  };
+  const sounds = (trackId: string) =>
+    song.clips.some(
+      (clip) =>
+        clip.trackId === trackId &&
+        Math.max(clip.timelineStartSeconds, region.startSeconds) + MIN_SONG_OVERLAP_SECONDS <
+          Math.min(clip.timelineStartSeconds + clip.durationSeconds, region.endSeconds),
+    );
+  return song.tracks
+    .filter((track) => track.kind === "audio" && sounds(track.id))
+    .map((track) => {
+      const chain = names(track.id);
+      const excluded = chain.some(
+        (name) => isCueTrackName(name) || CLICK_NAME.test(name) || PERCUSSION_NAME.test(name),
+      );
+      return { id: track.id, name: track.name, preselected: !excluded };
+    });
 }
 
 /** "1:05.3", from the song start. */

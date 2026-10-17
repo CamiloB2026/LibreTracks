@@ -1,17 +1,19 @@
-//! "Analizar canción": read a song's click track and propose its tempo and
-//! time signature markers. See `docs/plans/song-analysis/`.
+//! "Analizar canción": read a song's audio and propose its tempo and time
+//! signature markers (from the click track) and its key (from the harmonic
+//! tracks). See `docs/plans/song-analysis/`.
 //!
-//! The click is bounced with the engine's offline renderer, so clip offsets,
-//! trims and fades are already resolved, and with `apply_mixer: false`, so
-//! the click track's own volume or mute (it is often silenced to the room)
-//! does not matter. Like "Nivelar canciones", the session lock is held only to
-//! copy the song out, and the analysis runs on a blocking thread.
+//! Both are bounced in one pass of the engine's offline renderer (one output
+//! file each), so clip offsets, trims and fades are already resolved, and with
+//! `apply_mixer: false`, so a track's own volume or mute (the click is often
+//! silenced to the room) does not matter. Like "Nivelar canciones", the
+//! session lock is held only to copy the song out, and the analysis runs on a
+//! blocking thread.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
-    analyze_click, propose_tempo_markers, ClickAnalysis, ExistingTiming, ProposedSignatureMarker,
-    ProposedTempoMarker, SongSpan, TempoProposal,
+    analyze_click, analyze_key, propose_tempo_markers, ClickAnalysis, ExistingTiming, KeyAnalysis,
+    ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -53,31 +55,57 @@ impl Drop for ActiveAnalysis {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AnalyzeSongTempoRequest {
+pub struct AnalyzeSongRequest {
     pub region_id: String,
-    /// The click track(s): usually one.
-    pub track_ids: Vec<String>,
+    /// The click track(s), usually one. Empty: no tempo analysis.
+    #[serde(default)]
+    pub click_track_ids: Vec<String>,
+    /// The harmonic tracks the key is read from. Empty: no key analysis.
+    #[serde(default)]
+    pub key_track_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AnalyzeSongTempoResult {
+pub struct TempoResult {
+    pub analysis: ClickAnalysis,
+    pub proposal: TempoProposal,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyResult {
+    /// In the song's ORIGINAL key: the transpose is already taken out, so it
+    /// compares with (and is written to) `SongRegion::key`.
+    pub analysis: KeyAnalysis,
+    pub current_key: Option<String>,
+    /// The song's transpose, for the review to show the key it sounds in.
+    pub transpose_semitones: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnalyzeSongResult {
     pub cancelled: bool,
     pub region_id: String,
     pub region_start_seconds: f64,
-    pub analysis: Option<ClickAnalysis>,
-    pub proposal: Option<TempoProposal>,
+    pub tempo: Option<TempoResult>,
+    /// Why the tempo was not analysed though a click was chosen
+    /// (`song_analysis_warp`, `song_analysis_varispeed`).
+    pub tempo_unavailable: Option<String>,
+    pub key: Option<KeyResult>,
     pub missing_files: Vec<String>,
 }
 
-impl AnalyzeSongTempoResult {
+impl AnalyzeSongResult {
     fn cancelled(region_id: String) -> Self {
         Self {
             cancelled: true,
             region_id,
             region_start_seconds: 0.0,
-            analysis: None,
-            proposal: None,
+            tempo: None,
+            tempo_unavailable: None,
+            key: None,
             missing_files: Vec::new(),
         }
     }
@@ -90,92 +118,155 @@ struct AnalysisProgressPayload {
 }
 
 #[tauri::command(async)]
-pub fn cancel_analyze_song_tempo() {
+pub fn cancel_analyze_song() {
     ANALYSIS_CANCEL.store(true, Ordering::Release);
 }
 
-/// What the analysis needs from the session, copied out under the lock.
-struct AnalysisJob {
-    project_json: String,
-    region_id: String,
+struct TempoJob {
     track_ids: Vec<String>,
     span: SongSpan,
     existing: ExistingTiming,
     fallback_beats_per_bar: u32,
 }
 
+struct KeyJob {
+    track_ids: Vec<String>,
+    /// Semitones to take out of the detected key (the song's transpose).
+    untranspose: i32,
+    current_key: Option<String>,
+    transpose_semitones: i32,
+}
+
+/// What the analysis needs from the session, copied out under the lock.
+struct AnalysisJob {
+    project_json: String,
+    region_id: String,
+    region_start_seconds: f64,
+    /// The song's span on the rendered (runtime) timeline.
+    render_start_seconds: f64,
+    render_end_seconds: f64,
+    tempo: Option<TempoJob>,
+    tempo_unavailable: Option<String>,
+    key: Option<KeyJob>,
+}
+
 fn prepare_job(
     song_dir: &std::path::Path,
     song: &libretracks_core::Song,
-    request: &AnalyzeSongTempoRequest,
+    request: &AnalyzeSongRequest,
 ) -> Result<AnalysisJob, String> {
     let region = song
         .regions
         .iter()
         .find(|region| region.id == request.region_id)
         .ok_or_else(|| format!("Region not found: {}", request.region_id))?;
-    if region.warp_enabled {
-        return Err("song_analysis_warp".to_string());
-    }
     let (project_json, runtime_song) = crate::audio::engine::runtime_session_json(song_dir, song)
         .map_err(|error| error.to_string())?;
-    // A varispeed transpose (here or in an earlier song) moves the rendered
-    // timeline away from the stored one the markers live in.
     let runtime_region = runtime_song
         .regions
         .iter()
         .find(|candidate| candidate.id == region.id)
         .ok_or_else(|| format!("Region not found: {}", request.region_id))?;
-    if (runtime_region.start_seconds - region.start_seconds).abs() > SAME_BOUND_SECONDS
-        || (runtime_region.end_seconds - region.end_seconds).abs() > SAME_BOUND_SECONDS
-    {
-        return Err("song_analysis_varispeed".to_string());
-    }
-    let next_song_start_seconds = song
-        .regions
-        .iter()
-        .filter(|other| {
-            other.id != region.id && other.start_seconds >= region.end_seconds - SAME_BOUND_SECONDS
-        })
-        .map(|other| other.start_seconds)
-        .min_by(f64::total_cmp);
-    let existing = ExistingTiming {
-        bpm: song.bpm,
-        time_signature: song.time_signature.clone(),
-        tempo_markers: song
-            .tempo_markers
+
+    // The tempo is read off the rendered timeline and stored in source time:
+    // warp or a varispeed transpose (here or in an earlier song) make the two
+    // differ. The key does not care: neither changes which notes play.
+    let timeline_matches = (runtime_region.start_seconds - region.start_seconds).abs()
+        <= SAME_BOUND_SECONDS
+        && (runtime_region.end_seconds - region.end_seconds).abs() <= SAME_BOUND_SECONDS;
+    let tempo_unavailable = if request.click_track_ids.is_empty() {
+        None
+    } else if region.warp_enabled {
+        Some("song_analysis_warp".to_string())
+    } else if !timeline_matches {
+        Some("song_analysis_varispeed".to_string())
+    } else {
+        None
+    };
+
+    let tempo = (!request.click_track_ids.is_empty() && tempo_unavailable.is_none()).then(|| {
+        let next_song_start_seconds = song
+            .regions
             .iter()
-            .map(|marker| (marker.start_seconds, marker.bpm))
-            .collect(),
-        signature_markers: song
+            .filter(|other| {
+                other.id != region.id
+                    && other.start_seconds >= region.end_seconds - SAME_BOUND_SECONDS
+            })
+            .map(|other| other.start_seconds)
+            .min_by(f64::total_cmp);
+        let signature_at_start = song
             .time_signature_markers
             .iter()
-            .map(|marker| (marker.start_seconds, marker.signature.clone()))
-            .collect(),
-    };
-    let signature_at_start = song
-        .time_signature_markers
-        .iter()
-        .filter(|marker| marker.start_seconds <= region.start_seconds + SAME_BOUND_SECONDS)
-        .max_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds))
-        .map(|marker| marker.signature.as_str())
-        .unwrap_or(song.time_signature.as_str());
-    let fallback_beats_per_bar = signature_at_start
-        .split_once('/')
-        .and_then(|(numerator, _)| numerator.trim().parse::<u32>().ok())
-        .filter(|numerator| *numerator > 0)
-        .unwrap_or(4);
+            .filter(|marker| marker.start_seconds <= region.start_seconds + SAME_BOUND_SECONDS)
+            .max_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds))
+            .map(|marker| marker.signature.as_str())
+            .unwrap_or(song.time_signature.as_str());
+        TempoJob {
+            track_ids: request.click_track_ids.clone(),
+            span: SongSpan {
+                start_seconds: region.start_seconds,
+                end_seconds: region.end_seconds,
+                next_song_start_seconds,
+            },
+            existing: ExistingTiming {
+                bpm: song.bpm,
+                time_signature: song.time_signature.clone(),
+                tempo_markers: song
+                    .tempo_markers
+                    .iter()
+                    .map(|marker| (marker.start_seconds, marker.bpm))
+                    .collect(),
+                signature_markers: song
+                    .time_signature_markers
+                    .iter()
+                    .map(|marker| (marker.start_seconds, marker.signature.clone()))
+                    .collect(),
+            },
+            fallback_beats_per_bar: signature_at_start
+                .split_once('/')
+                .and_then(|(numerator, _)| numerator.trim().parse::<u32>().ok())
+                .filter(|numerator| *numerator > 0)
+                .unwrap_or(4),
+        }
+    });
+
+    let key = (!request.key_track_ids.is_empty()).then(|| {
+        // Tracks with transpose off (drums, usually) are not shifted. If most
+        // chosen tracks are, the render sounds transposed.
+        let chosen: Vec<&libretracks_core::Track> = song
+            .tracks
+            .iter()
+            .filter(|track| request.key_track_ids.contains(&track.id))
+            .collect();
+        let transposed = chosen
+            .iter()
+            .filter(|track| track.transpose_enabled)
+            .count();
+        let sounds_transposed = transposed * 2 >= chosen.len().max(1);
+        KeyJob {
+            track_ids: request.key_track_ids.clone(),
+            untranspose: if sounds_transposed {
+                -region.transpose_semitones
+            } else {
+                0
+            },
+            current_key: region.key.clone(),
+            transpose_semitones: region.transpose_semitones,
+        }
+    });
+
+    if tempo.is_none() && key.is_none() && tempo_unavailable.is_none() {
+        return Err("Nothing to analyze".to_string());
+    }
     Ok(AnalysisJob {
         project_json,
         region_id: region.id.clone(),
-        track_ids: request.track_ids.clone(),
-        span: SongSpan {
-            start_seconds: region.start_seconds,
-            end_seconds: region.end_seconds,
-            next_song_start_seconds,
-        },
-        existing,
-        fallback_beats_per_bar,
+        region_start_seconds: region.start_seconds,
+        render_start_seconds: runtime_region.start_seconds,
+        render_end_seconds: runtime_region.end_seconds,
+        tempo,
+        tempo_unavailable,
+        key,
     })
 }
 
@@ -214,24 +305,57 @@ fn run_job(
     sample_rate: u32,
     scratch_dir: &std::path::Path,
     on_progress: &mut dyn FnMut(f64) -> bool,
-) -> Result<AnalyzeSongTempoResult, JobError> {
+) -> Result<AnalyzeSongResult, JobError> {
+    let mut result = AnalyzeSongResult {
+        cancelled: false,
+        region_id: job.region_id.clone(),
+        region_start_seconds: job.region_start_seconds,
+        tempo: None,
+        tempo_unavailable: job.tempo_unavailable.clone(),
+        key: None,
+        missing_files: Vec::new(),
+    };
+    if job.tempo.is_none() && job.key.is_none() {
+        return Ok(result);
+    }
+
     std::fs::create_dir_all(scratch_dir)?;
-    let wav_path = scratch_dir.join(format!(
-        "click-{}-{}.wav",
-        job.region_id,
-        std::process::id()
-    ));
+    let path_for = |what: &str| {
+        scratch_dir.join(format!(
+            "{what}-{}-{}.wav",
+            job.region_id,
+            std::process::id()
+        ))
+    };
+    let click_path = path_for("click");
+    let key_path = path_for("key");
+    let mut outputs = Vec::new();
+    if let Some(tempo) = &job.tempo {
+        outputs.push(RenderOutput {
+            path: click_path.to_string_lossy().into_owned(),
+            track_ids: tempo.track_ids.clone(),
+            include_metronome: false,
+            include_voice_guide: false,
+        });
+    }
+    if let Some(key) = &job.key {
+        outputs.push(RenderOutput {
+            path: key_path.to_string_lossy().into_owned(),
+            track_ids: key.track_ids.clone(),
+            include_metronome: false,
+            include_voice_guide: false,
+        });
+    }
+    let cleanup = || {
+        let _ = std::fs::remove_file(&click_path);
+        let _ = std::fs::remove_file(&key_path);
+    };
     let engine_request = RenderRequest {
         project_json: job.project_json.clone(),
         sample_rate,
-        start_seconds: job.span.start_seconds,
-        end_seconds: job.span.end_seconds,
-        outputs: vec![RenderOutput {
-            path: wav_path.to_string_lossy().into_owned(),
-            track_ids: job.track_ids.clone(),
-            include_metronome: false,
-            include_voice_guide: false,
-        }],
+        start_seconds: job.render_start_seconds,
+        end_seconds: job.render_end_seconds,
+        outputs,
         format: RenderSampleFormat::Float32,
         channels: 1,
         normalize: false,
@@ -242,47 +366,56 @@ fn run_job(
         metronome: None,
         voice_guide: None,
     };
-    // Rendering is nearly all the work; the analysis takes a moment.
-    let mut render_progress = |fraction: f64| on_progress(0.9 * fraction);
+    // Rendering is most of the work; the analyses take a moment.
+    let mut render_progress = |fraction: f64| on_progress(0.85 * fraction);
     let report = match lt_audio_engine_v2::render_offline(&engine_request, &mut render_progress) {
         Ok(report) => report,
         Err(RenderError::Cancelled) => {
-            let _ = std::fs::remove_file(&wav_path);
+            cleanup();
             return Err(JobError::Cancelled);
         }
         Err(RenderError::Failed(error)) => {
-            let _ = std::fs::remove_file(&wav_path);
+            cleanup();
             return Err(JobError::Failed(error.to_string()));
         }
     };
-    let read = read_mono_wav(&wav_path);
-    let _ = std::fs::remove_file(&wav_path);
-    let (samples, rate) = read.map_err(JobError::Failed)?;
-    if !on_progress(0.95) {
-        return Err(JobError::Cancelled);
-    }
+    result.missing_files = report.missing_files;
 
-    let analysis = analyze_click(&samples, rate, job.fallback_beats_per_bar);
-    let proposal = propose_tempo_markers(&analysis, job.span, &job.existing);
+    let read = |path: &std::path::Path| read_mono_wav(path).map_err(JobError::Failed);
+    let outcome = (|| -> Result<(), JobError> {
+        if let Some(tempo) = &job.tempo {
+            let (samples, rate) = read(&click_path)?;
+            let analysis = analyze_click(&samples, rate, tempo.fallback_beats_per_bar);
+            let proposal = propose_tempo_markers(&analysis, tempo.span, &tempo.existing);
+            result.tempo = Some(TempoResult { analysis, proposal });
+            if !on_progress(0.9) {
+                return Err(JobError::Cancelled);
+            }
+        }
+        if let Some(key) = &job.key {
+            let (samples, rate) = read(&key_path)?;
+            result.key = Some(KeyResult {
+                analysis: analyze_key(&samples, rate).transposed(key.untranspose),
+                current_key: key.current_key.clone(),
+                transpose_semitones: key.transpose_semitones,
+            });
+        }
+        Ok(())
+    })();
+    cleanup();
+    outcome?;
     on_progress(1.0);
-    Ok(AnalyzeSongTempoResult {
-        cancelled: false,
-        region_id: job.region_id.clone(),
-        region_start_seconds: job.span.start_seconds,
-        analysis: Some(analysis),
-        proposal: Some(proposal),
-        missing_files: report.missing_files,
-    })
+    Ok(result)
 }
 
 #[tauri::command]
-pub async fn analyze_song_tempo(
+pub async fn analyze_song(
     app: AppHandle,
-    request: AnalyzeSongTempoRequest,
+    request: AnalyzeSongRequest,
     state: State<'_, DesktopState>,
-) -> Result<AnalyzeSongTempoResult, String> {
-    if request.track_ids.is_empty() {
-        return Err("No click track chosen".to_string());
+) -> Result<AnalyzeSongResult, String> {
+    if request.click_track_ids.is_empty() && request.key_track_ids.is_empty() {
+        return Err("Nothing to analyze".to_string());
     }
     let Some(active) = ActiveAnalysis::acquire() else {
         return Err("An analysis is already running".to_string());
@@ -325,9 +458,7 @@ pub async fn analyze_song_tempo(
         };
         match run_job(&job, sample_rate, &scratch_dir, &mut on_progress) {
             Ok(result) => Ok(result),
-            Err(JobError::Cancelled) => {
-                Ok(AnalyzeSongTempoResult::cancelled(job.region_id.clone()))
-            }
+            Err(JobError::Cancelled) => Ok(AnalyzeSongResult::cancelled(job.region_id.clone())),
             Err(JobError::Failed(error)) => Err(error),
         }
     })
@@ -335,26 +466,42 @@ pub async fn analyze_song_tempo(
     .map_err(|error| error.to_string())?
 }
 
+/// The tempo and meter markers to write inside the song.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TempoChange {
+    pub tempo_markers: Vec<ProposedTempoMarker>,
+    pub signature_markers: Vec<ProposedSignatureMarker>,
+}
+
+/// Apply what the user ticked in the review, as ONE undo step: the tempo map
+/// (when `tempo` is given) and the key (when `key` is given).
 #[tauri::command(async)]
-pub fn apply_song_tempo_analysis(
+pub fn apply_song_analysis(
     region_id: String,
-    tempo_markers: Vec<ProposedTempoMarker>,
-    signature_markers: Vec<ProposedSignatureMarker>,
+    tempo: Option<TempoChange>,
+    key: Option<String>,
     state: State<'_, DesktopState>,
 ) -> Result<TransportSnapshot, String> {
     let mut session = state
         .session
         .lock()
         .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+    let tempo = tempo.as_ref().map(|change| {
+        (
+            change.tempo_markers.as_slice(),
+            change.signature_markers.as_slice(),
+        )
+    });
     session
-        .apply_song_tempo_analysis(&region_id, &tempo_markers, &signature_markers, &state.audio)
+        .apply_song_analysis(&region_id, tempo, key, &state.audio)
         .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use libretracks_core::{Song, SongMaster, SongRegion, TimeSignatureMarker};
+    use libretracks_core::{Song, SongMaster, SongRegion, TimeSignatureMarker, Track, TrackKind};
 
     fn region(id: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
@@ -371,6 +518,29 @@ mod tests {
             chart: None,
             voice_guide_count_style: None,
             structure: None,
+        }
+    }
+
+    fn track(id: &str, transpose_enabled: bool) -> Track {
+        Track {
+            id: id.into(),
+            name: id.into(),
+            kind: TrackKind::Audio,
+            parent_track_id: None,
+            volume: 1.0,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            transpose_enabled,
+            audio_to: "master".into(),
+            mono_downmix: false,
+            color: None,
+            auto_created: false,
+            midi_port: None,
+            midi_channel: 1,
+            midi_enabled: true,
+            collapsed: false,
+            height_offset: None,
         }
     }
 
@@ -395,7 +565,11 @@ mod tests {
                 region("a", 0.0, 60.0),
                 region("b", 64.0, 140.0),
             ],
-            tracks: vec![],
+            tracks: vec![
+                track("keys", true),
+                track("pad", true),
+                track("drums", false),
+            ],
             clips: vec![],
             midi_clips: vec![],
             video_clips: vec![],
@@ -403,10 +577,11 @@ mod tests {
         }
     }
 
-    fn request(region_id: &str) -> AnalyzeSongTempoRequest {
-        AnalyzeSongTempoRequest {
+    fn request(region_id: &str) -> AnalyzeSongRequest {
+        AnalyzeSongRequest {
             region_id: region_id.into(),
-            track_ids: vec!["click".into()],
+            click_track_ids: vec!["click".into()],
+            key_track_ids: vec!["keys".into(), "pad".into()],
         }
     }
 
@@ -414,22 +589,45 @@ mod tests {
     fn job_knows_the_next_song_and_the_meter_in_force() {
         let dir = tempfile::tempdir().expect("dir");
         let job = prepare_job(dir.path(), &song(), &request("b")).expect("job");
-        assert_eq!(job.span.start_seconds, 64.0);
-        assert_eq!(job.span.end_seconds, 140.0);
-        assert_eq!(job.span.next_song_start_seconds, Some(150.0));
-        assert_eq!(job.fallback_beats_per_bar, 6);
+        let tempo = job.tempo.expect("tempo job");
+        assert_eq!(tempo.span.start_seconds, 64.0);
+        assert_eq!(tempo.span.end_seconds, 140.0);
+        assert_eq!(tempo.span.next_song_start_seconds, Some(150.0));
+        assert_eq!(tempo.fallback_beats_per_bar, 6);
 
         let last = prepare_job(dir.path(), &song(), &request("c")).expect("job");
-        assert_eq!(last.span.next_song_start_seconds, None);
+        assert_eq!(
+            last.tempo.expect("tempo").span.next_song_start_seconds,
+            None
+        );
     }
 
     #[test]
-    fn warped_songs_are_refused() {
+    fn a_warped_song_still_gets_its_key_but_not_its_tempo() {
         let dir = tempfile::tempdir().expect("dir");
         let mut warped = song();
         warped.regions[2].warp_enabled = true;
         warped.regions[2].warp_source_bpm = Some(100.0);
-        let error = prepare_job(dir.path(), &warped, &request("b")).err();
-        assert_eq!(error.as_deref(), Some("song_analysis_warp"));
+        let job = prepare_job(dir.path(), &warped, &request("b")).expect("job");
+        assert!(job.tempo.is_none());
+        assert_eq!(job.tempo_unavailable.as_deref(), Some("song_analysis_warp"));
+        assert!(job.key.is_some());
+    }
+
+    #[test]
+    fn the_key_is_read_back_in_the_song_s_original_key() {
+        let dir = tempfile::tempdir().expect("dir");
+        let mut transposed = song();
+        transposed.regions[2].transpose_semitones = 2;
+        let job = prepare_job(dir.path(), &transposed, &request("b")).expect("job");
+        assert_eq!(job.key.expect("key job").untranspose, -2);
+
+        // Only untransposed tracks chosen: the render is in the original key.
+        let only_drums = AnalyzeSongRequest {
+            key_track_ids: vec!["drums".into()],
+            ..request("b")
+        };
+        let job = prepare_job(dir.path(), &transposed, &only_drums).expect("job");
+        assert_eq!(job.key.expect("key job").untranspose, 0);
     }
 }

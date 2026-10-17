@@ -5,7 +5,7 @@ use libretracks_core::{Song, SongMaster, SongRegion, TempoMarker, TimeSignatureM
 use libretracks_project::{create_song_folder, save_song, SONG_FILE_NAME};
 use tempfile::tempdir;
 
-use super::apply_tempo_analysis_to_song;
+use super::{apply_key_to_song, apply_tempo_analysis_to_song};
 use crate::audio::engine::AudioController;
 use crate::state::DesktopSession;
 
@@ -179,6 +179,17 @@ fn rejects_out_of_range_values_and_warped_songs() {
 }
 
 #[test]
+fn the_key_is_written_or_cleared_on_its_song_only() {
+    let mut song = setlist();
+    apply_key_to_song(&mut song, "r2", " C#m ").expect("apply");
+    assert_eq!(song.regions[1].key.as_deref(), Some("C#m"));
+    assert_eq!(song.regions[0].key, None);
+    apply_key_to_song(&mut song, "r2", "").expect("clear");
+    assert_eq!(song.regions[1].key, None);
+    assert!(apply_key_to_song(&mut song, "nope", "D").is_err());
+}
+
+#[test]
 fn applying_is_one_undo_step() {
     let song = setlist();
     let root = tempdir().expect("temp dir").keep();
@@ -192,10 +203,13 @@ fn applying_is_one_undo_step() {
     let audio = AudioController::default();
 
     session
-        .apply_song_tempo_analysis(
+        .apply_song_analysis(
             "r2",
-            &[proposed(60.0, 92.0), proposed(100.0, 96.0)],
-            &[proposed_signature(60.0, "6/8")],
+            Some((
+                &[proposed(60.0, 92.0), proposed(100.0, 96.0)],
+                &[proposed_signature(60.0, "6/8")],
+            )),
+            Some("Dm".into()),
             &audio,
         )
         .expect("apply");
@@ -204,9 +218,12 @@ fn applying_is_one_undo_step() {
         tempo_map(&applied),
         vec![(30.0, 100.0), (60.0, 92.0), (100.0, 96.0), (120.0, 140.0)]
     );
+    assert_eq!(applied.regions[1].key.as_deref(), Some("Dm"));
 
+    // Tempo and key go back together.
     session.undo_action(&audio).expect("undo");
     let undone = session.engine.song().cloned().expect("song");
     assert_eq!(tempo_map(&undone), tempo_map(&song));
     assert_eq!(undone.time_signature_markers, song.time_signature_markers);
+    assert_eq!(undone.regions[1].key, None);
 }

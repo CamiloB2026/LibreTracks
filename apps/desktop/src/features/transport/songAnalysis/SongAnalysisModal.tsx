@@ -2,12 +2,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import {
-  analyzeSongTempo,
-  applySongTempoAnalysis,
-  cancelAnalyzeSongTempo,
+  analyzeSong,
+  applySongAnalysis,
+  cancelAnalyzeSong,
   listenToSongAnalysisProgress,
   seekTransport,
-  type AnalyzeSongTempoResult,
+  SONG_KEY_OPTIONS,
+  transposeKey,
+  type AnalyzeSongResult,
   type SongView,
   type TransportSnapshot,
 } from "../desktopApi";
@@ -17,6 +19,7 @@ import {
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
+  keyTrackOptions,
   reviewRows,
   rowIsValid,
   type ReviewRow,
@@ -26,7 +29,7 @@ import { useSongAnalysisStore } from "./songAnalysisStore";
 type Phase =
   | { kind: "setup"; notice: string | null }
   | { kind: "analyzing"; fraction: number }
-  | { kind: "review"; result: AnalyzeSongTempoResult }
+  | { kind: "review"; result: AnalyzeSongResult }
   | { kind: "applied" }
   | { kind: "error"; message: string };
 
@@ -35,10 +38,13 @@ type Props = {
   onApplied: (snapshot: TransportSnapshot) => void;
 };
 
+/** Below this the band counts as tuned to 440 Hz. */
+const TUNING_NOTICE_CENTS = 15;
+
 /**
- * "Analizar canción": read the song's click track, propose its tempo and time
- * signature markers, let the user review and edit them, apply as one undoable
- * edit. See docs/plans/song-analysis/.
+ * "Analizar canción": read the song's click track (tempo and meter markers)
+ * and its harmonic tracks (key), let the user review and edit the proposal,
+ * apply as one undoable edit. See docs/plans/song-analysis/.
  */
 export function SongAnalysisModal({ onApplied }: Props) {
   const target = useSongAnalysisStore((state) => state.target);
@@ -68,7 +74,7 @@ type DialogProps = {
 };
 
 /** Backend refusals that have their own message. */
-function errorKey(message: string): string | null {
+function refusalKey(message: string): string | null {
   if (message.includes("song_analysis_warp")) return "transport.songAnalysis.errorWarp";
   if (message.includes("song_analysis_varispeed")) return "transport.songAnalysis.errorVarispeed";
   return null;
@@ -76,12 +82,20 @@ function errorKey(message: string): string | null {
 
 function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: DialogProps) {
   const { t } = useTranslation();
-  // Captured once: the list must not reshuffle under the user.
-  const [{ options, preselected }] = useState(() => clickTrackOptions(song, regionId));
-  const [trackId, setTrackId] = useState<string>(preselected ?? "");
+  // Captured once: the lists must not reshuffle under the user.
+  const [{ options: clickOptions, preselected }] = useState(() =>
+    clickTrackOptions(song, regionId),
+  );
+  const [keyOptions] = useState(() => keyTrackOptions(song, regionId));
+  const [clickTrackId, setClickTrackId] = useState<string>(preselected ?? "");
+  const [keyTrackIds, setKeyTrackIds] = useState<Set<string>>(
+    () => new Set(keyOptions.filter((option) => option.preselected).map((option) => option.id)),
+  );
+  const [analyzeKeyToo, setAnalyzeKeyToo] = useState(keyOptions.length > 0);
   const [phase, setPhase] = useState<Phase>({ kind: "setup", notice: null });
   const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [include, setInclude] = useState({ tempo: true, signature: true });
+  const [include, setInclude] = useState({ tempo: true, signature: true, key: true });
+  const [keyChoice, setKeyChoice] = useState<string>("");
   const [applying, setApplying] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
 
@@ -95,15 +109,18 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const analyzing = phase.kind === "analyzing";
   const dismiss = () => {
     if (analyzing) {
-      void cancelAnalyzeSongTempo();
+      void cancelAnalyzeSong();
       return;
     }
     onClose();
   };
   useDismissOnBack(dismiss);
 
+  const wantsKey = analyzeKeyToo && keyTrackIds.size > 0;
+  const canAnalyze = clickTrackId !== "" || wantsKey;
+
   const analyze = async () => {
-    if (!trackId || analyzing) return;
+    if (!canAnalyze || analyzing) return;
     setPhase({ kind: "analyzing", fraction: 0 });
     unlistenRef.current?.();
     unlistenRef.current = await listenToSongAnalysisProgress((event) => {
@@ -112,21 +129,31 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       );
     });
     try {
-      const result = await analyzeSongTempo({ regionId, trackIds: [trackId] });
+      const result = await analyzeSong({
+        regionId,
+        clickTrackIds: clickTrackId ? [clickTrackId] : [],
+        // Session order, whatever order they were ticked in.
+        keyTrackIds: wantsKey
+          ? keyOptions.filter((option) => keyTrackIds.has(option.id)).map((option) => option.id)
+          : [],
+      });
       if (result.cancelled) {
         setPhase({ kind: "setup", notice: t("transport.songAnalysis.cancelled") });
         return;
       }
-      const proposalRows = result.proposal ? reviewRows(result.proposal) : [];
+      const proposalRows = result.tempo ? reviewRows(result.tempo.proposal) : [];
+      const detectedKey = result.key?.analysis.key ?? null;
       setRows(proposalRows);
+      setKeyChoice(detectedKey ?? "");
       setInclude({
         tempo: proposalRows.some((row) => row.kind === "tempo"),
         signature: proposalRows.some((row) => row.kind === "signature"),
+        key: detectedKey !== null && detectedKey !== result.key?.currentKey,
       });
       setPhase({ kind: "review", result });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const key = errorKey(message);
+      const key = refusalKey(message);
       setPhase({ kind: "error", message: key ? t(key) : message });
     } finally {
       unlistenRef.current?.();
@@ -134,25 +161,30 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
     }
   };
 
-  const payload = useMemo(
-    () => (phase.kind === "review" ? buildApplyPayload(song, regionId, rows, include) : null),
-    [phase.kind, song, regionId, rows, include],
-  );
   const hasTempoRows = rows.some((row) => row.kind === "tempo");
   const hasSignatureRows = rows.some((row) => row.kind === "signature");
+  const touchesTempo =
+    (include.tempo && hasTempoRows) || (include.signature && hasSignatureRows);
+  const tempoPayload = useMemo(
+    () =>
+      phase.kind === "review" && touchesTempo
+        ? buildApplyPayload(song, regionId, rows, include)
+        : null,
+    [phase.kind, touchesTempo, song, regionId, rows, include],
+  );
+  const appliesKey =
+    phase.kind === "review" && phase.result.key !== null && include.key && keyChoice !== "";
   const canApply =
-    payload !== null &&
-    !applying &&
-    ((include.tempo && hasTempoRows) || (include.signature && hasSignatureRows));
+    !applying && (touchesTempo ? tempoPayload !== null : appliesKey) && (touchesTempo || appliesKey);
 
   const apply = async () => {
-    if (!payload || !canApply) return;
+    if (!canApply) return;
     setApplying(true);
     try {
-      const snapshot = await applySongTempoAnalysis(
+      const snapshot = await applySongAnalysis(
         regionId,
-        payload.tempoMarkers,
-        payload.signatureMarkers,
+        touchesTempo ? tempoPayload : null,
+        appliesKey ? keyChoice : null,
       );
       onApplied(snapshot);
       setPhase({ kind: "applied" });
@@ -181,6 +213,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       ),
     );
 
+  const toggleKeyTrack = (id: string) =>
+    setKeyTrackIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
   const percent = phase.kind === "analyzing" ? Math.round(phase.fraction * 100) : 0;
 
   return (
@@ -203,34 +243,63 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         {phase.kind === "setup" ? (
           <div className="lt-settings-modal-body lt-render-modal-body">
             {phase.notice ? <p className="lt-render-notice">{phase.notice}</p> : null}
-            {options.length === 0 ? (
+            {clickOptions.length === 0 ? (
               <p className="lt-render-hint">{t("transport.songAnalysis.noTracks")}</p>
             ) : (
-              <label className="lt-settings-field">
-                <span className="lt-settings-field-label">
-                  {t("transport.songAnalysis.clickTrack")}
-                </span>
-                <select
-                  value={trackId}
-                  onChange={(event) => setTrackId(event.target.value)}
-                >
-                  {preselected ? null : (
-                    <option value="" disabled>
-                      {t("transport.songAnalysis.chooseClick")}
-                    </option>
-                  )}
-                  {options.map((option) => (
-                    <option key={option.id} value={option.id}>
-                      {option.name}
-                    </option>
-                  ))}
-                </select>
-                <span className="lt-render-hint">
-                  {preselected
-                    ? t("transport.songAnalysis.clickTrackHint")
-                    : t("transport.songAnalysis.clickTrackNotFound")}
-                </span>
-              </label>
+              <>
+                <label className="lt-settings-field">
+                  <span className="lt-settings-field-label">
+                    {t("transport.songAnalysis.clickTrack")}
+                  </span>
+                  <select
+                    aria-label={t("transport.songAnalysis.clickTrack")}
+                    value={clickTrackId}
+                    onChange={(event) => setClickTrackId(event.target.value)}
+                  >
+                    <option value="">{t("transport.songAnalysis.noTempo")}</option>
+                    {clickOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="lt-render-hint">
+                    {preselected
+                      ? t("transport.songAnalysis.clickTrackHint")
+                      : t("transport.songAnalysis.clickTrackNotFound")}
+                  </span>
+                </label>
+
+                <fieldset className="lt-render-section">
+                  <legend className="lt-settings-field-label">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={analyzeKeyToo}
+                        onChange={(event) => setAnalyzeKeyToo(event.target.checked)}
+                      />{" "}
+                      {t("transport.songAnalysis.analyzeKey")}
+                    </label>
+                  </legend>
+                  <p className="lt-render-hint">{t("transport.songAnalysis.keyTracksHint")}</p>
+                  {analyzeKeyToo ? (
+                    <ul className="lt-song-analysis-tracks">
+                      {keyOptions.map((option) => (
+                        <li key={option.id}>
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={keyTrackIds.has(option.id)}
+                              onChange={() => toggleKeyTrack(option.id)}
+                            />{" "}
+                            {option.name}
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </fieldset>
+              </>
             )}
           </div>
         ) : null}
@@ -251,14 +320,42 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         ) : null}
 
         {phase.kind === "review" ? (
-          <SongAnalysisReview
-            result={phase.result}
-            rows={rows}
-            include={include}
-            onInclude={setInclude}
-            onEdit={editRow}
-            onSeek={(seconds) => void seekTo(seconds)}
-          />
+          <div className="lt-settings-modal-body lt-render-modal-body">
+            {phase.result.tempoUnavailable ? (
+              <p className="lt-render-warning">
+                {t(
+                  refusalKey(phase.result.tempoUnavailable) ??
+                    "transport.songAnalysis.errorWarp",
+                )}
+              </p>
+            ) : null}
+            {phase.result.tempo ? (
+              <TempoReview
+                result={phase.result}
+                rows={rows}
+                include={include}
+                onInclude={(tempo, signature) => setInclude({ ...include, tempo, signature })}
+                onEdit={editRow}
+                onSeek={(seconds) => void seekTo(seconds)}
+              />
+            ) : null}
+            {phase.result.key ? (
+              <KeyReview
+                result={phase.result.key}
+                choice={keyChoice}
+                onChoice={setKeyChoice}
+                included={include.key}
+                onInclude={(key) => setInclude({ ...include, key })}
+              />
+            ) : null}
+            {phase.result.missingFiles.length > 0 ? (
+              <p className="lt-render-warning">
+                {t("transport.songAnalysis.missingFiles", {
+                  count: phase.result.missingFiles.length,
+                })}
+              </p>
+            ) : null}
+          </div>
         ) : null}
 
         {phase.kind === "applied" ? (
@@ -284,7 +381,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
               <button
                 type="button"
                 className="is-primary"
-                disabled={!trackId}
+                disabled={!canAnalyze}
                 onClick={() => void analyze()}
               >
                 {t("transport.songAnalysis.analyze")}
@@ -295,7 +392,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
             <button
               type="button"
               className="lt-secondary-button"
-              onClick={() => void cancelAnalyzeSongTempo()}
+              onClick={() => void cancelAnalyzeSong()}
             >
               {t("transport.songAnalysis.stop")}
             </button>
@@ -341,19 +438,108 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
 }
 
-type ReviewProps = {
-  result: AnalyzeSongTempoResult;
+type KeyReviewProps = {
+  result: NonNullable<AnalyzeSongResult["key"]>;
+  choice: string;
+  onChoice: (key: string) => void;
+  included: boolean;
+  onInclude: (included: boolean) => void;
+};
+
+function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewProps) {
+  const { t } = useTranslation();
+  const { analysis, currentKey, transposeSemitones } = result;
+  if (!analysis.key) {
+    return (
+      <section className="lt-song-analysis-part">
+        <h3>{t("transport.songAnalysis.key")}</h3>
+        <p className="lt-render-notice">{t("transport.songAnalysis.noKey")}</p>
+      </section>
+    );
+  }
+  const sounding = transposeSemitones !== 0 ? transposeKey(choice, transposeSemitones) : null;
+  const tuning = Math.round(analysis.tuningCents);
+  return (
+    <section className="lt-song-analysis-part">
+      <h3>
+        <label>
+          <input
+            type="checkbox"
+            checked={included}
+            onChange={(event) => onInclude(event.target.checked)}
+          />{" "}
+          {t("transport.songAnalysis.applyKey")}
+        </label>
+      </h3>
+      <dl className="lt-song-analysis-summary">
+        <div>
+          <dt>{t("transport.songAnalysis.key")}</dt>
+          <dd>
+            {currentKey ?? "—"} →{" "}
+            <select
+              aria-label={t("transport.songAnalysis.key")}
+              value={choice}
+              disabled={!included}
+              onChange={(event) => onChoice(event.target.value)}
+            >
+              {SONG_KEY_OPTIONS.map((key) => (
+                <option key={key} value={key}>
+                  {key}
+                </option>
+              ))}
+            </select>
+          </dd>
+        </div>
+      </dl>
+      {currentKey === analysis.key ? (
+        <p className="lt-render-hint">{t("transport.songAnalysis.keyUnchanged")}</p>
+      ) : null}
+      {analysis.alternative ? (
+        <p className="lt-render-warning">
+          {t(
+            analysis.relativeDoubt
+              ? "transport.songAnalysis.keyRelativeDoubt"
+              : "transport.songAnalysis.keyDoubt",
+            { key: analysis.alternative },
+          )}
+        </p>
+      ) : null}
+      {sounding ? (
+        <p className="lt-render-hint">
+          {t("transport.songAnalysis.keyTransposed", {
+            semitones: transposeSemitones > 0 ? `+${transposeSemitones}` : transposeSemitones,
+            key: sounding,
+          })}
+        </p>
+      ) : null}
+      {Math.abs(tuning) >= TUNING_NOTICE_CENTS ? (
+        <p className="lt-render-hint">
+          {t(
+            tuning < 0
+              ? "transport.songAnalysis.tuningFlat"
+              : "transport.songAnalysis.tuningSharp",
+            { cents: Math.abs(tuning) },
+          )}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+type TempoReviewProps = {
+  result: AnalyzeSongResult;
   rows: ReviewRow[];
   include: { tempo: boolean; signature: boolean };
-  onInclude: (include: { tempo: boolean; signature: boolean }) => void;
+  onInclude: (tempo: boolean, signature: boolean) => void;
   onEdit: (row: ReviewRow, text: string) => void;
   onSeek: (absoluteSeconds: number) => void;
 };
 
-function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }: ReviewProps) {
+function TempoReview({ result, rows, include, onInclude, onEdit, onSeek }: TempoReviewProps) {
   const { t } = useTranslation();
-  const { analysis, proposal, regionStartSeconds } = result;
-  if (!analysis || !proposal) return null;
+  if (!result.tempo) return null;
+  const { analysis, proposal } = result.tempo;
+  const { regionStartSeconds } = result;
 
   const songRows = rows.filter((row) => !row.restoresNextSong);
   const firstTempo = songRows.find((row) => row.kind === "tempo");
@@ -363,7 +549,8 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
   const hasSignatureRows = rows.some((row) => row.kind === "signature");
 
   return (
-    <div className="lt-settings-modal-body lt-render-modal-body">
+    <section className="lt-song-analysis-part">
+      <h3>{t("transport.songAnalysis.tempoAndMeter")}</h3>
       {analysis.segments.length > 0 && detected ? (
         <dl className="lt-song-analysis-summary">
           <div>
@@ -405,7 +592,7 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
                 type="checkbox"
                 checked={include.tempo && hasTempoRows}
                 disabled={!hasTempoRows}
-                onChange={(event) => onInclude({ ...include, tempo: event.target.checked })}
+                onChange={(event) => onInclude(event.target.checked, include.signature)}
               />{" "}
               {t("transport.songAnalysis.applyTempo")}
             </label>
@@ -414,9 +601,7 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
                 type="checkbox"
                 checked={include.signature && hasSignatureRows}
                 disabled={!hasSignatureRows}
-                onChange={(event) =>
-                  onInclude({ ...include, signature: event.target.checked })
-                }
+                onChange={(event) => onInclude(include.tempo, event.target.checked)}
               />{" "}
               {t("transport.songAnalysis.applySignature")}
             </label>
@@ -437,6 +622,7 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
                     row.kind === "tempo"
                       ? t("transport.songAnalysis.kindTempo")
                       : t("transport.songAnalysis.kindSignature");
+                  const position = formatSongPosition(row.startSeconds - regionStartSeconds);
                   return (
                     <tr
                       key={`${row.kind}-${row.index}`}
@@ -450,7 +636,7 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
                         >
                           {row.restoresNextSong
                             ? t("transport.songAnalysis.nextSongStart")
-                            : formatSongPosition(row.startSeconds - regionStartSeconds)}
+                            : position}
                         </button>
                       </td>
                       <td>
@@ -465,7 +651,7 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
                         <input
                           type="text"
                           inputMode={row.kind === "tempo" ? "decimal" : "text"}
-                          aria-label={`${label} ${formatSongPosition(row.startSeconds - regionStartSeconds)}`}
+                          aria-label={`${label} ${position}`}
                           aria-invalid={!rowIsValid(row)}
                           disabled={!enabled || row.restoresNextSong}
                           value={row.text}
@@ -500,12 +686,6 @@ function SongAnalysisReview({ result, rows, include, onInclude, onEdit, onSeek }
           ))}
         </ul>
       ) : null}
-
-      {result.missingFiles.length > 0 ? (
-        <p className="lt-render-warning">
-          {t("transport.songAnalysis.missingFiles", { count: result.missingFiles.length })}
-        </p>
-      ) : null}
-    </div>
+    </section>
   );
 }

@@ -1,9 +1,10 @@
-//! Apply the result of "Analizar canción" (tempo and meter from the click).
+//! Apply the result of "Analizar canción": tempo and meter from the click,
+//! and the song's key.
 //!
-//! The proposal comes from `libretracks_analysis::propose_tempo_markers`,
+//! The tempo proposal comes from `libretracks_analysis::propose_tempo_markers`,
 //! reviewed (and maybe edited) by the user. Applying replaces every tempo and
-//! time signature marker inside the song with it, in one undoable edit. See
-//! `docs/plans/song-analysis/00-DISENO.md`.
+//! time signature marker inside the song with it and writes the key, in one
+//! undoable edit. See `docs/plans/song-analysis/00-DISENO.md`.
 
 use libretracks_analysis::{ProposedSignatureMarker, ProposedTempoMarker};
 use libretracks_core::{Song, TempoMarker, TimeSignatureMarker};
@@ -110,12 +111,31 @@ pub(super) fn apply_tempo_analysis_to_song(
     Ok(())
 }
 
+/// Write the song's original key (sharp spelling, as the key picker stores
+/// it). An empty key clears it, like `update_song_region_key`.
+pub(super) fn apply_key_to_song(
+    song: &mut Song,
+    region_id: &str,
+    key: &str,
+) -> Result<(), DesktopError> {
+    let region = song
+        .regions
+        .iter_mut()
+        .find(|region| region.id == region_id)
+        .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+    let key = key.trim();
+    region.key = (!key.is_empty()).then(|| key.to_string());
+    Ok(())
+}
+
 impl DesktopSession {
-    pub fn apply_song_tempo_analysis(
+    /// The reviewed analysis, as ONE undo step: the tempo map when `tempo` is
+    /// given (tempo and meter markers), the key when `key` is.
+    pub fn apply_song_analysis(
         &mut self,
         region_id: &str,
-        tempo_markers: &[ProposedTempoMarker],
-        signature_markers: &[ProposedSignatureMarker],
+        tempo: Option<(&[ProposedTempoMarker], &[ProposedSignatureMarker])>,
+        key: Option<String>,
         audio: &AudioController,
     ) -> Result<TransportSnapshot, DesktopError> {
         let mut song = self
@@ -124,7 +144,12 @@ impl DesktopSession {
             .cloned()
             .ok_or(DesktopError::NoSongLoaded)?;
         let previous_song = song.clone();
-        apply_tempo_analysis_to_song(&mut song, region_id, tempo_markers, signature_markers)?;
+        if let Some((tempo_markers, signature_markers)) = tempo {
+            apply_tempo_analysis_to_song(&mut song, region_id, tempo_markers, signature_markers)?;
+        }
+        if let Some(key) = key.as_deref() {
+            apply_key_to_song(&mut song, region_id, key)?;
+        }
         realign_regions_after_warp_tempo_change(&previous_song, &mut song);
 
         let impact = if song_has_active_warp(&song) {

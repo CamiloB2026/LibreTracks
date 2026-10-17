@@ -674,9 +674,23 @@ const en = {
       midiLearnListeningShort: "Listening",
     },
     songAnalysis: {
-      title: "Analyze tempo and meter",
+      title: "Analyze song",
       intro:
-        "Reads the song's click track and proposes its tempo and time signature markers. Review the proposal before applying it; it can be undone.",
+        "Reads the click track to propose the tempo and time signature markers, and the harmonic tracks to propose the key. Review the proposal before applying it; it can be undone.",
+      noTempo: "Don't analyze the tempo",
+      analyzeKey: "Analyze the key",
+      keyTracksHint:
+        "Tracks with harmony. The click, guide and percussion are left out because they blur the key.",
+      tempoAndMeter: "Tempo and meter",
+      key: "Key",
+      applyKey: "Apply key",
+      noKey: "No clear key found in these tracks.",
+      keyUnchanged: "The song already has this key.",
+      keyDoubt: "Close call: it could also be {{key}}.",
+      keyRelativeDoubt: "Close call: it could also be {{key}}, its relative (same notes, other tonic).",
+      keyTransposed: "With its {{semitones}} transpose it sounds in {{key}}.",
+      tuningFlat: "The band is tuned {{cents}} cents below A 440.",
+      tuningSharp: "The band is tuned {{cents}} cents above A 440.",
       clickTrack: "Click track",
       clickTrackHint: "Chosen by its name. Change it if it is not the click.",
       clickTrackNotFound:
@@ -693,9 +707,10 @@ const en = {
       close: "Close",
       applied: "Markers applied. Use Undo to revert.",
       failed: "Could not analyze: {{error}}",
-      errorWarp: "The song has warp on. Turn it off to analyze the click's tempo as it is.",
+      errorWarp:
+        "The song has warp on, so the tempo was not analyzed. Turn it off to read the click as it is.",
       errorVarispeed:
-        "A varispeed transpose stretches the timeline. Remove it to analyze the tempo.",
+        "A varispeed transpose stretches the timeline, so the tempo was not analyzed. Remove it to read the click.",
       tempo: "Tempo",
       signature: "Meter",
       changes: "Changes",
@@ -876,7 +891,7 @@ const en = {
       songCountStyle: "Voice Guide Count-in",
       songCountStyleDefault: "Global setting ({{style}})",
       renderSong: "Render audio…",
-      analyzeSong: "Analyze tempo and meter…",
+      analyzeSong: "Analyze song (tempo, meter and key)…",
       levelSongs: "Level song volumes…",
       exportSong: "Export Song",
       deleteSong: "Delete Song",

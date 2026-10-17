@@ -2350,6 +2350,33 @@ html.lt-ios body {
   list-style: none;
 }
 
+.lt-song-analysis-part {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.lt-song-analysis-part + .lt-song-analysis-part {
+  border-top: 1px solid rgb(255 255 255 / 0.08);
+  padding-top: 0.9rem;
+}
+
+.lt-song-analysis-part h3 {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.lt-song-analysis-tracks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.25rem 1rem;
+  max-height: 14rem;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
 .lt-level-songs-change {
   color: #57f1db;
   font-weight: 700;

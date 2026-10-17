@@ -1288,30 +1288,57 @@ export const testDesktopApiMock = {
     missingFiles: [] as string[],
   }),
   cancelMeasureSongLoudness: async () => {},
-  analyzeSongTempo: async (request: { regionId: string; trackIds: string[] }) => ({
-    cancelled: false,
-    regionId: request.regionId,
-    regionStartSeconds:
-      state.song.regions.find((region) => region.id === request.regionId)?.startSeconds ?? 0,
-    analysis: {
-      segments: [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }],
-      warnings: [],
-      beatCount: 32,
-      downbeatKnown: true,
-    },
-    proposal: {
-      tempoMarkers: [],
-      signatureMarkers: [],
-      currentBpm: state.song.bpm,
-      currentSignature: state.song.timeSignature,
-      unchanged: true,
-    },
-    missingFiles: [] as string[],
-  }),
-  cancelAnalyzeSongTempo: async () => {},
+  analyzeSong: async (request: {
+    regionId: string;
+    clickTrackIds: string[];
+    keyTrackIds: string[];
+  }) => {
+    const region = state.song.regions.find((candidate) => candidate.id === request.regionId);
+    return {
+      cancelled: false,
+      regionId: request.regionId,
+      regionStartSeconds: region?.startSeconds ?? 0,
+      tempo:
+        request.clickTrackIds.length > 0
+          ? {
+              analysis: {
+                segments: [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }],
+                warnings: [],
+                beatCount: 32,
+                downbeatKnown: true,
+              },
+              proposal: {
+                tempoMarkers: [],
+                signatureMarkers: [],
+                currentBpm: state.song.bpm,
+                currentSignature: state.song.timeSignature,
+                unchanged: true,
+              },
+            }
+          : null,
+      tempoUnavailable: null,
+      key:
+        request.keyTrackIds.length > 0
+          ? {
+              analysis: {
+                key: "D",
+                confidence: 0.2,
+                alternative: null,
+                relativeDoubt: false,
+                tuningCents: 0,
+                candidates: [{ key: "D", score: 0.8 }],
+              },
+              currentKey: region?.key ?? null,
+              transposeSemitones: region?.transposeSemitones ?? 0,
+            }
+          : null,
+      missingFiles: [] as string[],
+    };
+  },
+  cancelAnalyzeSong: async () => {},
   listenToSongAnalysisProgress: async (_handler: (event: { fraction: number }) => void) =>
     () => {},
-  applySongTempoAnalysis: async () => clone(buildSnapshot()),
+  applySongAnalysis: async () => clone(buildSnapshot()),
   listenToLevelSongsProgress: async (
     _handler: (event: { fraction: number; songsDone: number; songCount: number }) => void,
   ) => () => {},

@@ -1389,9 +1389,10 @@ export async function listenToLevelSongsProgress(
   });
 }
 
-// "Analizar canción": tempo and meter from the song's click track. See
-// docs/plans/song-analysis/. Positions in `segments` and `warnings` are seconds
-// from the song start; the proposal's markers are absolute session seconds.
+// "Analizar canción": tempo and meter from the song's click track, and the key
+// from its harmonic tracks. See docs/plans/song-analysis/. Positions in
+// `segments` and `warnings` are seconds from the song start; the proposal's
+// markers are absolute session seconds.
 
 export type ClickWarningKind =
   | "noClick"
@@ -1400,6 +1401,20 @@ export type ClickWarningKind =
   | "variableTempo"
   | "irregularBar"
   | "compoundGuess";
+
+export type KeyAnalysis = {
+  /** Sharp spelling like the key picker ("Dm", "F#"); null: no pitched audio. */
+  key: string | null;
+  /** Correlation margin over the runner-up; below 0.1 it is a close call. */
+  confidence: number;
+  /** The runner-up, only when the call is close. */
+  alternative: string | null;
+  /** That close runner-up is the relative major/minor. */
+  relativeDoubt: boolean;
+  /** How far the band is from A = 440 Hz. */
+  tuningCents: number;
+  candidates: { key: string; score: number }[];
+};
 
 export type ClickTempoSegment = {
   startSeconds: number;
@@ -1440,24 +1455,36 @@ export type TempoProposal = {
   unchanged: boolean;
 };
 
-export type AnalyzeSongTempoResult = {
+export type AnalyzeSongRequest = {
+  regionId: string;
+  /** Empty: no tempo analysis. */
+  clickTrackIds: string[];
+  /** Empty: no key analysis. */
+  keyTrackIds: string[];
+};
+
+export type AnalyzeSongResult = {
   cancelled: boolean;
   regionId: string;
   regionStartSeconds: number;
-  analysis: ClickAnalysis | null;
-  proposal: TempoProposal | null;
+  tempo: { analysis: ClickAnalysis; proposal: TempoProposal } | null;
+  /** Why a chosen click was not analysed: "song_analysis_warp" | "song_analysis_varispeed". */
+  tempoUnavailable: string | null;
+  /** The key in the song's ORIGINAL key: the transpose is taken out. */
+  key: {
+    analysis: KeyAnalysis;
+    currentKey: string | null;
+    transposeSemitones: number;
+  } | null;
   missingFiles: string[];
 };
 
-export async function analyzeSongTempo(request: {
-  regionId: string;
-  trackIds: string[];
-}): Promise<AnalyzeSongTempoResult> {
-  return invokeCommand<AnalyzeSongTempoResult>("analyze_song_tempo", { request });
+export async function analyzeSong(request: AnalyzeSongRequest): Promise<AnalyzeSongResult> {
+  return invokeCommand<AnalyzeSongResult>("analyze_song", { request });
 }
 
-export async function cancelAnalyzeSongTempo(): Promise<void> {
-  await invokeCommand<void>("cancel_analyze_song_tempo");
+export async function cancelAnalyzeSong(): Promise<void> {
+  await invokeCommand<void>("cancel_analyze_song");
 }
 
 export async function listenToSongAnalysisProgress(
@@ -1469,17 +1496,20 @@ export async function listenToSongAnalysisProgress(
   });
 }
 
-/** Replaces the tempo and meter markers inside the song: one undo step. */
-export async function applySongTempoAnalysis(
+/**
+ * Applies the reviewed analysis as ONE undo step: `tempo` replaces the tempo
+ * and meter markers inside the song, `key` sets its original key. Null leaves
+ * that part alone.
+ */
+export async function applySongAnalysis(
   regionId: string,
-  tempoMarkers: ProposedTempoMarker[],
-  signatureMarkers: ProposedSignatureMarker[],
+  tempo: {
+    tempoMarkers: ProposedTempoMarker[];
+    signatureMarkers: ProposedSignatureMarker[];
+  } | null,
+  key: string | null,
 ): Promise<TransportSnapshot> {
-  return invokeCommand<TransportSnapshot>("apply_song_tempo_analysis", {
-    regionId,
-    tempoMarkers,
-    signatureMarkers,
-  });
+  return invokeCommand<TransportSnapshot>("apply_song_analysis", { regionId, tempo, key });
 }
 
 // Export the WHOLE session as a single portable .ltset (every region + library
