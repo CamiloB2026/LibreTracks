@@ -2185,6 +2185,11 @@ impl DesktopSession {
         } else {
             self.cancel_native_scheduled_jumps(audio)?;
         }
+        if !(trigger == JumpTrigger::Immediate && transition == TransitionType::Instant) {
+            // Scheduling cleared the armed cue: arm again so the cues before
+            // the programmed jump still fire while it waits.
+            self.schedule_next_automation_jump(audio)?;
+        }
 
         Ok(self.snapshot())
     }
@@ -2285,6 +2290,11 @@ impl DesktopSession {
         } else if scheduled_jump.is_none() {
             self.cancel_native_scheduled_jumps(audio)?;
         }
+        if !(trigger == JumpTrigger::Immediate && transition == TransitionType::Instant) {
+            // Scheduling cleared the armed cue: arm again so the cues before
+            // the programmed jump still fire while it waits.
+            self.schedule_next_automation_jump(audio)?;
+        }
 
         if was_playing && trigger == JumpTrigger::Immediate {
             if let TransitionType::FadeOut { duration_seconds } = &transition {
@@ -2306,6 +2316,8 @@ impl DesktopSession {
         self.pending_automation_jump = None;
         self.active_automation_job = None;
         self.cancel_native_scheduled_jumps(audio)?;
+        // With the programmed jump gone the cues ahead run whole again.
+        self.schedule_next_automation_jump(audio)?;
         Ok(self.snapshot())
     }
 
@@ -2888,6 +2900,10 @@ impl DesktopSession {
                 return Ok(());
             }
             if self.engine.pending_marker_jump().is_some() {
+                // Same as the vamp: the cues before the programmed jump are
+                // armed without their own jump and still fire on time.
+                self.advance_automation_job_actions(audio)?;
+                self.advance_mix_ramps(audio)?;
                 return Ok(());
             }
             // Fire any job pre-jump mix actions whose effective time the
@@ -2983,7 +2999,11 @@ impl DesktopSession {
                 .note_jump_while_playing(advanced_position);
             // Same as the faded-jump path: re-anchor rather than replay the
             // span the playhead skipped over (or looped back across).
-            self.land_midi_cursor(advanced_position);
+            if jump_executed {
+                self.land_after_user_jump(audio, advanced_position)?;
+            } else {
+                self.land_midi_cursor(advanced_position);
+            }
             self.capture_transport_drift_sample(
                 audio,
                 "jump",
