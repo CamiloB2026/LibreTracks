@@ -55,23 +55,11 @@ pub trait Transcriber {
     fn detect_language(&mut self, speech: &[f32]);
     /// The text of one announcement (16 kHz mono), `None` on failure.
     fn transcribe(&mut self, speech: &[f32]) -> Option<String>;
-    /// Several announcements at once, in order. A recogniser that pays a
-    /// fixed cost per call (whisper encodes a 30 s window however short the
-    /// audio) packs them into one pass; by default, one call each.
-    fn transcribe_batch(&mut self, speeches: &[Vec<f32>]) -> Vec<Option<String>> {
-        speeches
-            .iter()
-            .map(|speech| self.transcribe(speech))
-            .collect()
-    }
     /// `done` of `total` announcements transcribed so far (for a progress
     /// bar).
     fn progress(&mut self, _done: usize, _total: usize) {}
 }
 
-/// Announcements handed to the recogniser per call: what fits in one
-/// whisper window with a second of silence around each.
-const RECOGNITION_BATCH: usize = 8;
 /// Two fragments under this cost are the same recording, said again.
 const SAME_RECORDING_COST: f64 = 1.0;
 /// Fragments whose lengths differ more than this ratio are different words.
@@ -225,24 +213,18 @@ pub fn analyze_guide(
             representative,
         });
     }
-    // The groups to transcribe, a batch at a time.
+    // The groups to transcribe, one at a time (about a second each), so the
+    // progress bar moves with each. Packing several into one whisper window
+    // was tried: words drifted between announcements.
     let mut transcripts: Vec<Option<String>> = vec![None; pending.len()];
     if let Some(recogniser) = transcriber.as_deref_mut() {
         let wanted: Vec<usize> = (0..pending.len()).filter(|&g| !pending[g].sure).collect();
-        let mut done = 0;
-        for chunk in wanted.chunks(RECOGNITION_BATCH) {
+        for (done, &g) in wanted.iter().enumerate() {
             recogniser.progress(done, wanted.len());
-            let speeches: Vec<Vec<f32>> = chunk
-                .iter()
-                .map(|&g| speech_of(pending[g].representative))
-                .collect();
-            for (&g, text) in chunk.iter().zip(recogniser.transcribe_batch(&speeches)) {
-                transcripts[g] = text;
-            }
-            done += chunk.len();
+            transcripts[g] = recogniser.transcribe(&speech_of(pending[g].representative));
         }
         if !wanted.is_empty() {
-            recogniser.progress(done, wanted.len());
+            recogniser.progress(wanted.len(), wanted.len());
         }
     }
     let mut groups: Vec<GuideGroup> = Vec::with_capacity(group_count);
@@ -710,7 +692,7 @@ mod tests {
         // One recognition per group, not per announcement, with its count
         // known up front.
         assert_eq!(recogniser.calls.len(), 3);
-        assert_eq!(recogniser.progress, vec![(0, 3), (3, 3)]);
+        assert_eq!(recogniser.progress, vec![(0, 3), (1, 3), (2, 3), (3, 3)]);
         assert!(recogniser.language_sample_seconds > 1.0);
         assert_eq!(
             analysis.groups[1].transcript.as_deref(),

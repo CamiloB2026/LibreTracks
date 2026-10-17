@@ -2354,6 +2354,40 @@ html.lt-ios body {
   gap: 0.5rem;
 }
 
+/* While analysing: a spinner by the caption and a sheen over the bar, so a
+   long stage (bouncing the tracks, one announcement) never looks stuck. */
+.lt-song-analysis-status {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.lt-song-analysis-progress .lt-render-progress-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width 400ms ease-out;
+}
+
+.lt-song-analysis-progress .lt-render-progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgb(255 255 255 / 0.35) 50%,
+    transparent 100%
+  );
+  transform: translateX(-100%);
+  animation: busy-overlay-progress-sheen 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-song-analysis-progress .lt-render-progress-fill::after {
+    animation: none;
+  }
+}
+
 .lt-song-analysis-callout {
   display: grid;
   gap: 0.5rem;

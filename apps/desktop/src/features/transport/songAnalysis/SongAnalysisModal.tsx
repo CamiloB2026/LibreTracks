@@ -454,7 +454,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
 
         {phase.kind === "analyzing" ? (
           <div className="lt-settings-modal-body lt-render-modal-body" aria-live="polite">
-            <p className="lt-render-status">
+            <p className="lt-render-status lt-song-analysis-status">
+              <span className="lt-library-progress-spinner" aria-hidden="true" />
               {phase.stage === "guide" && phase.total
                 ? t("transport.songAnalysis.stageGuideCount", {
                     done: phase.done ?? 0,
@@ -473,7 +474,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                   )}
             </p>
             <div
-              className="lt-render-progress"
+              className="lt-render-progress lt-song-analysis-progress"
               role="progressbar"
               aria-valuemin={0}
               aria-valuemax={100}
