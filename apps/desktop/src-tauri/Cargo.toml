@@ -38,6 +38,10 @@ thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "fs"] }
 futures-util = "0.3"
 sha2 = "0.10"
+# Speech recognition of guide tracks ("Analizar canción"): whisper.cpp,
+# built with CMake for every platform (see .cargo/whisper-msvc-release.cmake
+# for Windows, and the iOS and Android pipelines).
+whisper-rs = "0.16"
 zip = "2"
 hound = "3"
 symphonia = { version = "0.5", default-features = false, features = ["aac", "flac", "isomp4", "mp3", "ogg", "pcm", "vorbis", "wav"] }
@@ -71,9 +75,6 @@ sysinfo = { version = "0.33", default-features = false, features = ["system"] }
 libretracks-remote = { path = "../../../crates/libretracks-remote" }
 rfd = "0.15"
 tauri-plugin-single-instance = "2"
-# Speech recognition of guide tracks ("Analizar canción"). Desktop only until
-# whisper.cpp is built in the Android and iOS pipelines.
-whisper-rs = "0.16"
 
 # iOS uses the native C++ engine as a static arm64 library. The target-specific
 # plugin below supplies the document picker; the engine dependency itself is

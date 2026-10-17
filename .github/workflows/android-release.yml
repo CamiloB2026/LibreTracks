@@ -206,6 +206,10 @@ jobs:
           JNI_DIR="apps/desktop/src-tauri/gen/android/app/src/main/jniLibs/${ANDROID_ABI}"
           mkdir -p "$JNI_DIR"
           cp "$ENGINE_BUILD_DIR/liblt_audio_engine_v2.so" "$JNI_DIR/"
+          # whisper.cpp (speech recognition of guide tracks) links the Rust
+          # core against the shared C++ runtime (whisper-rs-sys asks for
+          # c++_shared on Android); without it the app fails to load.
+          cp "$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so" "$JNI_DIR/"
 
       # Materialize the release keystore from secrets so the APK and AAB are signed with
       # the real key (build.gradle reads keystore.properties → falls back to

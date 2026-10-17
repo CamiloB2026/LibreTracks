@@ -369,19 +369,6 @@ fn prepare_job(
     })
 }
 
-/// Mobile has no recogniser yet: a type for the `Option` that is always None.
-#[cfg(any(target_os = "android", target_os = "ios"))]
-struct NoTranscriber;
-
-#[cfg(any(target_os = "android", target_os = "ios"))]
-impl libretracks_analysis::Transcriber for NoTranscriber {
-    fn detect_language(&mut self, _speech: &[f32]) {}
-
-    fn transcribe(&mut self, _speech: &[f32]) -> Option<String> {
-        None
-    }
-}
-
 /// The app's voice-guide clips, every language, as templates for the guide
 /// analysis: `sections/<kind>[_<n>].wav`, `cues/<kind>.wav` and the count
 /// clips (labelled `count`). A missing folder is skipped: with no templates
@@ -580,18 +567,12 @@ fn run_job(
             }
             let (samples, rate) = read(&guide_path)?;
             let templates = voices_dir.map(load_guide_templates).unwrap_or_default();
-            #[cfg(not(any(target_os = "android", target_os = "ios")))]
             let mut recogniser = speech_model.and_then(|model| {
                 crate::commands::speech::WhisperTranscriber::load(
                     model,
                     Box::new(|| ANALYSIS_CANCEL.load(Ordering::Acquire)),
                 )
             });
-            #[cfg(any(target_os = "android", target_os = "ios"))]
-            let mut recogniser: Option<NoTranscriber> = {
-                let _ = speech_model;
-                None
-            };
             let speech_recognition = recogniser.is_some();
             let analysis = match recogniser.as_mut() {
                 Some(inner) => {

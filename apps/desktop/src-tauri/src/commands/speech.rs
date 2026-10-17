@@ -41,18 +41,15 @@ fn model_path(app: &AppHandle) -> Option<std::path::PathBuf> {
         .map(|dir| dir.join("models").join(MODEL_FILE))
 }
 
-/// The model file, when speech recognition can run here.
+/// The model file, once downloaded.
 pub(crate) fn ready_model(app: &AppHandle) -> Option<std::path::PathBuf> {
-    if !cfg!(not(any(target_os = "android", target_os = "ios"))) {
-        return None;
-    }
     model_path(app).filter(|path| path.is_file())
 }
 
 #[tauri::command(async)]
 pub fn speech_model_status(app: AppHandle) -> SpeechModelStatus {
     SpeechModelStatus {
-        supported: cfg!(not(any(target_os = "android", target_os = "ios"))),
+        supported: true,
         downloaded: ready_model(&app).is_some(),
         size_bytes: MODEL_BYTES,
     }
@@ -65,9 +62,6 @@ pub async fn download_speech_model(app: AppHandle) -> Result<SpeechModelStatus, 
     use std::io::Write;
     use tauri::Emitter;
 
-    if cfg!(any(target_os = "android", target_os = "ios")) {
-        return Err("Speech recognition is not available on this platform".to_string());
-    }
     let path = model_path(&app).ok_or_else(|| "No app data folder".to_string())?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
@@ -124,11 +118,9 @@ pub async fn download_speech_model(app: AppHandle) -> Result<SpeechModelStatus, 
     Ok(speech_model_status(app))
 }
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-pub(crate) use desktop::WhisperTranscriber;
+pub(crate) use whisper::WhisperTranscriber;
 
-#[cfg(not(any(target_os = "android", target_os = "ios")))]
-mod desktop {
+mod whisper {
     use libretracks_analysis::Transcriber;
     use whisper_rs::{
         FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters, WhisperState,
@@ -171,8 +163,14 @@ mod desktop {
             // A quarter of the cores, 2 to 4: measured on a 20-core machine,
             // 4 threads use ~25 % less CPU in all than 8 (whisper scales
             // sublinearly) and leave room for playback, for ~3 s more a song.
+            // A phone has 6 to 8 cores and nothing else to do meanwhile: half.
+            let share = if cfg!(any(target_os = "android", target_os = "ios")) {
+                2
+            } else {
+                4
+            };
             let threads = std::thread::available_parallelism()
-                .map(|n| (n.get() / 4).clamp(2, 4))
+                .map(|n| (n.get() / share).clamp(2, 4))
                 .unwrap_or(2) as i32;
             Some(Self {
                 state,
