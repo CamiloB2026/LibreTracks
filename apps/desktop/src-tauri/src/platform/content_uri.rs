@@ -28,9 +28,14 @@ const CONTENT_SCHEME: &str = "content://";
 ///
 /// Comparación sin distinguir mayúsculas porque el esquema de un URI no las
 /// distingue (RFC 3986), y un proveedor podría devolver `CONTENT://`.
+///
+/// Se compara por bytes: cortar el `&str` en `CONTENT_SCHEME.len()` entra en
+/// pánico si ese byte cae dentro de un carácter de varios bytes, como la `É`
+/// de `audio/Es Él-…/Bass.wav`, y eso tumbaba la apertura de la sesión.
 pub fn is_content_uri(path: &str) -> bool {
-    path.len() > CONTENT_SCHEME.len()
-        && path[..CONTENT_SCHEME.len()].eq_ignore_ascii_case(CONTENT_SCHEME)
+    let bytes = path.as_bytes();
+    bytes.len() > CONTENT_SCHEME.len()
+        && bytes[..CONTENT_SCHEME.len()].eq_ignore_ascii_case(CONTENT_SCHEME.as_bytes())
 }
 
 /// Nombre visible del fichero al que apunta una ruta de asset.
@@ -119,6 +124,12 @@ mod tests {
         assert!(!is_content_uri(""));
         // Un fichero que EMPIEZA por "content" no es un URI.
         assert!(!is_content_uri("contenido/voz.wav"));
+        // Un carácter de varios bytes justo en el corte del esquema no puede
+        // tumbar la comprobación.
+        assert!(!is_content_uri(
+            "audio/Es Él-Felipe S. Santos Bb 70 Bpm/Bass.wav"
+        ));
+        assert!(!is_content_uri("contentÉ://x"));
     }
 
     /// El criterio que impide borrarle un fichero al usuario.
