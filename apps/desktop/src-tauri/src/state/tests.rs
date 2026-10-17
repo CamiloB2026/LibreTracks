@@ -5874,3 +5874,74 @@ fn a_jump_puts_the_midi_cursor_just_before_the_landing_point() {
     assert!(session.midi_cursor_seconds < 4.0);
     assert!(session.midi_cursor_seconds > 3.99);
 }
+
+fn jump_cue(id: &str, at_seconds: f64, marker_id: &str) -> crate::audio::automation::AutomationCue {
+    crate::audio::automation::AutomationCue {
+        id: id.into(),
+        name: id.into(),
+        at_seconds,
+        enabled: true,
+        max_runs: None,
+        actions: vec![crate::audio::automation::AutomationAction::Jump {
+            target: crate::audio::automation::AutomationJumpTarget::Marker {
+                marker_id: marker_id.into(),
+            },
+            transition: Default::default(),
+            mix_scene_id: None,
+        }],
+    }
+}
+
+/// Field report: a cue before the intro jumps back to the chorus. After that
+/// jump lands, the same cue has to be armed again for the next pass — it is
+/// only kept off the landing point, not out of the song.
+#[test]
+fn a_cue_that_jumps_back_is_armed_again_for_the_next_pass() {
+    let mut session = session_with_song_dir("loop-back", song_with_intro_chorus_bridge());
+    session.automation.cues = vec![jump_cue("back_to_chorus", 7.5, "chorus")];
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(4.0, &audio).expect("seek should succeed");
+    // What the native-jump completion does once the cue's jump has landed.
+    session.record_automation_cue_run("back_to_chorus");
+    session
+        .arm_automation_from_landing(&audio, 4.0, Some("back_to_chorus"))
+        .expect("arming should succeed");
+
+    assert_eq!(
+        session
+            .pending_automation_jump
+            .as_ref()
+            .map(|pending| pending.cue_id.as_str()),
+        Some("back_to_chorus")
+    );
+}
+
+/// A jump cue placed right on the marker a jump lands on fires right after
+/// the landing instead of being dropped.
+#[test]
+fn a_jump_cue_on_the_landing_point_fires_right_after_landing() {
+    let mut session = session_with_song_dir("landing-jump", song_with_intro_chorus_bridge());
+    session.automation.cues = vec![jump_cue("chorus_to_bridge", 4.0, "bridge")];
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(6.0, &audio).expect("seek should succeed");
+    session
+        .schedule_marker_jump(
+            "chorus",
+            JumpTrigger::Immediate,
+            TransitionType::Instant,
+            &audio,
+        )
+        .expect("jump should succeed");
+
+    let pending = session
+        .pending_automation_jump
+        .as_ref()
+        .expect("the cue on the landing point should be armed");
+    assert_eq!(pending.cue_id, "chorus_to_bridge");
+    assert!(pending.execute_at_seconds > session.engine.position_seconds());
+    assert!(pending.execute_at_seconds < 4.1);
+}

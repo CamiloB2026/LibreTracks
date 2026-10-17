@@ -27,23 +27,10 @@ use super::{
 };
 
 /// Margin a jump needs ahead of the playhead to be armed natively: the native
-/// scheduler only fires trigger frames it has not rendered past yet.
+/// scheduler only fires trigger frames it has not rendered past yet, so a jump
+/// whose instant the landing already reached is armed this far ahead instead
+/// (otherwise it would never fire and would hold every later cue hostage).
 const LANDING_JUMP_MARGIN_SECONDS: f64 = 0.05;
-
-/// Whether a cue already reached at the landing point can still run whole. Its
-/// mix actions fire from the timeline on the next tick, but a jump whose
-/// trigger frame is already behind the playhead would never fire and would hold
-/// every later cue hostage, so such a cue is left out.
-fn landing_cue_can_still_run(
-    cue: &AutomationCue,
-    jump_stripped: bool,
-    position_seconds: f64,
-) -> bool {
-    jump_stripped
-        || cue.jump_action().is_none()
-        || cue.at_seconds + cue.pre_jump_wait_seconds()
-            > position_seconds + LANDING_JUMP_MARGIN_SECONDS
-}
 
 pub(super) fn native_region_jump_trigger_view_seconds(
     source_song: &Song,
@@ -472,15 +459,13 @@ impl DesktopSession {
                 cue.enabled
                     && match landing {
                         None => cue.at_seconds > position_seconds + 0.001,
+                        // The skipped cue is only kept off the landing point: a
+                        // cue that jumps back still has to fire on the next
+                        // pass, as it always did.
                         Some((landing_seconds, skip_cue_id)) => {
-                            skip_cue_id != Some(cue.id.as_str())
-                                && (cue.at_seconds > position_seconds + 0.001
-                                    || (cue.at_seconds >= landing_seconds - 0.001
-                                        && landing_cue_can_still_run(
-                                            cue,
-                                            vamp_end_seconds.is_some(),
-                                            position_seconds,
-                                        )))
+                            cue.at_seconds > position_seconds + 0.001
+                                || (cue.at_seconds >= landing_seconds - 0.001
+                                    && skip_cue_id != Some(cue.id.as_str()))
                         }
                     }
                     // Skip cues that already hit their per-session run limit, so
@@ -530,7 +515,12 @@ impl DesktopSession {
 
         // Job with a terminal jump. Effective jump time accounts for waits.
         self.active_automation_job = None;
-        let execute_at_seconds = cue.at_seconds + cue.pre_jump_wait_seconds();
+        let mut execute_at_seconds = cue.at_seconds + cue.pre_jump_wait_seconds();
+        if landing.is_some() {
+            // A jump sitting on the landing point fires right after landing.
+            execute_at_seconds =
+                execute_at_seconds.max(position_seconds + LANDING_JUMP_MARGIN_SECONDS);
+        }
         let target_seconds = automation_target_source_seconds(&source_song, &target)?;
         let trigger_seconds = warp_timeline_seconds_at(&source_song, execute_at_seconds);
         let target_view_seconds = Some(warp_timeline_seconds_at(&source_song, target_seconds));
