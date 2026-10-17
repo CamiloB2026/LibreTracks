@@ -426,18 +426,22 @@ impl DesktopSession {
         if !self.automation.track_enabled {
             return Ok(());
         }
-        if self.engine.pending_marker_jump().is_some() {
-            return Ok(());
-        }
-        // With a vamp on, the loop owns the native jump scheduler (arming
-        // anything else would cancel its wrap) and the playhead never gets past
-        // the vamp's end. Cues before that end still have to fire — a jump back
-        // in front of the vamp plays through them again — so they are armed as
-        // timeline-driven jobs with their own jump left out.
-        let vamp_end_seconds = self
+        // A user jump waiting for its trigger (next marker, after N bars,
+        // region end) or a vamp owns the native jump scheduler — arming
+        // anything else would cancel it — and the playhead never gets past the
+        // point where it moves the playhead. Cues before that point still have
+        // to fire (a mute halfway to the programmed jump, a jump back in front
+        // of the vamp), so they are armed as timeline-driven jobs with their
+        // own jump left out: the jump the user asked for wins.
+        let horizon_seconds = self
             .engine
-            .active_vamp()
-            .map(|active_vamp| active_vamp.end_seconds);
+            .pending_marker_jump()
+            .map(|pending_jump| pending_jump.execute_at_seconds)
+            .or_else(|| {
+                self.engine
+                    .active_vamp()
+                    .map(|active_vamp| active_vamp.end_seconds)
+            });
 
         let source_song = self
             .engine
@@ -472,7 +476,7 @@ impl DesktopSession {
                     // a "jump back" loop fires only the configured number of
                     // times and then the playhead passes through.
                     && self.cue_has_runs_left(cue)
-                    && vamp_end_seconds.map_or(true, |end_seconds| cue.at_seconds < end_seconds)
+                    && horizon_seconds.map_or(true, |horizon| cue.at_seconds < horizon)
             })
             .min_by(|left, right| {
                 left.at_seconds
@@ -488,7 +492,7 @@ impl DesktopSession {
 
         let timed_actions = cue.timed_pre_jump_actions();
 
-        let jump_action = if vamp_end_seconds.is_some() {
+        let jump_action = if horizon_seconds.is_some() {
             None
         } else {
             cue.jump_action().cloned()

@@ -5945,3 +5945,43 @@ fn a_jump_cue_on_the_landing_point_fires_right_after_landing() {
     assert!(pending.execute_at_seconds > session.engine.position_seconds());
     assert!(pending.execute_at_seconds < 4.1);
 }
+
+/// Field report: with a jump programmed for the next marker, a mute cue
+/// halfway there never fired (MIDI did). While the programmed jump waits, the
+/// cues before it are armed as timeline jobs; their own jump is left out so
+/// the jump the user asked for wins.
+#[test]
+fn cues_before_a_programmed_jump_still_fire_while_it_waits() {
+    let mut session = session_with_song_dir("programmed-jump", song_with_intro_chorus_bridge());
+    session.automation.cues = vec![mute_cue_at(6.0)];
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(5.0, &audio).expect("seek should succeed");
+    session
+        .schedule_marker_jump(
+            "intro",
+            JumpTrigger::NextMarker,
+            TransitionType::Instant,
+            &audio,
+        )
+        .expect("jump should be programmed");
+
+    assert!(session.engine.pending_marker_jump().is_some());
+    assert_eq!(
+        session
+            .active_automation_job
+            .as_ref()
+            .map(|job| job.cue_id.as_str()),
+        Some("mute_before_chorus")
+    );
+    assert!(session.pending_automation_jump.is_none());
+
+    session
+        .cancel_marker_jump(&audio)
+        .expect("cancel should succeed");
+    assert!(
+        session.active_automation_job.is_some(),
+        "cancelling the programmed jump keeps the cue armed"
+    );
+}
