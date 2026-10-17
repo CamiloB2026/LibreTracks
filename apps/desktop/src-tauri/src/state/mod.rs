@@ -1978,9 +1978,10 @@ impl DesktopSession {
         self.transport_clock
             .start_from(self.engine.position_seconds());
         // Anchor MIDI at the start position so the first tick only fires what
-        // lies ahead, not everything since the top of the song.
-        self.reset_midi_cursor(self.engine.position_seconds());
-        self.schedule_next_automation_jump(audio)?;
+        // lies ahead (what sits right on it included), not everything since
+        // the top of the song.
+        self.land_midi_cursor(self.engine.position_seconds());
+        self.arm_automation_from_landing(audio, self.engine.position_seconds(), None)?;
         self.capture_transport_drift_sample(
             audio,
             "play",
@@ -2052,12 +2053,12 @@ impl DesktopSession {
         self.active_mix_ramps.clear();
         // Re-anchor MIDI at the new position and release anything sounding, so
         // a seek mid-note can't leave a hanging note on the show device.
-        self.reset_midi_cursor(self.engine.position_seconds());
+        self.land_midi_cursor(self.engine.position_seconds());
         if was_playing {
             self.reposition_audio(audio, PlaybackStartReason::Seek)?;
             self.transport_clock
                 .seek_while_playing(self.engine.position_seconds());
-            self.schedule_next_automation_jump(audio)?;
+            self.arm_automation_from_landing(audio, self.engine.position_seconds(), None)?;
             self.capture_transport_drift_sample(
                 audio,
                 "seek",
@@ -2151,9 +2152,11 @@ impl DesktopSession {
                 self.current_position(),
                 self.engine.position_seconds(),
             );
-            // Nothing else re-arms automation after an immediate jump: without
-            // this a jump back left the cues it plays through again unarmed.
-            self.rearm_automation_after_user_jump(audio)?;
+            // Nothing else re-arms automation and MIDI after an immediate
+            // jump: without this a jump back left the cues it plays through
+            // again unarmed, and MIDI stayed silent until the playhead got
+            // back to where the jump started.
+            self.land_after_user_jump(audio, self.engine.position_seconds())?;
         } else if matches!(
             transition,
             TransitionType::Instant | TransitionType::FadeOut { .. }
@@ -2222,9 +2225,11 @@ impl DesktopSession {
                 self.current_position(),
                 self.engine.position_seconds(),
             );
-            // Nothing else re-arms automation after an immediate jump: without
-            // this a jump back left the cues it plays through again unarmed.
-            self.rearm_automation_after_user_jump(audio)?;
+            // Nothing else re-arms automation and MIDI after an immediate
+            // jump: without this a jump back left the cues it plays through
+            // again unarmed, and MIDI stayed silent until the playhead got
+            // back to where the jump started.
+            self.land_after_user_jump(audio, self.engine.position_seconds())?;
         } else if trigger == JumpTrigger::RegionEnd
             && matches!(
                 transition,
@@ -2929,10 +2934,9 @@ impl DesktopSession {
                     audio.start_master_fade(1.0, duration_seconds)?;
                     self.transport_clock
                         .note_jump_while_playing(target_position);
-                    self.rearm_automation_after_user_jump(audio)?;
                     // A jump is a discontinuity: re-anchor MIDI at the landing
                     // point so events between here and there don't all fire.
-                    self.reset_midi_cursor(target_position);
+                    self.land_after_user_jump(audio, target_position)?;
                     self.capture_transport_drift_sample(
                         audio,
                         "jump",
@@ -2965,7 +2969,7 @@ impl DesktopSession {
                 // tick re-arms the loop from the new position.
                 self.scheduled_native_vamp_loop = None;
                 self.active_automation_job = None;
-                self.schedule_next_automation_jump(audio)?;
+                self.arm_automation_from_landing(audio, vamp_start_seconds, None)?;
             }
         }
 
@@ -2975,7 +2979,7 @@ impl DesktopSession {
                 .note_jump_while_playing(advanced_position);
             // Same as the faded-jump path: re-anchor rather than replay the
             // span the playhead skipped over (or looped back across).
-            self.reset_midi_cursor(advanced_position);
+            self.land_midi_cursor(advanced_position);
             self.capture_transport_drift_sample(
                 audio,
                 "jump",
@@ -3099,7 +3103,9 @@ impl DesktopSession {
                 // The playhead is back at the vamp's start: arm the cues
                 // inside the loop again for this pass.
                 self.active_automation_job = None;
-                self.schedule_next_automation_jump(audio)?;
+                let landing_seconds = active_vamp.start_seconds.min(runtime_source_position);
+                self.land_midi_cursor(landing_seconds);
+                self.arm_automation_from_landing(audio, landing_seconds, None)?;
                 return Ok(true);
             }
 
@@ -3135,7 +3141,18 @@ impl DesktopSession {
                 // Count this firing before re-arming so a cue at its run limit is
                 // not immediately re-scheduled (which would loop forever).
                 self.record_automation_cue_run(&pending_automation.cue_id);
-                self.schedule_next_automation_jump(audio)?;
+                // What sits on the jump's target (a cue, a lyrics MIDI event on
+                // that marker) fires as if the playhead had played into it.
+                let landing_seconds =
+                    automation_target_source_seconds(&source_song, &pending_automation.target)
+                        .map(|target| target.min(runtime_source_position))
+                        .unwrap_or(runtime_source_position);
+                self.land_midi_cursor(landing_seconds);
+                self.arm_automation_from_landing(
+                    audio,
+                    landing_seconds,
+                    Some(&pending_automation.cue_id),
+                )?;
                 return Ok(true);
             }
 
@@ -3188,7 +3205,7 @@ impl DesktopSession {
             runtime_source_position,
             runtime_source_position,
         );
-        self.rearm_automation_after_user_jump(audio)?;
+        self.land_after_user_jump(audio, target_position.min(runtime_source_position))?;
         Ok(true)
     }
 

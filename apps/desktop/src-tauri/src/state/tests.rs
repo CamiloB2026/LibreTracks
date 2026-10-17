@@ -5813,3 +5813,64 @@ fn a_vamp_does_not_arm_cues_past_its_end() {
         "turning the vamp off re-arms the cue ahead"
     );
 }
+
+/// Field report: a cue placed ON the chorus marker never fired when a jump
+/// landed on the chorus, because arming only looked strictly ahead of the
+/// playhead. With and without a vamp running.
+#[test]
+fn a_jump_landing_on_a_cue_fires_it() {
+    for with_vamp in [false, true] {
+        let mut session = session_with_song_dir("landing-cue", song_with_intro_chorus_bridge());
+        session.automation.cues = vec![mute_cue_at(4.0)];
+        let audio = crate::audio::engine::AudioController::default();
+
+        session.play(&audio).expect("play should succeed");
+        session.seek(6.0, &audio).expect("seek should succeed");
+        if with_vamp {
+            session
+                .toggle_vamp(libretracks_audio::VampMode::Section, &audio)
+                .expect("vamp should toggle on");
+        }
+        session
+            .schedule_marker_jump(
+                "chorus",
+                JumpTrigger::Immediate,
+                TransitionType::Instant,
+                &audio,
+            )
+            .expect("jump should succeed");
+
+        assert_eq!(
+            session
+                .active_automation_job
+                .as_ref()
+                .map(|job| job.cue_id.as_str()),
+            Some("mute_before_chorus"),
+            "with_vamp={with_vamp}"
+        );
+    }
+}
+
+/// Same report for MIDI: a lyrics change placed on the chorus marker has to go
+/// out when a jump lands there, so the cursor must sit just before the landing
+/// point (the tick window is `(cursor, now]`), not on it — and not stay where
+/// the jump started, which silenced MIDI until the playhead got back there.
+#[test]
+fn a_jump_puts_the_midi_cursor_just_before_the_landing_point() {
+    let mut session = session_with_song_dir("landing-midi", song_with_intro_chorus_bridge());
+    let audio = crate::audio::engine::AudioController::default();
+
+    session.play(&audio).expect("play should succeed");
+    session.seek(6.0, &audio).expect("seek should succeed");
+    session
+        .schedule_marker_jump(
+            "chorus",
+            JumpTrigger::Immediate,
+            TransitionType::Instant,
+            &audio,
+        )
+        .expect("jump should succeed");
+
+    assert!(session.midi_cursor_seconds < 4.0);
+    assert!(session.midi_cursor_seconds > 3.99);
+}
