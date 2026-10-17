@@ -173,7 +173,9 @@ TEST_CASE("step04 fallback preserves gain pan mute and solo") {
     // suppressed, and the soloed track remains audible.
     const auto meters = fallback.track_meters();
     CHECK(meters[1].left_peak == 0.1f);
-    CHECK(meters[1].right_peak == 0.1f);
+    // El medidor de pista es post-paneo (pre-fader): con pan -0.75 el lado
+    // derecho queda a 1 - 0.75 = 0.25 de la fuente.
+    CHECK(meters[1].right_peak == doctest::Approx(0.1f * 0.25f));
     const bool solo_has_audio = meters[2].left_peak != 0.0f
         || meters[2].right_peak != 0.0f;
     CHECK(solo_has_audio);

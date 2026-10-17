@@ -1374,7 +1374,7 @@ class AppPage {
     );
   }
 
-  /** Read the latest pre-pan per-track peaks emitted by the native engine. */
+  /** Read the latest per-track peaks emitted by the native engine (post-pan, pre-fader). */
   async trackMeters(): Promise<E2ETrackMeters> {
     return browser.execute(
       () =>

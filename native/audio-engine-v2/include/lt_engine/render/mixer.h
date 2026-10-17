@@ -315,8 +315,12 @@ private:
         float start_pan = 0.f, end_pan = 0.f;
         float start_mute_gain = 0.f, end_mute_gain = 0.f;
         float start_solo_gain = 0.f, end_solo_gain = 0.f;
+        // Picos de la fuente (pre-paneo): solo para detectar fuentes de un lado.
         float peak_l = 0.f, peak_r = 0.f;
-        float rms_l = 0.f, rms_r = 0.f;
+        // Lo que marca el medidor de la pista (post-paneo, pre-fader); las
+        // carpetas acumulan esto.
+        float meter_peak_l = 0.f, meter_peak_r = 0.f;
+        float meter_rms_l = 0.f, meter_rms_r = 0.f;
         int   left_channel = 0, right_channel = -1;
         const Track* track = nullptr;
         std::size_t  map_index = 0;

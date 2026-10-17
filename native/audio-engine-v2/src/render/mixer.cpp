@@ -71,6 +71,60 @@ void atomic_max_relaxed(std::atomic<float>& target, float value) noexcept {
                current, value, std::memory_order_relaxed, std::memory_order_relaxed)) {}
 }
 
+// Como coloca la pista sus dos canales ANTES del paneo: suma a mono, o una
+// fuente que solo trae un lado se copia al otro para que el paneo la mueva.
+// Lo comparten la mezcla y el medidor de pista, para que el medidor muestre
+// exactamente lo que se mezcla.
+inline void place_track_source(bool mono_downmix, bool left_only_source,
+                               bool right_only_source,
+                               float& source_l, float& source_r) noexcept {
+    if (mono_downmix) {
+        const float summed = 0.5f * (source_l + source_r);
+        source_l = summed;
+        source_r = summed;
+    } else if (left_only_source) {
+        source_r = source_l;
+    } else if (right_only_source) {
+        source_l = source_r;
+    }
+}
+
+struct TrackMeterReading {
+    float peak_l = 0.f, peak_r = 0.f;
+    float rms_l = 0.f, rms_r = 0.f;
+};
+
+// Medidor de pista POST-PANEO y PRE-FADER. Antes se media el bus crudo del
+// renderer, antes del paneo: con el paneo a tope a la derecha el medidor
+// seguia mostrando el canal izquierdo. La rampa de paneo es la misma, muestra
+// a muestra, que la de la fase B. La ganancia/mute/solo NO entran: los tests y
+// los E2E usan el medidor de pista como "la pista esta renderizando" aunque
+// este muteada.
+TrackMeterReading measure_track_post_pan(const float* mix_l, const float* mix_r,
+                                         int num_frames, float start_pan, float end_pan,
+                                         bool mono_downmix, bool left_only_source,
+                                         bool right_only_source) noexcept {
+    TrackMeterReading out;
+    double sum_l = 0.0, sum_r = 0.0;
+    for (int f = 0; f < num_frames; ++f) {
+        const float t = static_cast<float>(f + 1) / static_cast<float>(std::max(1, num_frames));
+        const float pan = clamp_pan(start_pan + (end_pan - start_pan) * t);
+        float source_l = mix_l[f];
+        float source_r = mix_r[f];
+        place_track_source(mono_downmix, left_only_source, right_only_source,
+                           source_l, source_r);
+        const float l = source_l * pan_left_gain(pan);
+        const float r = source_r * pan_right_gain(pan);
+        out.peak_l = std::max(out.peak_l, std::abs(l));
+        out.peak_r = std::max(out.peak_r, std::abs(r));
+        sum_l += static_cast<double>(l) * l;
+        sum_r += static_cast<double>(r) * r;
+    }
+    out.rms_l = static_cast<float>(std::sqrt(sum_l / std::max(1, num_frames)));
+    out.rms_r = static_cast<float>(std::sqrt(sum_r / std::max(1, num_frames)));
+    return out;
+}
+
 bool jump_debug_enabled() {
     static const bool on = [] {
         const char* raw = std::getenv("LIBRETRACKS_JUMP_DEBUG");
@@ -788,22 +842,22 @@ void Mixer::render_timeline_span(float** output_channels,
                                    /*track_gain_override=*/1.0f);
             ++rendered_this_block;
 
+            // Picos de la FUENTE (bus crudo): solo deciden si es una fuente de un
+            // solo lado que hay que copiar al otro. El medidor va despues del paneo.
             float track_peak_l = 0.f, track_peak_r = 0.f;
-            double track_sum_l = 0.0, track_sum_r = 0.0;
             for (int f = 0; f < num_frames; ++f) {
                 track_peak_l = std::max(track_peak_l, std::abs(mix_l[f]));
                 track_peak_r = std::max(track_peak_r, std::abs(mix_r[f]));
-                track_sum_l += static_cast<double>(mix_l[f]) * mix_l[f];
-                track_sum_r += static_cast<double>(mix_r[f]) * mix_r[f];
             }
-            track_meters_[ti]->left_peak.store(track_peak_l, std::memory_order_relaxed);
-            track_meters_[ti]->right_peak.store(track_peak_r, std::memory_order_relaxed);
-            const float track_rms_l =
-                static_cast<float>(std::sqrt(track_sum_l / std::max(1, num_frames)));
-            const float track_rms_r =
-                static_cast<float>(std::sqrt(track_sum_r / std::max(1, num_frames)));
-            track_meters_[ti]->left_rms.store(track_rms_l, std::memory_order_relaxed);
-            track_meters_[ti]->right_rms.store(track_rms_r, std::memory_order_relaxed);
+            const bool left_only_source = track_peak_l > 1.0e-7f && track_peak_r <= 1.0e-7f;
+            const bool right_only_source = track_peak_r > 1.0e-7f && track_peak_l <= 1.0e-7f;
+            const TrackMeterReading meter = measure_track_post_pan(
+                mix_l, mix_r, num_frames, start_pan, end_pan, track.mono_downmix,
+                left_only_source, right_only_source);
+            track_meters_[ti]->left_peak.store(meter.peak_l, std::memory_order_relaxed);
+            track_meters_[ti]->right_peak.store(meter.peak_r, std::memory_order_relaxed);
+            track_meters_[ti]->left_rms.store(meter.rms_l, std::memory_order_relaxed);
+            track_meters_[ti]->right_rms.store(meter.rms_r, std::memory_order_relaxed);
 
             // Los medidores de CARPETA acumulan entre pistas, asi que no pueden
             // ir aqui: van en la fase B, en orden de ranura. El routing si se
@@ -827,7 +881,8 @@ void Mixer::render_timeline_span(float** output_channels,
             st.start_mute_gain  = start_mute_gain; st.end_mute_gain  = end_mute_gain;
             st.start_solo_gain  = start_solo_gain; st.end_solo_gain  = end_solo_gain;
             st.peak_l           = track_peak_l;    st.peak_r         = track_peak_r;
-            st.rms_l            = track_rms_l;     st.rms_r          = track_rms_r;
+            st.meter_peak_l     = meter.peak_l;    st.meter_peak_r   = meter.peak_r;
+            st.meter_rms_l      = meter.rms_l;     st.meter_rms_r    = meter.rms_r;
             st.left_channel     = left_channel;    st.right_channel  = right_channel;
             st.track            = &track;
             st.map_index        = map_index;
@@ -850,7 +905,7 @@ void Mixer::render_timeline_span(float** output_channels,
             const float* mix_r = track_buses_[ti]->right.data();
 
             update_ancestor_folder_meters(
-                song, track, st.peak_l, st.peak_r, st.rms_l, st.rms_r,
+                song, track, st.meter_peak_l, st.meter_peak_r, st.meter_rms_l, st.meter_rms_r,
                 st.has_ancestor_map
                     ? &ancestor_meter_indices_for_renderer_[st.map_index] : nullptr);
 
@@ -885,15 +940,8 @@ void Mixer::render_timeline_span(float** output_channels,
                 const float right_gain = pan_right_gain(pan);
                 float source_l = mix_l[f];
                 float source_r = mix_r[f];
-                if (mono_downmix) {
-                    const float summed = 0.5f * (source_l + source_r);
-                    source_l = summed;
-                    source_r = summed;
-                } else if (left_only_source) {
-                    source_r = source_l;
-                } else if (right_only_source) {
-                    source_l = source_r;
-                }
+                place_track_source(mono_downmix, left_only_source, right_only_source,
+                                   source_l, source_r);
 
                 float out_l = source_l * effective_gain * left_gain;
                 float out_r = source_r * effective_gain * right_gain;
@@ -1263,22 +1311,22 @@ void Mixer::render(float** output_channels,
                                        /*track_gain_override=*/1.0f);
                 rendered_atomic.fetch_add(1, std::memory_order_relaxed);
 
+                // Picos de la FUENTE (bus crudo): solo deciden si es una fuente de un
+                // solo lado que hay que copiar al otro. El medidor va despues del paneo.
                 float track_peak_l = 0.f, track_peak_r = 0.f;
-                double track_sum_l = 0.0, track_sum_r = 0.0;
                 for (int f = 0; f < num_frames; ++f) {
                     track_peak_l = std::max(track_peak_l, std::abs(mix_l[f]));
                     track_peak_r = std::max(track_peak_r, std::abs(mix_r[f]));
-                    track_sum_l += static_cast<double>(mix_l[f]) * mix_l[f];
-                    track_sum_r += static_cast<double>(mix_r[f]) * mix_r[f];
                 }
-                track_meters_[ti]->left_peak.store(track_peak_l, std::memory_order_relaxed);
-                track_meters_[ti]->right_peak.store(track_peak_r, std::memory_order_relaxed);
-                const float track_rms_l =
-                    static_cast<float>(std::sqrt(track_sum_l / std::max(1, num_frames)));
-                const float track_rms_r =
-                    static_cast<float>(std::sqrt(track_sum_r / std::max(1, num_frames)));
-                track_meters_[ti]->left_rms.store(track_rms_l, std::memory_order_relaxed);
-                track_meters_[ti]->right_rms.store(track_rms_r, std::memory_order_relaxed);
+                const bool left_only_source = track_peak_l > 1.0e-7f && track_peak_r <= 1.0e-7f;
+                const bool right_only_source = track_peak_r > 1.0e-7f && track_peak_l <= 1.0e-7f;
+                const TrackMeterReading meter = measure_track_post_pan(
+                    mix_l, mix_r, num_frames, start_pan, end_pan, track.mono_downmix,
+                    left_only_source, right_only_source);
+                track_meters_[ti]->left_peak.store(meter.peak_l, std::memory_order_relaxed);
+                track_meters_[ti]->right_peak.store(meter.peak_r, std::memory_order_relaxed);
+                track_meters_[ti]->left_rms.store(meter.rms_l, std::memory_order_relaxed);
+                track_meters_[ti]->right_rms.store(meter.rms_r, std::memory_order_relaxed);
 
                 // Los medidores de CARPETA acumulan entre pistas: van en la
                 // fase B. El routing se resuelve aqui porque depende de
@@ -1301,7 +1349,8 @@ void Mixer::render(float** output_channels,
                 st.start_mute_gain  = start_mute_gain; st.end_mute_gain  = end_mute_gain;
                 st.start_solo_gain  = start_solo_gain; st.end_solo_gain  = end_solo_gain;
                 st.peak_l           = track_peak_l;    st.peak_r         = track_peak_r;
-                st.rms_l            = track_rms_l;     st.rms_r          = track_rms_r;
+                st.meter_peak_l     = meter.peak_l;    st.meter_peak_r   = meter.peak_r;
+                st.meter_rms_l      = meter.rms_l;     st.meter_rms_r    = meter.rms_r;
                 st.left_channel     = left_channel;    st.right_channel  = right_channel;
                 st.track            = &track;
                 st.map_index        = map_index;
@@ -1337,7 +1386,7 @@ void Mixer::render(float** output_channels,
                 const float* mix_r = track_buses_[ti]->right.data();
 
                 update_ancestor_folder_meters(
-                    song, track, st.peak_l, st.peak_r, st.rms_l, st.rms_r,
+                    song, track, st.meter_peak_l, st.meter_peak_r, st.meter_rms_l, st.meter_rms_r,
                     st.has_ancestor_map
                         ? &ancestor_meter_indices_for_renderer_[st.map_index] : nullptr);
 
@@ -1365,15 +1414,8 @@ void Mixer::render(float** output_channels,
                     const float right_gain = pan_right_gain(pan);
                     float source_l = mix_l[f];
                     float source_r = mix_r[f];
-                    if (mono_downmix) {
-                        const float summed = 0.5f * (source_l + source_r);
-                        source_l = summed;
-                        source_r = summed;
-                    } else if (left_only_source) {
-                        source_r = source_l;
-                    } else if (right_only_source) {
-                        source_l = source_r;
-                    }
+                    place_track_source(mono_downmix, left_only_source, right_only_source,
+                                       source_l, source_r);
 
                     float out_l = source_l * effective_gain * left_gain;
                     float out_r = source_r * effective_gain * right_gain;

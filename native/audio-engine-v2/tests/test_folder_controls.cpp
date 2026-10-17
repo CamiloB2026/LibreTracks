@@ -554,3 +554,115 @@ TEST_CASE("folder_track_does_not_produce_audio") {
     mixer.render(out, 2, kBlock, kSR);
     CHECK(peak(left) < 1.0e-7f);
 }
+
+// ---------------------------------------------------------------------------
+// Medidor de pista POST-PANEO (bug: "al panear no cambian los vumetros").
+// El medidor se tomaba del bus crudo del renderer, antes del paneo: con el
+// paneo a tope a la derecha el canal izquierdo del medidor seguia lleno. La
+// referencia es Ableton: el lado del que se aleja el paneo se queda en
+// silencio. Sigue siendo pre-fader (ver measure_track_post_pan en mixer.cpp).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// Fuente estereo con solo el canal izquierdo: lo que entrega una pista mono.
+void add_left_only_source(SourceManager& sources, const Id& id, float amplitude = 0.5f,
+                          Frame dur = kSR * 4) {
+    auto samples = test::make_stereo_sine(dur, 440.0, amplitude);
+    for (Frame f = 0; f < dur; ++f)
+        samples[static_cast<std::size_t>(f * 2 + 1)] = 0.0f;
+    sources.register_source(id, "");
+    REQUIRE(sources.store_decoded_source(id, std::move(samples), 2, kSR, dur).is_ok());
+}
+
+} // namespace
+
+TEST_CASE("track_meter_follows_pan_for_a_stereo_track") {
+    SourceManager sources;
+    add_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    clock.play();
+
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 10, left, right);
+    auto meters = mixer.track_meters();
+    REQUIRE(meters.size() == 2);
+    REQUIRE(meters[1].track_id == "child-0");
+    // Centrado (ley de balance): los dos lados a nivel completo.
+    CHECK(meters[1].left_peak == doctest::Approx(meters[1].right_peak));
+    CHECK(meters[1].left_peak > 0.4f);
+
+    mixer.set_track_pan("child-0", 1.0f);
+    render_blocks(mixer, clock, 30, left, right);   // deja asentar la rampa de 10 ms
+    meters = mixer.track_meters();
+    CHECK(meters[1].right_peak > 0.4f);
+    CHECK(meters[1].left_peak < 0.005f);
+    CHECK(meters[1].left_rms < 0.005f);
+    CHECK(meters[1].right_rms > 0.1f);
+    // La carpeta acumula lo que marcan sus hijas: tambien post-paneo.
+    CHECK(meters[0].left_peak < 0.005f);
+    CHECK(meters[0].right_peak > 0.4f);
+
+    mixer.set_track_pan("child-0", -1.0f);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].left_peak > 0.4f);
+    CHECK(meters[1].right_peak < 0.005f);
+
+    // Paneo parcial: el lado contrario baja en proporcion (1 - pan).
+    mixer.set_track_pan("child-0", 0.5f);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].left_peak == doctest::Approx(0.5f * meters[1].right_peak).epsilon(0.02));
+}
+
+TEST_CASE("track_meter_places_a_one_sided_source_with_the_pan") {
+    SourceManager sources;
+    add_left_only_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    clock.play();
+
+    // Centrada, una fuente de un solo lado suena (y se mide) en los dos.
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 10, left, right);
+    auto meters = mixer.track_meters();
+    REQUIRE(meters.size() == 2);
+    CHECK(meters[1].left_peak > 0.4f);
+    CHECK(meters[1].right_peak == doctest::Approx(meters[1].left_peak));
+
+    // Paneada a la derecha: solo la derecha, aunque la fuente venga por la L.
+    mixer.set_track_pan("child-0", 1.0f);
+    render_blocks(mixer, clock, 30, left, right);
+    meters = mixer.track_meters();
+    CHECK(meters[1].left_peak < 0.005f);
+    CHECK(meters[1].right_peak > 0.4f);
+    // Y el medidor coincide con lo que sale por el bus.
+    CHECK(peak(left) < 0.005f);
+    CHECK(meters[1].right_peak == doctest::Approx(peak(right)).epsilon(0.02));
+}
+
+TEST_CASE("track_meter_stays_pre_fader") {
+    SourceManager sources;
+    add_source(sources, "src-0", 0.5f);
+    auto session = std::make_shared<Session>(folder_session(1));
+    TransportClock clock(kSR);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    clock.play();
+
+    mixer.set_track_mute("child-0", true);
+    mixer.set_track_pan("child-0", 1.0f);
+    std::vector<float> left, right;
+    render_blocks(mixer, clock, 30, left, right);
+    const auto meters = mixer.track_meters();
+    // Muteada no suena, pero el medidor sigue marcando la senal (post-paneo).
+    CHECK(peak(right) < 0.005f);
+    CHECK(meters[1].right_peak > 0.4f);
+    CHECK(meters[1].left_peak < 0.005f);
+}
