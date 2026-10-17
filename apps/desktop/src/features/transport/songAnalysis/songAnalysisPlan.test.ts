@@ -223,6 +223,13 @@ describe("guide", () => {
     expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)[0].startSeconds).toBe(106);
   });
 
+  it("a guide that speaks two bars ahead puts the section a bar later", () => {
+    const { analysis, markers } = oneAnnouncement(5.3, ["intro"]);
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null, 2)[0].startSeconds).toBe(
+      108,
+    );
+  });
+
   it("follows the tempo the review is about to write", () => {
     const { analysis, markers } = oneAnnouncement(5.3, ["intro"]);
     const tempo = {

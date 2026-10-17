@@ -693,7 +693,21 @@ const es = {
     songAnalysis: {
       title: "Analizar canción",
       intro:
-        "Lee la pista de click para proponer las marcas de tempo y de compás, y las pistas armónicas para proponer la nota. Revisa la propuesta antes de aplicarla; se puede deshacer.",
+        "Lee el click (tempo y compás), las pistas armónicas (nota) y la pista de guía (marcas de sección). Revisa la propuesta antes de aplicarla; se puede deshacer.",
+      cpuNotice:
+        "El análisis usa bastante procesador durante unos segundos (más si reconoce la guía). Mejor no lanzarlo durante una actuación.",
+      cpuWhilePlaying:
+        "Se está reproduciendo: el análisis usa bastante procesador y, en equipos modestos, puede provocar cortes de audio. Mejor pararlo antes.",
+      stageRender: "Preparando el audio de las pistas…",
+      stageTempo: "Leyendo el click…",
+      stageTempoMusic: "Estimando el tempo de la música…",
+      stageKey: "Buscando la nota…",
+      stageGuide: "Escuchando la guía…",
+      stageGuideCount: "Escuchando la guía: {{done}} de {{total}} anuncios…",
+      doubleHalf: "¿Ha salido el doble o la mitad del tempo?",
+      leadLabel: "La guía avisa",
+      leadOne: "1 compás antes de la sección (lo habitual)",
+      leadTwo: "2 compases antes de la sección",
       noTempo: "No analizar el tempo",
       guideTrack: "Pista de guía",
       noGuide: "No analizar las guías",
@@ -753,7 +767,6 @@ const es = {
       chooseClick: "Elige una pista…",
       noTracks: "Esta canción no tiene pistas de audio con sonido.",
       analyze: "Analizar",
-      analyzing: "Leyendo el click…",
       stop: "Detener",
       cancelled: "Análisis cancelado.",
       cancel: "Cancelar",

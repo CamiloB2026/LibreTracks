@@ -209,9 +209,10 @@ const ANNOUNCEMENT_TAIL_BEATS = 0.3;
 
 /**
  * Where each announcement's markers go: on the first downbeat after the
- * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`). The grid is the song's,
- * or the one the tempo review is about to write when `tempo` is given.
- * Returns rendered-timeline seconds.
+ * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`), or `leadBars - 1` bars
+ * later for a guide that speaks two bars ahead. The grid is the song's, or
+ * the one the tempo review is about to write when `tempo` is given. Returns
+ * rendered-timeline seconds.
  */
 export function placeGuideSections(
   song: SongView,
@@ -220,6 +221,7 @@ export function placeGuideSections(
   analysis: GuideAnalysis,
   markers: GroupMarkers[],
   tempo: { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] } | null,
+  leadBars = 1,
 ): {
   startSeconds: number;
   kind: MarkerKind;
@@ -274,12 +276,20 @@ export function placeGuideSections(
     const group = markers[announcement.group];
     if (!group || group.ignored) continue;
     const end = renderStartSeconds + announcement.endSeconds;
-    const startSeconds = nextDownbeatAfter(
+    let startSeconds = nextDownbeatAfter(
       end - ANNOUNCEMENT_TAIL_BEATS * beatAt(end),
       grid.bpm,
       grid.timeSignature,
       regions,
     );
+    for (let extra = 1; extra < leadBars; extra += 1) {
+      startSeconds = nextDownbeatAfter(
+        startSeconds + beatAt(startSeconds) / 2,
+        grid.bpm,
+        grid.timeSignature,
+        regions,
+      );
+    }
     for (const marker of [parseMarkerValue(group.section), parseMarkerValue(group.cue)]) {
       if (!marker) continue;
       const here = onSpot(startSeconds);

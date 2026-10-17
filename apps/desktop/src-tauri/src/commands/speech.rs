@@ -168,9 +168,12 @@ mod desktop {
             )
             .ok()?;
             let state = context.create_state().ok()?;
+            // A quarter of the cores, 2 to 4: measured on a 20-core machine,
+            // 4 threads use ~25 % less CPU in all than 8 (whisper scales
+            // sublinearly) and leave room for playback, for ~3 s more a song.
             let threads = std::thread::available_parallelism()
-                .map(|n| (n.get() / 2).clamp(2, 8))
-                .unwrap_or(4) as i32;
+                .map(|n| (n.get() / 4).clamp(2, 4))
+                .unwrap_or(2) as i32;
             Some(Self {
                 state,
                 _context: context,
@@ -191,6 +194,11 @@ mod desktop {
         params.set_single_segment(true);
         params.set_no_context(true);
         params.set_n_threads(threads);
+        // No timestamps and no retries at a higher temperature: an
+        // announcement is a few words, and the retries only cost time (same
+        // transcripts on the validation guides, with or without them).
+        params.set_no_timestamps(true);
+        params.set_temperature_inc(0.0);
         params
     }
 

@@ -679,7 +679,21 @@ const en = {
     songAnalysis: {
       title: "Analyze song",
       intro:
-        "Reads the click track to propose the tempo and time signature markers, and the harmonic tracks to propose the key. Review the proposal before applying it; it can be undone.",
+        "Reads the click (tempo and meter), the harmonic tracks (key) and the guide track (section markers). Review the proposal before applying it; it can be undone.",
+      cpuNotice:
+        "The analysis uses a fair amount of CPU for a few seconds (more when it recognises the guide). Better not to run it during a performance.",
+      cpuWhilePlaying:
+        "Playback is running: the analysis uses a fair amount of CPU and, on modest computers, may cause audio dropouts. Better to stop it first.",
+      stageRender: "Preparing the tracks' audio…",
+      stageTempo: "Reading the click…",
+      stageTempoMusic: "Estimating the tempo from the music…",
+      stageKey: "Finding the key…",
+      stageGuide: "Listening to the guide…",
+      stageGuideCount: "Listening to the guide: {{done}} of {{total}} announcements…",
+      doubleHalf: "Did the tempo come out double or half?",
+      leadLabel: "The guide announces",
+      leadOne: "1 bar before the section (usual)",
+      leadTwo: "2 bars before the section",
       noTempo: "Don't analyze the tempo",
       guideTrack: "Guide track",
       noGuide: "Don't analyze the guide",
@@ -738,7 +752,6 @@ const en = {
       chooseClick: "Choose a track…",
       noTracks: "This song has no audio tracks with sound.",
       analyze: "Analyze",
-      analyzing: "Reading the click…",
       stop: "Stop",
       cancelled: "Analysis cancelled.",
       cancel: "Cancel",

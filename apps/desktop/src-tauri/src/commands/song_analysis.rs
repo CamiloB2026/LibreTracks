@@ -30,6 +30,11 @@ pub const SONG_ANALYSIS_PROGRESS_EVENT: &str = "song-analysis-progress";
 
 /// Runtime bounds may differ from the stored ones by float noise only.
 const SAME_BOUND_SECONDS: f64 = 0.001;
+/// Rate the tracks are bounced at for analysis. Every analysis works at
+/// 11–16 kHz, and the results at 22.05 kHz matched the original rates on the
+/// validation songs exactly, for under half the resampling and memory of
+/// rendering at the device rate.
+const ANALYSIS_RENDER_RATE: u32 = 22_050;
 
 static ANALYSIS_ACTIVE: AtomicBool = AtomicBool::new(false);
 static ANALYSIS_CANCEL: AtomicBool = AtomicBool::new(false);
@@ -104,12 +109,42 @@ pub struct GuideResult {
     pub speech_recognition: bool,
 }
 
+/// Where the analysis is, for the progress bar and its caption.
+#[derive(Debug, Clone, Copy, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct AnalysisProgress {
+    pub fraction: f64,
+    /// `render` (bouncing the tracks), `tempo`, `key` or `guide`.
+    pub stage: &'static str,
+    /// Guide announcements heard so far and in all, while listening.
+    pub done: Option<usize>,
+    pub total: Option<usize>,
+}
+
+impl AnalysisProgress {
+    fn at(fraction: f64, stage: &'static str) -> Self {
+        Self {
+            fraction,
+            stage,
+            done: None,
+            total: None,
+        }
+    }
+}
+
+/// Share of the bar each stage ends at. Bouncing the tracks is most of the
+/// work, except when speech recognition listens to the guide (~1 s an
+/// announcement), which gets the last fifth.
+const RENDER_END: f64 = 0.7;
+const TEMPO_END: f64 = 0.74;
+const KEY_END: f64 = 0.78;
+const GUIDE_START: f64 = 0.8;
+
 /// Wraps the recogniser to move the progress bar as each announcement is
-/// heard (they take about a second each).
+/// heard.
 struct ReportingTranscriber<'a> {
     inner: &'a mut dyn libretracks_analysis::Transcriber,
-    on_progress: &'a mut dyn FnMut(f64) -> bool,
-    heard: u32,
+    on_progress: &'a mut dyn FnMut(AnalysisProgress) -> bool,
 }
 
 impl libretracks_analysis::Transcriber for ReportingTranscriber<'_> {
@@ -118,11 +153,21 @@ impl libretracks_analysis::Transcriber for ReportingTranscriber<'_> {
     }
 
     fn transcribe(&mut self, speech: &[f32]) -> Option<String> {
-        let text = self.inner.transcribe(speech);
-        self.heard += 1;
-        // 0.9 → 0.99, closing in without knowing how many are left.
-        (self.on_progress)(0.99 - 0.09 * 0.85_f64.powi(self.heard as i32));
-        text
+        self.inner.transcribe(speech)
+    }
+
+    fn progress(&mut self, done: usize, total: usize) {
+        let share = if total == 0 {
+            0.0
+        } else {
+            done as f64 / total as f64
+        };
+        (self.on_progress)(AnalysisProgress {
+            fraction: GUIDE_START + (1.0 - GUIDE_START) * share,
+            stage: "guide",
+            done: Some(done),
+            total: Some(total),
+        });
     }
 }
 
@@ -159,12 +204,6 @@ impl AnalyzeSongResult {
             missing_files: Vec::new(),
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct AnalysisProgressPayload {
-    fraction: f64,
 }
 
 #[tauri::command(async)]
@@ -424,7 +463,7 @@ fn run_job(
     scratch_dir: &std::path::Path,
     voices_dir: Option<&std::path::Path>,
     speech_model: Option<&std::path::Path>,
-    on_progress: &mut dyn FnMut(f64) -> bool,
+    on_progress: &mut dyn FnMut(AnalysisProgress) -> bool,
 ) -> Result<AnalyzeSongResult, JobError> {
     let mut result = AnalyzeSongResult {
         cancelled: false,
@@ -499,7 +538,8 @@ fn run_job(
         voice_guide: None,
     };
     // Rendering is most of the work; the analyses take a moment.
-    let mut render_progress = |fraction: f64| on_progress(0.85 * fraction);
+    let mut render_progress =
+        |fraction: f64| on_progress(AnalysisProgress::at(RENDER_END * fraction, "render"));
     let report = match lt_audio_engine_v2::render_offline(&engine_request, &mut render_progress) {
         Ok(report) => report,
         Err(RenderError::Cancelled) => {
@@ -516,6 +556,9 @@ fn run_job(
     let read = |path: &std::path::Path| read_mono_wav(path).map_err(JobError::Failed);
     let outcome = (|| -> Result<(), JobError> {
         if let Some(tempo) = &job.tempo {
+            if !on_progress(AnalysisProgress::at(RENDER_END, "tempo")) {
+                return Err(JobError::Cancelled);
+            }
             let (samples, rate) = read(&click_path)?;
             let analysis = if tempo.from_music {
                 analyze_music_tempo(&samples, rate, tempo.fallback_beats_per_bar)
@@ -524,11 +567,11 @@ fn run_job(
             };
             let proposal = propose_tempo_markers(&analysis, tempo.span, &tempo.existing);
             result.tempo = Some(TempoResult { analysis, proposal });
-            if !on_progress(0.9) {
-                return Err(JobError::Cancelled);
-            }
         }
         if let Some(key) = &job.key {
+            if !on_progress(AnalysisProgress::at(TEMPO_END, "key")) {
+                return Err(JobError::Cancelled);
+            }
             let (samples, rate) = read(&key_path)?;
             result.key = Some(KeyResult {
                 analysis: analyze_key(&samples, rate).transposed(key.untranspose),
@@ -537,7 +580,7 @@ fn run_job(
             });
         }
         if !job.guide_track_ids.is_empty() {
-            if !on_progress(0.95) {
+            if !on_progress(AnalysisProgress::at(KEY_END, "guide")) {
                 return Err(JobError::Cancelled);
             }
             let (samples, rate) = read(&guide_path)?;
@@ -560,7 +603,6 @@ fn run_job(
                     let mut reporting = ReportingTranscriber {
                         inner,
                         on_progress: &mut *on_progress,
-                        heard: 0,
                     };
                     analyze_guide(&samples, rate, &templates, Some(&mut reporting))
                 }
@@ -578,7 +620,7 @@ fn run_job(
     })();
     cleanup();
     outcome?;
-    on_progress(1.0);
+    on_progress(AnalysisProgress::at(1.0, "done"));
     Ok(result)
 }
 
@@ -615,8 +657,7 @@ pub async fn analyze_song(
         drop(session);
         prepare_job(&song_dir, &song, &request)?
     };
-    let engine_rate = state.audio.current_sample_rate_capabilities().0;
-    let sample_rate = if engine_rate > 0 { engine_rate } else { 48_000 };
+    let sample_rate = ANALYSIS_RENDER_RATE;
     let scratch_dir = app
         .path()
         .app_cache_dir()
@@ -627,11 +668,12 @@ pub async fn analyze_song(
 
     tauri::async_runtime::spawn_blocking(move || {
         let _active = active;
-        let mut on_progress = |fraction: f64| {
+        let mut on_progress = |progress: AnalysisProgress| {
             let _ = app.emit(
                 SONG_ANALYSIS_PROGRESS_EVENT,
-                AnalysisProgressPayload {
-                    fraction: fraction.clamp(0.0, 1.0),
+                AnalysisProgress {
+                    fraction: progress.fraction.clamp(0.0, 1.0),
+                    ..progress
                 },
             );
             !ANALYSIS_CANCEL.load(Ordering::Acquire)

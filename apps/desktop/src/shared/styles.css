@@ -2309,7 +2309,156 @@ html.lt-ios body {
 
 /* "Analizar canción": reuses the levelling modal's table and notices. */
 .lt-song-analysis-modal {
-  max-width: 40rem;
+  max-width: 44rem;
+}
+
+/* One body scroller: tables and lists inside give up their own (two nested
+   scrollers on touch leave the finger dragging the wrong one). */
+.lt-song-analysis-modal .lt-level-songs-table-wrap {
+  max-height: none;
+  overflow-x: auto;
+  overflow-y: visible;
+}
+
+.lt-song-analysis-modal .lt-level-songs-table th {
+  position: static;
+}
+
+/* `.lt-secondary-button` has no global style: these get the look of the
+   modals' small tool buttons. */
+.lt-song-analysis-button {
+  border-radius: 2px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.05);
+  color: #f3f0ef;
+  padding: 0.45rem 0.75rem;
+  font: 700 0.75rem/1 "Space Grotesk", sans-serif;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.lt-song-analysis-button:hover:not(:disabled) {
+  border-color: rgb(87 241 219 / 0.28);
+  color: #57f1db;
+}
+
+.lt-song-analysis-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.lt-song-analysis-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lt-song-analysis-callout {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.7rem;
+  border: 1px solid rgb(87 241 219 / 0.18);
+  border-radius: 4px;
+  background: rgb(87 241 219 / 0.04);
+}
+
+.lt-song-analysis-lead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Guide announcements: a row per group, columns that shrink with the modal
+   instead of a table that runs off its right edge. */
+.lt-song-analysis-guide {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lt-song-analysis-guide-head,
+.lt-song-analysis-guide-row {
+  display: grid;
+  grid-template-columns: minmax(7rem, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.lt-song-analysis-guide-head {
+  padding: 0 0.55rem;
+  color: rgb(214 226 224 / 0.55);
+  font: 700 0.68rem/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.lt-song-analysis-guide-row {
+  padding: 0.5rem 0.55rem;
+  border: 1px solid rgb(255 255 255 / 0.08);
+  border-radius: 4px;
+  background: rgb(15 18 19 / 0.6);
+}
+
+.lt-song-analysis-guide-row.is-unassigned {
+  border-color: rgb(255 183 77 / 0.35);
+  background: rgb(255 183 77 / 0.06);
+}
+
+.lt-song-analysis-guide-said {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.lt-song-analysis-guide-field {
+  display: grid;
+  min-width: 0;
+}
+
+.lt-song-analysis-guide-field select {
+  width: 100%;
+  min-width: 0;
+}
+
+/* The column titles say what each select is; once the row wraps they are
+   gone, so each select carries its own. */
+.lt-song-analysis-guide-caption {
+  display: none;
+  color: rgb(214 226 224 / 0.55);
+  font-size: 0.7rem;
+}
+
+@media (max-width: 560px) {
+  .lt-song-analysis-guide-head {
+    display: none;
+  }
+
+  .lt-song-analysis-guide-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .lt-song-analysis-guide-said {
+    grid-column: 1 / -1;
+  }
+
+  .lt-song-analysis-guide-caption {
+    display: block;
+  }
+}
+
+/* A phone in landscape (about 390px tall): the header text goes, the body
+   keeps the room. */
+@media (max-height: 520px) {
+  .lt-song-analysis-modal .lt-settings-modal-header p {
+    display: none;
+  }
+
+  .lt-song-analysis-modal .lt-render-modal-body {
+    gap: 0.7rem;
+  }
 }
 
 .lt-song-analysis-summary {

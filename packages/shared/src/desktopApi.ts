@@ -1559,11 +1559,20 @@ export async function cancelAnalyzeSong(): Promise<void> {
   await invokeCommand<void>("cancel_analyze_song");
 }
 
+/** Where "Analizar canción" is: bouncing the tracks, reading the tempo, the
+ * key, or listening to the guide (`done` of `total` announcements). */
+export type SongAnalysisProgress = {
+  fraction: number;
+  stage?: "render" | "tempo" | "key" | "guide" | "done";
+  done?: number | null;
+  total?: number | null;
+};
+
 export async function listenToSongAnalysisProgress(
-  handler: (event: { fraction: number }) => void,
+  handler: (event: SongAnalysisProgress) => void,
 ): Promise<() => void> {
   const { listen } = await import("@tauri-apps/api/event");
-  return listen<{ fraction: number }>("song-analysis-progress", (event) => {
+  return listen<SongAnalysisProgress>("song-analysis-progress", (event) => {
     handler(event.payload);
   });
 }

@@ -52,9 +52,10 @@ const COMPOUND_EIGHTH_MAX_SECONDS: f64 = 0.45;
 /// every other one. A real 6/8 at 76 clicked in sixteenths runs at 0.197 s.
 const SUBDIVISION_MAX_SECONDS: f64 = 0.22;
 /// The same for a click without accent: nothing says it is a compound meter,
-/// so anything over 200 a minute is read as eighths (128 BPM clicked in
-/// eighths is 0.234 s).
-const UNACCENTED_SUBDIVISION_MAX_SECONDS: f64 = 0.3;
+/// so anything over 176 a minute is read as eighths (128 BPM clicked in
+/// eighths is 0.234 s; a real 98 BPM click in eighths, 0.306 s, came out at
+/// 196 with a 0.3 s limit and put every guide marker half a bar early).
+const UNACCENTED_SUBDIVISION_MAX_SECONDS: f64 = 0.34;
 /// Fewer beats than this is not a click track.
 const MIN_BEATS: usize = 4;
 
@@ -1064,6 +1065,19 @@ mod tests {
             .collect();
         let analysis = analyze_click(&render(&clicks), RATE, 4);
         assert_eq!(analysis.segments[0].bpm, 128.0, "{analysis:?}");
+    }
+
+    #[test]
+    fn unaccented_eighths_of_a_98_bpm_song_are_not_196() {
+        let clicks: Vec<Click> = (0..64)
+            .map(|i| Click {
+                seconds: i as f64 * 60.0 / 196.0,
+                frequency: LOW,
+                amplitude: 0.8,
+            })
+            .collect();
+        let analysis = analyze_click(&render(&clicks), RATE, 4);
+        assert_eq!(analysis.segments[0].bpm, 98.0, "{analysis:?}");
     }
 
     #[test]

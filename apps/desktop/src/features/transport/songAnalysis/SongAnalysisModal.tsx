@@ -9,6 +9,7 @@ import {
   listenToSongAnalysisProgress,
   listenToSpeechModelProgress,
   speechModelStatus,
+  type SongAnalysisProgress,
   type SpeechModelStatus,
   seekTransport,
   SONG_KEY_OPTIONS,
@@ -20,6 +21,7 @@ import {
 import { CUE_KINDS, MARKER_KINDS, markerKindLabel, markerKindVariants } from "../markerKinds";
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { useSongStore } from "../songStore";
+import { useTransportStore } from "../store";
 import {
   buildApplyPayload,
   clickTrackOptions,
@@ -40,7 +42,13 @@ import { useSongAnalysisStore } from "./songAnalysisStore";
 
 type Phase =
   | { kind: "setup"; notice: string | null }
-  | { kind: "analyzing"; fraction: number }
+  | {
+      kind: "analyzing";
+      fraction: number;
+      stage: SongAnalysisProgress["stage"];
+      done: number | null;
+      total: number | null;
+    }
   | { kind: "review"; result: AnalyzeSongResult }
   | { kind: "applied" }
   | { kind: "error"; message: string };
@@ -107,6 +115,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
   const [guideTrackId, setGuideTrackId] = useState<string>(guidePreselected ?? "");
   const [groupMarkers, setGroupMarkers] = useState<GroupMarkers[]>([]);
+  const [guideLeadBars, setGuideLeadBars] = useState(1);
+  const playing = useTransportStore((state) => state.playback?.playbackState === "playing");
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null);
   const [modelDownload, setModelDownload] = useState<
     { kind: "idle" } | { kind: "downloading"; fraction: number } | { kind: "failed"; message: string }
@@ -183,11 +193,19 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
 
   const analyze = async () => {
     if (!canAnalyze || analyzing) return;
-    setPhase({ kind: "analyzing", fraction: 0 });
+    setPhase({ kind: "analyzing", fraction: 0, stage: "render", done: null, total: null });
     unlistenRef.current?.();
     unlistenRef.current = await listenToSongAnalysisProgress((event) => {
       setPhase((current) =>
-        current.kind === "analyzing" ? { kind: "analyzing", fraction: event.fraction } : current,
+        current.kind === "analyzing"
+          ? {
+              kind: "analyzing",
+              fraction: event.fraction,
+              stage: event.stage ?? current.stage,
+              done: event.done ?? null,
+              total: event.total ?? null,
+            }
+          : current,
       );
     });
     try {
@@ -255,8 +273,9 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       phase.result.guide.analysis,
       groupMarkers,
       touchesTempo ? tempoPayload : null,
+      guideLeadBars,
     );
-  }, [phase, song, regionId, groupMarkers, touchesTempo, tempoPayload]);
+  }, [phase, song, regionId, groupMarkers, touchesTempo, tempoPayload, guideLeadBars]);
   const appliesSections =
     phase.kind === "review" && phase.result.guide !== null && include.sections;
   const canApply =
@@ -338,6 +357,9 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         {phase.kind === "setup" ? (
           <div className="lt-settings-modal-body lt-render-modal-body">
             {phase.notice ? <p className="lt-render-notice">{phase.notice}</p> : null}
+            <p className={playing ? "lt-render-warning" : "lt-render-hint"}>
+              {t(playing ? "transport.songAnalysis.cpuWhilePlaying" : "transport.songAnalysis.cpuNotice")}
+            </p>
             {clickOptions.length === 0 ? (
               <p className="lt-render-hint">{t("transport.songAnalysis.noTracks")}</p>
             ) : (
@@ -432,7 +454,24 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
 
         {phase.kind === "analyzing" ? (
           <div className="lt-settings-modal-body lt-render-modal-body" aria-live="polite">
-            <p className="lt-render-status">{t("transport.songAnalysis.analyzing")}</p>
+            <p className="lt-render-status">
+              {phase.stage === "guide" && phase.total
+                ? t("transport.songAnalysis.stageGuideCount", {
+                    done: phase.done ?? 0,
+                    total: phase.total,
+                  })
+                : t(
+                    phase.stage === "tempo"
+                      ? clickTrackId === FROM_MUSIC
+                        ? "transport.songAnalysis.stageTempoMusic"
+                        : "transport.songAnalysis.stageTempo"
+                      : phase.stage === "key"
+                        ? "transport.songAnalysis.stageKey"
+                        : phase.stage === "guide"
+                          ? "transport.songAnalysis.stageGuide"
+                          : "transport.songAnalysis.stageRender",
+                  )}
+            </p>
             <div
               className="lt-render-progress"
               role="progressbar"
@@ -485,6 +524,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                   )
                 }
                 offerSpeech={speechModel?.supported === true && !speechModel.downloaded}
+                leadBars={guideLeadBars}
+                onLeadBars={setGuideLeadBars}
                 placedCount={sections.length}
                 existingCount={
                   song.sectionMarkers.filter((marker) => {
@@ -610,8 +651,8 @@ function SpeechModelNotice({ status, download, onDownload }: SpeechModelNoticePr
   }
   const megabytes = Math.round(status.sizeBytes / 1_000_000);
   return (
-    <div className="lt-render-notice">
-      <p>{t("transport.songAnalysis.speechMissing", { megabytes })}</p>
+    <div className="lt-song-analysis-callout">
+      <p className="lt-render-notice">{t("transport.songAnalysis.speechMissing", { megabytes })}</p>
       {download.kind === "downloading" ? (
         <div
           className="lt-render-progress"
@@ -626,9 +667,11 @@ function SpeechModelNotice({ status, download, onDownload }: SpeechModelNoticePr
           />
         </div>
       ) : (
-        <button type="button" className="lt-secondary-button" onClick={onDownload}>
-          {t("transport.songAnalysis.speechDownload", { megabytes })}
-        </button>
+        <div className="lt-song-analysis-actions">
+          <button type="button" className="lt-song-analysis-button" onClick={onDownload}>
+            {t("transport.songAnalysis.speechDownload", { megabytes })}
+          </button>
+        </div>
       )}
       {download.kind === "failed" ? (
         <p className="lt-render-warning">
@@ -644,6 +687,8 @@ type GuideReviewProps = {
   markers: GroupMarkers[];
   onChange: (group: number, markers: GroupMarkers) => void;
   offerSpeech: boolean;
+  leadBars: number;
+  onLeadBars: (bars: number) => void;
   placedCount: number;
   existingCount: number;
   included: boolean;
@@ -690,6 +735,8 @@ function GuideReview({
   markers,
   onChange,
   offerSpeech,
+  leadBars,
+  onLeadBars,
   placedCount,
   existingCount,
   included,
@@ -733,85 +780,101 @@ function GuideReview({
               {t("transport.songAnalysis.replacesMarkers", { count: existingCount })}
             </p>
           ) : null}
-          <div className="lt-level-songs-table-wrap">
-            <table className="lt-level-songs-table lt-song-analysis-table">
-              <thead>
-                <tr>
-                  <th>{t("transport.songAnalysis.colAnnouncement")}</th>
-                  <th>{t("transport.songAnalysis.colSection")}</th>
-                  <th>{t("transport.songAnalysis.colCue")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {groups.map((group, index) => {
-                  const current = markers[index] ?? { section: "", cue: "", ignored: false };
-                  const position = formatSongPosition(group.firstStartSeconds);
-                  return (
-                    <tr
-                      key={index}
-                      className={isUnrecognised(current) ? "is-unassigned" : undefined}
+          <label className="lt-song-analysis-lead">
+            <span className="lt-render-hint">{t("transport.songAnalysis.leadLabel")}</span>
+            <select
+              aria-label={t("transport.songAnalysis.leadLabel")}
+              value={leadBars}
+              disabled={!included}
+              onChange={(event) => onLeadBars(Number(event.target.value))}
+            >
+              <option value={1}>{t("transport.songAnalysis.leadOne")}</option>
+              <option value={2}>{t("transport.songAnalysis.leadTwo")}</option>
+            </select>
+          </label>
+          <ul className="lt-song-analysis-guide" aria-label={t("transport.songAnalysis.colAnnouncement")}>
+            <li className="lt-song-analysis-guide-head" aria-hidden="true">
+              <span>{t("transport.songAnalysis.colAnnouncement")}</span>
+              <span>{t("transport.songAnalysis.colSection")}</span>
+              <span>{t("transport.songAnalysis.colCue")}</span>
+            </li>
+            {groups.map((group, index) => {
+              const current = markers[index] ?? { section: "", cue: "", ignored: false };
+              const position = formatSongPosition(group.firstStartSeconds);
+              return (
+                <li
+                  key={index}
+                  className={`lt-song-analysis-guide-row${
+                    isUnrecognised(current) ? " is-unassigned" : ""
+                  }`}
+                >
+                  <div className="lt-song-analysis-guide-said">
+                    <button
+                      type="button"
+                      className="lt-link-button"
+                      aria-label={t("transport.songAnalysis.listen", { position })}
+                      onClick={() => onSeek(result.renderStartSeconds + group.firstStartSeconds)}
                     >
-                      <td>
-                        <button
-                          type="button"
-                          className="lt-link-button"
-                          aria-label={t("transport.songAnalysis.listen", { position })}
-                          onClick={() => onSeek(result.renderStartSeconds + group.firstStartSeconds)}
-                        >
-                          ▶ {position}
-                        </button>{" "}
-                        {group.occurrences > 1 ? `×${group.occurrences}` : null}
-                        {group.transcript ? (
-                          <small className="lt-level-songs-note">«{group.transcript}»</small>
-                        ) : null}
-                      </td>
-                      <td>
-                        <select
-                          aria-label={t("transport.songAnalysis.sectionFor", { position })}
-                          value={current.ignored ? "ignore" : current.section}
-                          disabled={!included}
-                          onChange={(event) => {
-                            const value = event.target.value;
-                            onChange(
-                              index,
-                              value === "ignore"
-                                ? { section: "", cue: "", ignored: true }
-                                : { ...current, section: value, ignored: false },
-                            );
-                          }}
-                        >
-                          <option value="">{t("transport.songAnalysis.none")}</option>
-                          <option value="ignore">{t("transport.songAnalysis.ignore")}</option>
-                          {sections.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td>
-                        <select
-                          aria-label={t("transport.songAnalysis.cueFor", { position })}
-                          value={current.cue}
-                          disabled={!included || current.ignored}
-                          onChange={(event) =>
-                            onChange(index, { ...current, cue: event.target.value, ignored: false })
-                          }
-                        >
-                          <option value="">{t("transport.songAnalysis.none")}</option>
-                          {cues.map((option) => (
-                            <option key={option.value} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                      ▶ {position}
+                    </button>
+                    {group.occurrences > 1 ? (
+                      <span className="lt-render-hint"> ×{group.occurrences}</span>
+                    ) : null}
+                    {group.transcript ? (
+                      <small className="lt-level-songs-note">«{group.transcript}»</small>
+                    ) : null}
+                  </div>
+                  <label className="lt-song-analysis-guide-field">
+                    <span className="lt-song-analysis-guide-caption">
+                      {t("transport.songAnalysis.colSection")}
+                    </span>
+                    <select
+                      aria-label={t("transport.songAnalysis.sectionFor", { position })}
+                      value={current.ignored ? "ignore" : current.section}
+                      disabled={!included}
+                      onChange={(event) => {
+                        const value = event.target.value;
+                        onChange(
+                          index,
+                          value === "ignore"
+                            ? { section: "", cue: "", ignored: true }
+                            : { ...current, section: value, ignored: false },
+                        );
+                      }}
+                    >
+                      <option value="">{t("transport.songAnalysis.none")}</option>
+                      <option value="ignore">{t("transport.songAnalysis.ignore")}</option>
+                      {sections.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="lt-song-analysis-guide-field">
+                    <span className="lt-song-analysis-guide-caption">
+                      {t("transport.songAnalysis.colCue")}
+                    </span>
+                    <select
+                      aria-label={t("transport.songAnalysis.cueFor", { position })}
+                      value={current.cue}
+                      disabled={!included || current.ignored}
+                      onChange={(event) =>
+                        onChange(index, { ...current, cue: event.target.value, ignored: false })
+                      }
+                    >
+                      <option value="">{t("transport.songAnalysis.none")}</option>
+                      {cues.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
         </>
       )}
     </section>
@@ -951,25 +1014,7 @@ function TempoReview({
     <section className="lt-song-analysis-part">
       <h3>{t("transport.songAnalysis.tempoAndMeter")}</h3>
       {estimated ? (
-        <p className="lt-render-notice">
-          {t("transport.songAnalysis.estimatedNotice")}{" "}
-          <button
-            type="button"
-            className="lt-secondary-button"
-            disabled={!include.tempo}
-            onClick={() => onScale(2)}
-          >
-            ×2
-          </button>{" "}
-          <button
-            type="button"
-            className="lt-secondary-button"
-            disabled={!include.tempo}
-            onClick={() => onScale(0.5)}
-          >
-            ÷2
-          </button>
-        </p>
+        <p className="lt-render-notice">{t("transport.songAnalysis.estimatedNotice")}</p>
       ) : null}
       {analysis.segments.length > 0 && detected ? (
         <dl className="lt-song-analysis-summary">
@@ -1006,6 +1051,25 @@ function TempoReview({
 
       {rows.length > 0 ? (
         <>
+          <div className="lt-song-analysis-actions">
+            <span className="lt-render-hint">{t("transport.songAnalysis.doubleHalf")}</span>
+            <button
+              type="button"
+              className="lt-song-analysis-button"
+              disabled={!include.tempo || !hasTempoRows}
+              onClick={() => onScale(2)}
+            >
+              ×2
+            </button>
+            <button
+              type="button"
+              className="lt-song-analysis-button"
+              disabled={!include.tempo || !hasTempoRows}
+              onClick={() => onScale(0.5)}
+            >
+              ÷2
+            </button>
+          </div>
           <div className="lt-render-track-tools">
             <label>
               <input
