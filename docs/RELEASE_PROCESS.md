@@ -508,10 +508,31 @@ git push origin v<NEW>
 ```
 
 Pushing the tag triggers the release pipeline (macOS bundle validation,
-native lib linking, downloads counters). It's hard to undo a *published*
-release, so the gate is: do the local commit + tag, and push as part of the
-same release request unless told otherwise — don't ask again mid-flow once
-the user has asked for a release.
+native lib linking, downloads counters). The pipeline ends in a **draft**
+release, not a published one (see "Publishing the draft" below), so a green
+run is not yet a release users can see. Gate: do the local commit + tag, and
+push as part of the same release request unless told otherwise — don't ask
+again mid-flow once the user has asked for a release.
+
+### Publishing the draft (the user's step, not yours)
+
+`publish-release` creates the GitHub release as a **draft** with every
+installer attached. Nothing sees a draft: the in-app update check reads
+`releases/latest` (drafts excluded) and the download page filters drafts out.
+That lets the whole CI run while the App Store and Google Play reviews are
+still pending.
+
+The user publishes it when the stores approve: GitHub → Releases → the draft
+→ "Publish release". That click is the go-live:
+
+- the in-app update modal starts offering the version;
+- `website-deploy.yml` fires on `release: published` and rebuilds the
+  download page (it used to be the `notify-website` job at the end of
+  `release.yml`).
+
+Do not publish the draft yourself unless the user explicitly asks. Re-running
+the pipeline (tag moved after a fix) replaces the previous draft, but it
+refuses to touch a release that is already published.
 
 Once the tag is pushed you own the pipeline until it's green: go straight to
 step 9 and stay on it (monitor → fix → move tag → repeat) until CI passes.
@@ -573,7 +594,7 @@ Jobs and what each one gates (as of v1.10.0):
 | `test` | Yes — unit suites (JS + Rust + native ctest) on all three OSes. |
 | `e2e-windows` | **Disabled** (`if: false`) — see below. |
 | `build-release-assets` | Yes, except the `macos-15-intel` leg (`publish: false`). |
-| `publish-release` | Needs `test` and the publishable `build-release-assets` legs green. |
+| `publish-release` | Needs `test` and the publishable `build-release-assets` legs green. Creates a **draft**; the user publishes it. |
 
 `e2e-windows` is a **separate job on purpose**. It used to be two steps at the
 end of `test`, both pinned behind `continue-on-error` because that job has no

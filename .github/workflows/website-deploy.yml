@@ -3,15 +3,21 @@ name: Deploy website
 # The website (apps/website, Cloudflare Pages) is deployed on purpose, not on
 # every push to main:
 #
-# - with every release tag: the `notify-website` job of release.yml calls the
-#   same deploy hook once the release is published;
+# - when a release is published: release.yml only leaves a DRAFT, and clicking
+#   "Publish release" on GitHub (once the store reviews are approved) fires
+#   this, so the download page picks the new version up then and not before;
 # - by hand: run this workflow from the Actions tab.
+#
+# The `release` event comes from the person's click. A release published with
+# a workflow's own GITHUB_TOKEN would not trigger it.
 #
 # For this to be the only road, automatic production deployments must be OFF
 # in the Cloudflare Pages project (Settings → Builds & deployments → Branch
 # control). The deploy hook keeps working with them off.
 on:
   workflow_dispatch:
+  release:
+    types: [published]
 
 permissions:
   contents: read
