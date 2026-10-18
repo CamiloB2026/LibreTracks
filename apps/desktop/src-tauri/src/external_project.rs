@@ -493,7 +493,6 @@ pub fn parse_ableton_project(path: &Path) -> Result<ReaperProject, String> {
                 let attributes = collect_attributes(&start);
 
                 handle_ableton_node(
-                    root,
                     &stack,
                     &tag,
                     &attributes,
@@ -517,7 +516,6 @@ pub fn parse_ableton_project(path: &Path) -> Result<ReaperProject, String> {
                 let attributes = collect_attributes(&empty);
 
                 handle_ableton_node(
-                    root,
                     &stack,
                     &tag,
                     &attributes,
@@ -538,7 +536,7 @@ pub fn parse_ableton_project(path: &Path) -> Result<ReaperProject, String> {
                 let tag = decode_tag_name(end.name().as_ref());
                 if tag.eq_ignore_ascii_case("AudioClip") {
                     if let (Some(track), Some(clip)) = (current_track.as_mut(), current_clip.take()) {
-                        if let Some(item) = build_ableton_item(clip) {
+                        if let Some(item) = build_ableton_item(root, clip) {
                             track.items.push(item);
                         }
                     }
@@ -575,7 +573,7 @@ pub fn parse_ableton_project(path: &Path) -> Result<ReaperProject, String> {
     }
 
     if let (Some(track), Some(clip)) = (current_track.as_mut(), current_clip.take()) {
-        if let Some(item) = build_ableton_item(clip) {
+        if let Some(item) = build_ableton_item(root, clip) {
             track.items.push(item);
         }
     }
@@ -754,7 +752,7 @@ struct AbletonClipBuilder {
     current_end: Option<f64>,
     source_start_seconds: Option<f64>,
     gain: f64,
-    file_path: Option<PathBuf>,
+    file_refs: Vec<AbletonFileRef>,
 }
 
 impl Default for AbletonClipBuilder {
@@ -764,9 +762,26 @@ impl Default for AbletonClipBuilder {
             current_end: None,
             source_start_seconds: None,
             gain: 1.0,
-            file_path: None,
+            file_refs: Vec::new(),
         }
     }
+}
+
+/// One `<FileRef>` as Live wrote it. Live has stored the path in two shapes:
+///
+/// - Live 11+: `<RelativePath Value="Samples/x.wav"/>` plus an absolute
+///   `<Path Value="/Users/autor/.../x.wav"/>` from the machine that saved it.
+/// - Live 9/10: `<RelativePath>` holds `<RelativePathElement Dir="..."/>`
+///   children and the file name lives in a sibling `<Name Value="x.wav"/>`.
+///
+/// The absolute path only exists on the author's machine, so nothing here is
+/// trusted until it is checked against the disk (see `resolve_ableton_clip_path`).
+#[derive(Debug, Clone, Default)]
+struct AbletonFileRef {
+    relative_value: Option<String>,
+    absolute_value: Option<String>,
+    relative_dirs: Vec<String>,
+    name: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -815,7 +830,6 @@ fn collect_attributes(start: &BytesStart<'_>) -> Vec<(String, String)> {
 
 #[allow(clippy::too_many_arguments)]
 fn handle_ableton_node(
-    root: &Path,
     stack: &[String],
     tag: &str,
     attributes: &[(String, String)],
@@ -910,6 +924,20 @@ fn handle_ableton_node(
     }
 
     if let Some(clip) = current_clip.as_mut() {
+        if tag.eq_ignore_ascii_case("FileRef") {
+            clip.file_refs.push(AbletonFileRef::default());
+        }
+        // Live 9/10: the folders of the relative path, one element each. The
+        // `PathHint` under `SearchHint` uses the same element for the author's
+        // absolute folders, so only the ones directly under `RelativePath` count.
+        if tag.eq_ignore_ascii_case("RelativePathElement") && parent_is(stack, "RelativePath") {
+            if let Some((_, dir)) = attributes
+                .iter()
+                .find(|(key, _)| key.eq_ignore_ascii_case("Dir"))
+            {
+                current_file_ref(clip).relative_dirs.push(dir.clone());
+            }
+        }
         if let Some(node_value) = value {
             if tag.eq_ignore_ascii_case("CurrentStart") {
                 clip.current_start = node_value.parse::<f64>().ok().map(|value| value.max(0.0));
@@ -921,12 +949,17 @@ fn handle_ableton_node(
             {
                 clip.source_start_seconds =
                     node_value.parse::<f64>().ok().map(|value| value.max(0.0));
-            } else if tag.eq_ignore_ascii_case("Path")
-                || tag.eq_ignore_ascii_case("FilePath")
-                || tag.eq_ignore_ascii_case("RelativePath")
-            {
+            } else if tag.eq_ignore_ascii_case("Path") || tag.eq_ignore_ascii_case("FilePath") {
                 if !node_value.trim().is_empty() {
-                    clip.file_path = Some(resolve_ableton_path(root, node_value));
+                    current_file_ref(clip).absolute_value = Some(node_value.to_string());
+                }
+            } else if tag.eq_ignore_ascii_case("RelativePath") {
+                if !node_value.trim().is_empty() {
+                    current_file_ref(clip).relative_value = Some(node_value.to_string());
+                }
+            } else if tag.eq_ignore_ascii_case("Name") && parent_is(stack, "FileRef") {
+                if !node_value.trim().is_empty() {
+                    current_file_ref(clip).name = Some(node_value.to_string());
                 }
             } else if tag.eq_ignore_ascii_case("Manual") && parent_is(stack, "Volume") {
                 if let Ok(parsed) = node_value.parse::<f64>() {
@@ -987,8 +1020,8 @@ fn handle_ableton_node(
     }
 }
 
-fn build_ableton_item(builder: AbletonClipBuilder) -> Option<ReaperItem> {
-    let file_path = builder.file_path?;
+fn build_ableton_item(root: &Path, builder: AbletonClipBuilder) -> Option<ReaperItem> {
+    let file_path = resolve_ableton_clip_path(root, &builder.file_refs)?;
     let position_seconds = builder.current_start.unwrap_or(0.0).max(0.0);
     let end_seconds = builder.current_end.unwrap_or(position_seconds);
     let length_seconds = (end_seconds - position_seconds).max(0.0);
@@ -1019,12 +1052,110 @@ fn build_ableton_locator(locator: AbletonLocatorBuilder) -> Option<ReaperSection
     })
 }
 
-fn resolve_ableton_path(root: &Path, value: &str) -> PathBuf {
+fn current_file_ref(clip: &mut AbletonClipBuilder) -> &mut AbletonFileRef {
+    if clip.file_refs.is_empty() {
+        clip.file_refs.push(AbletonFileRef::default());
+    }
+    clip.file_refs.last_mut().expect("file ref just ensured")
+}
+
+/// Pick the clip's audio file. A `.als` that travelled from another computer
+/// (the usual case: a multitrack downloaded from the internet) carries the
+/// author's absolute path, which does not exist here, so the candidates are
+/// tried in order of how portable they are and the first one on disk wins:
+/// relative to the project folder first, the absolute path last. If none
+/// exists, the file name is looked up inside the project folder, where Live
+/// keeps `Samples/` and where downloaded packs keep their stems.
+///
+/// When nothing is found the first candidate is still returned, so the import
+/// reports the file as missing instead of silently dropping the track.
+fn resolve_ableton_clip_path(root: &Path, file_refs: &[AbletonFileRef]) -> Option<PathBuf> {
+    let mut candidates = Vec::<PathBuf>::new();
+    let mut file_names = Vec::<String>::new();
+
+    for file_ref in file_refs {
+        if let Some(relative) = file_ref.relative_value.as_deref() {
+            candidates.push(join_ableton_path(root, relative));
+        }
+        if let Some(name) = file_ref.name.as_deref() {
+            let mut path = root.to_path_buf();
+            for dir in &file_ref.relative_dirs {
+                match dir.as_str() {
+                    "" | "." => {}
+                    ".." => {
+                        path.pop();
+                    }
+                    other => path.push(other),
+                }
+            }
+            candidates.push(path.join(name));
+            file_names.push(name.to_string());
+        }
+        if let Some(absolute) = file_ref.absolute_value.as_deref() {
+            candidates.push(join_ableton_path(root, absolute));
+        }
+        for value in [
+            file_ref.relative_value.as_deref(),
+            file_ref.absolute_value.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            // The value may be a Windows path read on macOS (or the reverse),
+            // where `Path::file_name` would not split it: cut on both separators.
+            if let Some(name) = value.rsplit(['/', '\\']).next().filter(|name| !name.is_empty()) {
+                file_names.push(name.to_string());
+            }
+        }
+    }
+
+    if let Some(existing) = candidates.iter().find(|candidate| candidate.is_file()) {
+        return Some(existing.clone());
+    }
+    for name in &file_names {
+        if let Some(found) = find_file_by_name(root, name, ABLETON_SEARCH_MAX_DEPTH) {
+            return Some(found);
+        }
+    }
+    candidates.into_iter().next()
+}
+
+fn join_ableton_path(root: &Path, value: &str) -> PathBuf {
     let path = Path::new(value);
     if path.is_absolute() {
         return path.to_path_buf();
     }
-    root.join(path)
+    root.join(value.replace('\\', "/"))
+}
+
+const ABLETON_SEARCH_MAX_DEPTH: usize = 4;
+
+fn find_file_by_name(dir: &Path, name: &str, depth_left: usize) -> Option<PathBuf> {
+    let entries = fs::read_dir(dir).ok()?;
+    let mut subdirs = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if file_type.is_dir() {
+            subdirs.push(path);
+        } else if entry
+            .file_name()
+            .to_str()
+            .map(|entry_name| entry_name.eq_ignore_ascii_case(name))
+            .unwrap_or(false)
+        {
+            return Some(path);
+        }
+    }
+    if depth_left == 0 {
+        return None;
+    }
+    subdirs.sort();
+    subdirs
+        .iter()
+        .find_map(|subdir| find_file_by_name(subdir, name, depth_left - 1))
 }
 
 fn parent_is(stack: &[String], expected_parent: &str) -> bool {
@@ -1430,11 +1561,23 @@ fn build_track(builder: ReaperTrackBuilder, index: usize) -> ReaperTrack {
 }
 
 fn build_ableton_track(builder: AbletonTrackBuilder, index: usize) -> ReaperTrack {
+    // Multitrack packs often leave Live's automatic "1-Audio", "2-Audio"...
+    // and only the stems carry the instrument, so the file name is the better
+    // track name there.
+    let stem_name = builder
+        .items
+        .first()
+        .and_then(|item| item.source_path.file_stem())
+        .and_then(|stem| stem.to_str())
+        .map(|stem| stem.trim().to_string())
+        .filter(|stem| !stem.is_empty());
     ReaperTrack {
         name: builder
             .name
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty())
+            .filter(|name| stem_name.is_none() || !is_ableton_default_track_name(name))
+            .or(stem_name)
             .unwrap_or_else(|| format!("Track {}", index + 1)),
         volume: builder.volume.max(0.0),
         pan: builder.pan.clamp(-1.0, 1.0),
@@ -1443,6 +1586,17 @@ fn build_ableton_track(builder: AbletonTrackBuilder, index: usize) -> ReaperTrac
         folder_depth_delta: 0,
         items: builder.items,
     }
+}
+
+/// Live's automatic audio track name: `<number>-Audio`.
+fn is_ableton_default_track_name(name: &str) -> bool {
+    name.split_once('-')
+        .map(|(number, kind)| {
+            !number.is_empty()
+                && number.chars().all(|c| c.is_ascii_digit())
+                && kind.eq_ignore_ascii_case("Audio")
+        })
+        .unwrap_or(false)
 }
 
 fn build_item(builder: ReaperItemBuilder) -> Option<ReaperItem> {
@@ -1504,8 +1658,8 @@ fn resolve_source_path(root: &Path, value: &str) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{
-        detect_external_project_kind, parse_ableton_project, parse_reaper_project,
-        tokenize_reaper_line, ExternalProjectKind,
+        detect_external_project_kind, is_ableton_default_track_name, parse_ableton_project,
+        parse_reaper_project, tokenize_reaper_line, ExternalProjectKind,
     };
     use std::fs;
 
@@ -2040,5 +2194,138 @@ mod tests {
                     "the whole clip must lie inside the single region; region ends at {}",
                     parsed.regions[0].end_seconds
                 );
+        }
+
+        fn ableton_set_with_file_ref(file_ref: &str) -> String {
+                format!(
+                        r#"<?xml version="1.0" encoding="UTF-8"?>
+<Ableton>
+    <LiveSet>
+        <Tracks>
+            <AudioTrack>
+                <Name><EffectiveName Value="Click Track"/></Name>
+                <DeviceChain><MainSequencer><Sample><ArrangerAutomation><Events>
+                    <AudioClip Time="0">
+                        <CurrentStart Value="0"/>
+                        <CurrentEnd Value="8"/>
+                        <Name Value="Click Track"/>
+                        <SampleRef>{file_ref}</SampleRef>
+                    </AudioClip>
+                </Events></ArrangerAutomation></Sample></MainSequencer></DeviceChain>
+            </AudioTrack>
+        </Tracks>
+    </LiveSet>
+</Ableton>
+"#
+                )
+        }
+
+        #[test]
+        fn ableton_live10_relative_path_elements_resolve_the_stem() {
+                // Live 9/10 has no `<Path Value>`: the folders are
+                // `RelativePathElement`s and the file name is the FileRef's
+                // `<Name>`. The `PathHint` holds the AUTHOR's folders with the
+                // same element and must not leak into the path. Before the fix
+                // every clip came out without a file and the whole import failed
+                // with "no contiene pistas de audio importables".
+                let temp = tempfile::tempdir().expect("tempdir");
+                let source_path = temp.path().join("MultiTracks").join("Click Track.wav");
+                fs::create_dir_all(source_path.parent().expect("dir")).expect("mkdir");
+                fs::write(&source_path, b"wav").expect("write wav");
+                let project_path = temp.path().join("song.als");
+                fs::write(
+                        &project_path,
+                        ableton_set_with_file_ref(
+                                r#"<FileRef>
+                                <HasRelativePath Value="true"/>
+                                <RelativePathType Value="1"/>
+                                <RelativePath>
+                                    <RelativePathElement Id="3" Dir=""/>
+                                    <RelativePathElement Id="4" Dir="MultiTracks"/>
+                                </RelativePath>
+                                <Name Value="Click Track.wav"/>
+                                <SearchHint><PathHint>
+                                    <RelativePathElement Id="11" Dir="Root"/>
+                                    <RelativePathElement Id="12" Dir="Descargas"/>
+                                </PathHint></SearchHint>
+                            </FileRef>"#,
+                        ),
+                )
+                .expect("write als");
+
+                let parsed = parse_ableton_project(&project_path).expect("parse ableton");
+                assert_eq!(parsed.tracks.len(), 1);
+                assert_eq!(parsed.tracks[0].items[0].source_path, source_path);
+        }
+
+        #[test]
+        fn ableton_default_track_name_falls_back_to_the_stem_name() {
+                assert!(is_ableton_default_track_name("1-Audio"));
+                assert!(is_ableton_default_track_name("12-Audio"));
+                assert!(!is_ableton_default_track_name("Bass"));
+                assert!(!is_ableton_default_track_name("1-MIDI"));
+                assert!(!is_ableton_default_track_name("Audio"));
+
+                let temp = tempfile::tempdir().expect("tempdir");
+                let source_path = temp.path().join("Click Track.wav");
+                fs::write(&source_path, b"wav").expect("write wav");
+                let project_path = temp.path().join("song.als");
+                let als = ableton_set_with_file_ref(
+                        r#"<FileRef><RelativePath Value="Click Track.wav"/></FileRef>"#,
+                )
+                .replace(r#"<EffectiveName Value="Click Track"/>"#, r#"<EffectiveName Value="1-Audio"/>"#);
+                fs::write(&project_path, als).expect("write als");
+
+                let parsed = parse_ableton_project(&project_path).expect("parse ableton");
+                assert_eq!(parsed.tracks[0].name, "Click Track");
+        }
+
+        #[test]
+        fn ableton_prefers_existing_relative_path_over_authors_absolute_path() {
+                // Live 11+ writes both; the absolute one is the author's machine
+                // and came AFTER the relative one, so it used to win and the
+                // import died with "No such file or directory (os error 2)".
+                let temp = tempfile::tempdir().expect("tempdir");
+                let source_path = temp.path().join("Samples").join("Imported").join("Bass.wav");
+                fs::create_dir_all(source_path.parent().expect("dir")).expect("mkdir");
+                fs::write(&source_path, b"wav").expect("write wav");
+                let project_path = temp.path().join("song.als");
+                fs::write(
+                        &project_path,
+                        ableton_set_with_file_ref(
+                                r#"<FileRef>
+                                <RelativePathType Value="3"/>
+                                <RelativePath Value="Samples/Imported/Bass.wav"/>
+                                <Path Value="/Users/autor/Music/Proyecto/Samples/Imported/Bass.wav"/>
+                            </FileRef>"#,
+                        ),
+                )
+                .expect("write als");
+
+                let parsed = parse_ableton_project(&project_path).expect("parse ableton");
+                assert_eq!(parsed.tracks[0].items[0].source_path, source_path);
+        }
+
+        #[test]
+        fn ableton_finds_stem_by_name_when_every_stored_path_is_stale() {
+                // Only the author's Windows path, read on any machine: the stem
+                // is found by name inside the project folder.
+                let temp = tempfile::tempdir().expect("tempdir");
+                let source_path = temp.path().join("Stems").join("guide.WAV");
+                fs::create_dir_all(source_path.parent().expect("dir")).expect("mkdir");
+                fs::write(&source_path, b"wav").expect("write wav");
+                let project_path = temp.path().join("song.als");
+                fs::write(
+                        &project_path,
+                        ableton_set_with_file_ref(
+                                r#"<FileRef>
+                                <Path Value="C:\Users\autor\Desktop\Proyecto\Samples\Guide.wav"/>
+                            </FileRef>"#,
+                        ),
+                )
+                .expect("write als");
+
+                let parsed = parse_ableton_project(&project_path).expect("parse ableton");
+                assert_eq!(parsed.tracks[0].items[0].source_path, source_path);
         }
 }
