@@ -416,6 +416,18 @@ jobs:
           }
           "LT_ASIO_SDK_DIR=$PWD/vendor/asiosdk" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      # FFmpeg, libmpv and the Windows vcpkg packages are cached under keys that
+      # warm-release-caches.yml also fills FROM MAIN. A cache saved on a tag is
+      # only visible to that same tag, so without the main copy every release
+      # started cold. Keep each key identical in both workflows.
+      - name: Cache universal LGPL FFmpeg (macOS)
+        id: ffmpeg-macos-cache
+        if: matrix.platform == 'macos'
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-universal
+          key: ffmpeg-macos-universal-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg-universal.sh') }}
+
       - name: Build universal LGPL FFmpeg (macOS)
         if: matrix.platform == 'macos'
         shell: bash
@@ -428,8 +440,20 @@ jobs:
           # reference symbols absent on Catalina/Big Sur and crash at launch.
           # pkg-config is pointed here so the engine links our build; the bundle
           # step then relocates the libav* dylibs into the .app.
-          bash scripts/build-ffmpeg-universal.sh "$PWD/vendor/ffmpeg-universal"
+          if [ "${{ steps.ffmpeg-macos-cache.outputs.cache-hit }}" != "true" ]; then
+            bash scripts/build-ffmpeg-universal.sh "$PWD/vendor/ffmpeg-universal"
+          else
+            echo "Universal FFmpeg restored from cache."
+          fi
           echo "PKG_CONFIG_PATH=$PWD/vendor/ffmpeg-universal/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
+
+      - name: Cache LGPL FFmpeg (Linux)
+        id: ffmpeg-linux-cache
+        if: matrix.platform == 'linux'
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-linux
+          key: ffmpeg-linux-${{ matrix.os }}-${{ hashFiles('scripts/build-ffmpeg-linux.sh') }}
 
       - name: Build LGPL FFmpeg (Linux)
         if: matrix.platform == 'linux'
@@ -441,7 +465,11 @@ jobs:
           # links our build instead of the distro's libav* (whose SONAME differs
           # across distros); linux-bundle-ffmpeg.sh then vendors the .so next to
           # the engine with an $ORIGIN rpath so the bundle is self-contained.
-          bash scripts/build-ffmpeg-linux.sh "$PWD/vendor/ffmpeg-linux"
+          if [ "${{ steps.ffmpeg-linux-cache.outputs.cache-hit }}" != "true" ]; then
+            bash scripts/build-ffmpeg-linux.sh "$PWD/vendor/ffmpeg-linux"
+          else
+            echo "Linux FFmpeg restored from cache."
+          fi
           echo "PKG_CONFIG_PATH=$PWD/vendor/ffmpeg-linux/lib/pkgconfig:${PKG_CONFIG_PATH:-}" >> "$GITHUB_ENV"
 
       - name: Build native engine release

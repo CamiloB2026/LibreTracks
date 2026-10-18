@@ -1,0 +1,147 @@
+name: Warm release caches
+
+# Builds, ON MAIN, the slow and deterministic pieces of a release and leaves
+# them in the Actions cache under the exact keys release.yml looks up:
+#
+# - macOS universal LGPL FFmpeg   (~6 min cold on macos-latest)
+# - macOS libmpv                  (~10 min cold)
+# - Linux LGPL FFmpeg             (~1 min cold)
+# - Windows vcpkg binary packages (FFmpeg through vcpkg; most of the ~11 min
+#                                  "Build native engine release")
+#
+# Why from main: a cache saved by a tag run is scoped to that tag, so v1.15.0
+# can never read what v1.14.0 built and every release started cold. Caches of
+# the default branch are readable from any tag.
+#
+# Why on a schedule too: GitHub evicts a cache nobody has read for 7 days, and
+# releases are further apart than that. A warm run restores each cache (which
+# counts as a read) and only rebuilds what is missing, so it costs a couple
+# of minutes when everything is already there.
+#
+# Keep every `key:` here identical to its counterpart in release.yml (and
+# BUNGEE_VERSION in sync), or the release simply misses and builds cold.
+on:
+  push:
+    branches: [main]
+    paths:
+      - scripts/build-ffmpeg-universal.sh
+      - scripts/build-ffmpeg-linux.sh
+      - scripts/libmpv-macos.sh
+      - scripts/libmpv-fetch.mjs
+      - scripts/verify-libmpv-macos.sh
+      - native/audio-engine-v2/CMakeLists.txt
+      - native/audio-engine-v2/cmake/**
+      - native/audio-engine-v2/vcpkg-triplets/**
+      - native/audio-engine-v2/vcpkg.json
+      - .github/workflows/warm-release-caches.yml
+  schedule:
+    # Monday and Thursday: never more than 4 days between reads.
+    - cron: "23 4 * * 1,4"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: warm-release-caches
+  cancel-in-progress: false
+
+env:
+  BUNGEE_VERSION: v2.4.24
+
+jobs:
+  macos:
+    name: macOS (FFmpeg + libmpv)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Cache universal LGPL FFmpeg (macOS)
+        id: ffmpeg-macos-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-universal
+          key: ffmpeg-macos-universal-${{ runner.arch }}-${{ hashFiles('scripts/build-ffmpeg-universal.sh') }}
+
+      - name: Build universal LGPL FFmpeg (macOS)
+        if: steps.ffmpeg-macos-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/build-ffmpeg-universal.sh "$PWD/vendor/ffmpeg-universal"
+
+      - name: Cache libmpv (macOS)
+        id: libmpv-macos-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/bin/libmpv/macos
+          key: libmpv-macos-${{ hashFiles('scripts/libmpv-macos.sh') }}
+
+      - name: libmpv build tools (macOS)
+        if: steps.libmpv-macos-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          brew install nasm pkg-config ninja
+          python3 -m venv "$RUNNER_TEMP/libmpv-venv"
+          "$RUNNER_TEMP/libmpv-venv/bin/pip" install --quiet meson jinja2
+          echo "$RUNNER_TEMP/libmpv-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Build libmpv (macOS)
+        if: steps.libmpv-macos-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: node scripts/libmpv-fetch.mjs --into vendor/bin/macos-frameworks
+
+  linux:
+    name: Linux (FFmpeg)
+    # Same image as the release's Linux leg: the .so link against its glibc.
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache LGPL FFmpeg (Linux)
+        id: ffmpeg-linux-cache
+        uses: actions/cache@v4
+        with:
+          path: vendor/ffmpeg-linux
+          key: ffmpeg-linux-ubuntu-22.04-${{ hashFiles('scripts/build-ffmpeg-linux.sh') }}
+
+      - name: Build LGPL FFmpeg (Linux)
+        if: steps.ffmpeg-linux-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: bash scripts/build-ffmpeg-linux.sh "$PWD/vendor/ffmpeg-linux"
+
+  windows:
+    name: Windows (vcpkg packages)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Cache Windows vcpkg binary packages
+        id: vcpkg-cache
+        uses: actions/cache@v4
+        with:
+          path: ~\AppData\Local\vcpkg\archives
+          key: release-windows-vcpkg-${{ env.BUNGEE_VERSION }}-${{ hashFiles('native/audio-engine-v2/CMakeLists.txt', 'native/audio-engine-v2/cmake/**/*.cmake', 'native/audio-engine-v2/vcpkg-triplets/*.cmake') }}
+          restore-keys: |
+            release-windows-vcpkg-${{ env.BUNGEE_VERSION }}-
+
+      # The release installs these through CMake's manifest mode; installing
+      # the same manifest with the same triplet produces the same binary
+      # packages (vcpkg keys them by ABI hash, so a mismatch is just a miss,
+      # never a wrong package).
+      - name: Install vcpkg manifest (Windows)
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            --x-manifest-root=native/audio-engine-v2 `
+            --x-install-root="$env:RUNNER_TEMP\vcpkg_installed" `
+            --triplet x64-windows-release `
+            --overlay-triplets=native/audio-engine-v2/vcpkg-triplets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

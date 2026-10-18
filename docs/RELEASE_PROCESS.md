@@ -594,7 +594,7 @@ Jobs and what each one gates (as of v1.10.0):
 |-----|---------------------|
 | `test` | Yes — unit suites (JS + Rust + native ctest) on all three OSes. |
 | `e2e-windows` | **Disabled** (`if: false`) — see below. |
-| `build-release-assets` | Yes. Windows, universal macOS and Linux; all three publish. |
+| `build-release-assets` | Yes. Windows, universal macOS and Linux; all three publish. FFmpeg (macOS/Linux), libmpv (macOS) and the vcpkg packages (Windows) come from caches that `warm-release-caches.yml` keeps on `main` — a tag can't reuse another tag's caches. A "Cache not found" on those steps means the warm run is missing or its keys drifted from release.yml. |
 | `publish-release` | Needs `test` and the publishable `build-release-assets` legs green. Creates a **draft**; the user publishes it. |
 
 `e2e-windows` is a **separate job on purpose**. It used to be two steps at the
