@@ -6,6 +6,7 @@
 //! ```
 //!
 //! With `ONSETS=1` it dumps every click's time, level and pitch instead.
+//! With `EIGHTHS=1` it reads a click without accent as eighths (÷2).
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -40,7 +41,12 @@ fn main() {
         return;
     }
     let started = std::time::Instant::now();
-    let analysis = libretracks_analysis::analyze_click(&mono, spec.sample_rate, fallback);
+    let analysis = if std::env::var_os("EIGHTHS").is_some() {
+        libretracks_analysis::analyze_click_as_eighths(&mono, spec.sample_rate, fallback)
+            .expect("a click without accent")
+    } else {
+        libretracks_analysis::analyze_click(&mono, spec.sample_rate, fallback)
+    };
     println!(
         "{} s of audio analysed in {:.0} ms: {} beats, downbeat known: {}",
         mono.len() / spec.sample_rate as usize,

@@ -4,6 +4,7 @@ import type { TempoProposal } from "@libretracks/shared/desktopApi";
 import type { SongView } from "@libretracks/shared/models";
 
 import {
+  bpmFromNames,
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
@@ -17,6 +18,7 @@ import {
   parseBpm,
   parseSignature,
   reviewRows,
+  startsOnEighths,
 } from "./songAnalysisPlan";
 
 const audioTrack = (id: string, name: string, kind = "audio") =>
@@ -125,6 +127,36 @@ describe("tempo from the music", () => {
     // Out of range stays.
     const tooFast = scaleTempoRows(scaled, 2);
     expect(tooFast.find((row) => row.kind === "tempo")?.text).toBe("184");
+  });
+});
+
+describe("the tempo a multitrack names", () => {
+  const named = (regionName: string, clickPath = "audio/Click.wav") => {
+    const view = song();
+    view.regions[1] = { ...view.regions[1], name: regionName };
+    view.clips[1] = { ...view.clips[1], filePath: clickPath };
+    return bpmFromNames(view, "b", "metro");
+  };
+
+  it("reads it from the song's name, however it is spelt", () => {
+    expect(named("Digno de Adorar-MSM-D-71bpm")).toBe(71);
+    expect(named("Es Él-Felipe S. Santos Bb 70 Bpm")).toBe(70);
+    expect(named("Way Maker (68 BPM)")).toBe(68);
+    expect(named("Song_92,5_bpm")).toBe(92.5);
+    expect(named("Second")).toBeNull();
+    expect(named("Track 2024 bpms")).toBeNull();
+  });
+
+  it("or from the folder of the click inside the song", () => {
+    expect(named("Second", "audio/Digno de Adorar-MSM-D-71bpm/Click Track.wav")).toBe(71);
+  });
+
+  it("starts on the eighths reading only when the name says its tempo", () => {
+    expect(startsOnEighths(71, 142, 71)).toBe(true);
+    expect(startsOnEighths(70, 142, 71)).toBe(true);
+    expect(startsOnEighths(142, 142, 71)).toBe(false);
+    expect(startsOnEighths(null, 142, 71)).toBe(false);
+    expect(startsOnEighths(71, 142, undefined)).toBe(false);
   });
 });
 

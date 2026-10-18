@@ -13,7 +13,10 @@ pub mod key;
 pub mod music;
 pub mod proposal;
 
-pub use click::{analyze_click, ClickAnalysis, ClickWarning, ClickWarningKind, TempoSegment};
+pub use click::{
+    analyze_click, analyze_click_as_eighths, ClickAnalysis, ClickWarning, ClickWarningKind,
+    TempoSegment,
+};
 pub use guide::{
     analyze_guide, GuideAnalysis, GuideAnnouncement, GuideGroup, GuideTemplate, Transcriber,
 };

@@ -120,6 +120,53 @@ export function musicTempoTrackIds(song: SongView, regionId: string): string[] {
     .map((option) => option.id);
 }
 
+/** "Digno de Adorar-MSM-D-71bpm", "Bb 70 Bpm", "(120 BPM)". */
+const NAME_BPM = /(?:^|[^\d.,])(\d{2,3}(?:[.,]\d{1,2})?)\s*[-_]?\s*bpm(?![a-z])/i;
+/** A name's tempo this close to a reading's picks that reading. */
+const NAME_BPM_TOLERANCE = 0.03;
+
+/**
+ * The tempo a multitrack names itself with, from the song (region) name or
+ * the folders and files of the click inside it. Null when none says one.
+ */
+export function bpmFromNames(
+  song: SongView,
+  regionId: string,
+  clickTrackId: string,
+): number | null {
+  const region = song.regions.find((candidate) => candidate.id === regionId);
+  if (!region) return null;
+  const clickPaths = song.clips
+    .filter(
+      (clip) =>
+        clip.trackId === clickTrackId &&
+        clip.timelineStartSeconds < region.endSeconds &&
+        clip.timelineStartSeconds + clip.durationSeconds > region.startSeconds,
+    )
+    .map((clip) => clip.filePath);
+  for (const name of [region.name, ...clickPaths]) {
+    const match = NAME_BPM.exec(name.normalize("NFC"));
+    const bpm = match ? Number(match[1].replace(",", ".")) : NaN;
+    if (bpm >= 30 && bpm <= 300) return bpm;
+  }
+  return null;
+}
+
+/**
+ * Whether the review starts on the click read as eighths (÷2): only when a
+ * name says that tempo and not the click's own. A click without accent
+ * cannot tell 142 from 71 in eighths, and the user's ÷2 / ×2 decides.
+ */
+export function startsOnEighths(
+  namedBpm: number | null,
+  clickBpm: number | undefined,
+  eighthsBpm: number | undefined,
+): boolean {
+  if (namedBpm === null || clickBpm === undefined || eighthsBpm === undefined) return false;
+  const near = (bpm: number) => Math.abs(namedBpm / bpm - 1) <= NAME_BPM_TOLERANCE;
+  return near(eighthsBpm) && !near(clickBpm);
+}
+
 /**
  * Every tempo marker's BPM times `factor` (×2 / ÷2 for a tempo estimated at
  * double or half). Values that would leave the app's range stay as they are.

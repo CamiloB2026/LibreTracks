@@ -13,9 +13,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
-    analyze_click, analyze_guide, analyze_key, analyze_music_tempo, propose_tempo_markers,
-    ClickAnalysis, ExistingTiming, GuideAnalysis, GuideTemplate, KeyAnalysis,
-    ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
+    analyze_click, analyze_click_as_eighths, analyze_guide, analyze_key, analyze_music_tempo,
+    propose_tempo_markers, ClickAnalysis, ExistingTiming, GuideAnalysis, GuideTemplate,
+    KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -79,6 +79,16 @@ pub struct AnalyzeSongRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TempoResult {
+    pub analysis: ClickAnalysis,
+    pub proposal: TempoProposal,
+    /// A click without accent read as eighths (÷2), for the review's ÷2 / ×2:
+    /// nothing in the audio says which reading is right.
+    pub as_eighths: Option<TempoReading>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TempoReading {
     pub analysis: ClickAnalysis,
     pub proposal: TempoProposal,
 }
@@ -548,7 +558,19 @@ fn run_job(
                 analyze_click(&samples, rate, tempo.fallback_beats_per_bar)
             };
             let proposal = propose_tempo_markers(&analysis, tempo.span, &tempo.existing);
-            result.tempo = Some(TempoResult { analysis, proposal });
+            let as_eighths = (!tempo.from_music && !analysis.downbeat_known)
+                .then(|| analyze_click_as_eighths(&samples, rate, tempo.fallback_beats_per_bar))
+                .flatten()
+                .filter(|eighths| !eighths.segments.is_empty())
+                .map(|analysis| TempoReading {
+                    proposal: propose_tempo_markers(&analysis, tempo.span, &tempo.existing),
+                    analysis,
+                });
+            result.tempo = Some(TempoResult {
+                analysis,
+                proposal,
+                as_eighths,
+            });
         }
         if let Some(key) = &job.key {
             if !on_progress(AnalysisProgress::at(TEMPO_END, "key")) {

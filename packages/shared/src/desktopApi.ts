@@ -1402,7 +1402,10 @@ export type ClickWarningKind =
   | "irregularBar"
   | "compoundGuess"
   | "estimatedWithoutClick"
-  | "uncertainTempo";
+  | "uncertainTempo"
+  | "unreliableClick"
+  | "freeTempo"
+  | "clickReadAsEighths";
 
 export type KeyAnalysis = {
   /** Sharp spelling like the key picker ("Dm", "F#"); null: no pitched audio. */
@@ -1514,7 +1517,13 @@ export type AnalyzeSongResult = {
   regionStartSeconds: number;
   /** The song's start on the rendered timeline (differs with warp/varispeed). */
   renderStartSeconds: number;
-  tempo: { analysis: ClickAnalysis; proposal: TempoProposal } | null;
+  tempo: {
+    analysis: ClickAnalysis;
+    proposal: TempoProposal;
+    /** A click without accent read as eighths (÷2): one click in two is the
+     * beat. Null when the click has an accent or the tempo is from the music. */
+    asEighths: { analysis: ClickAnalysis; proposal: TempoProposal } | null;
+  } | null;
   /** Why a chosen click was not analysed: "song_analysis_warp" | "song_analysis_varispeed". */
   tempoUnavailable: string | null;
   /** The key in the song's ORIGINAL key: the transpose is taken out. */

@@ -23,6 +23,7 @@ import { useDismissOnBack } from "../mobile/backNavigation";
 import { useSongStore } from "../songStore";
 import { useTransportStore } from "../store";
 import {
+  bpmFromNames,
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
@@ -36,6 +37,7 @@ import {
   reviewRows,
   rowIsValid,
   scaleTempoRows,
+  startsOnEighths,
   type ReviewRow,
 } from "./songAnalysisPlan";
 import { useSongAnalysisStore } from "./songAnalysisStore";
@@ -161,6 +163,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const [analyzeKeyToo, setAnalyzeKeyToo] = useState(keyOptions.length > 0);
   const [phase, setPhase] = useState<Phase>({ kind: "setup", notice: null });
   const [rows, setRows] = useState<ReviewRow[]>([]);
+  /** The click (without accent) read as eighths: its ÷2 reading. */
+  const [eighths, setEighths] = useState(false);
   const [include, setInclude] = useState({
     tempo: true,
     signature: true,
@@ -224,7 +228,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         setPhase({ kind: "setup", notice: t("transport.songAnalysis.cancelled") });
         return;
       }
-      const proposalRows = result.tempo ? reviewRows(result.tempo.proposal) : [];
+      const onEighths = startsOnEighths(
+        clickTrackId && !fromMusic ? bpmFromNames(song, regionId, clickTrackId) : null,
+        result.tempo?.analysis.segments[0]?.bpm,
+        result.tempo?.asEighths?.analysis.segments[0]?.bpm,
+      );
+      setEighths(onEighths);
+      const reading = tempoReading(result, onEighths);
+      const proposalRows = reading ? reviewRows(reading.proposal) : [];
       const detectedKey = result.key?.analysis.key ?? null;
       const estimated =
         result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
@@ -326,6 +337,21 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         row.kind === changed.kind && row.index === changed.index ? { ...row, text } : row,
       ),
     );
+
+  // ÷2 / ×2. Between the click's two readings it swaps them, so bars and
+  // markers come out of the click again (scaling a 142 map to 71 would keep a
+  // bar every 4 eighths); past them it scales the BPMs.
+  const scaleTempo = (factor: number) => {
+    if (phase.kind !== "review") return;
+    const swaps = phase.result.tempo?.asEighths && (factor < 1 ? !eighths : eighths);
+    if (!swaps) {
+      setRows((previous) => scaleTempoRows(previous, factor));
+      return;
+    }
+    const reading = tempoReading(phase.result, !eighths);
+    setEighths(!eighths);
+    setRows(reading ? reviewRows(reading.proposal) : []);
+  };
 
   const toggleKeyTrack = (id: string) =>
     setKeyTrackIds((previous) => {
@@ -502,7 +528,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 include={include}
                 onInclude={(tempo, signature) => setInclude({ ...include, tempo, signature })}
                 onEdit={editRow}
-                onScale={(factor) => setRows((previous) => scaleTempoRows(previous, factor))}
+                eighths={eighths}
+                onScale={scaleTempo}
                 onSeek={(seconds) => void seekTo(seconds)}
               />
             ) : null}
@@ -1002,9 +1029,17 @@ type TempoReviewProps = {
   include: { tempo: boolean; signature: boolean };
   onInclude: (tempo: boolean, signature: boolean) => void;
   onEdit: (row: ReviewRow, text: string) => void;
+  /** Showing the click read as eighths (`result.tempo.asEighths`). */
+  eighths: boolean;
   onScale: (factor: number) => void;
   onSeek: (absoluteSeconds: number) => void;
 };
+
+/** The tempo reading on show: the click's, or its eighths (÷2) reading. */
+function tempoReading(result: AnalyzeSongResult, eighths: boolean) {
+  if (!result.tempo) return null;
+  return (eighths ? result.tempo.asEighths : null) ?? result.tempo;
+}
 
 function TempoReview({
   result,
@@ -1012,12 +1047,14 @@ function TempoReview({
   include,
   onInclude,
   onEdit,
+  eighths,
   onScale,
   onSeek,
 }: TempoReviewProps) {
   const { t } = useTranslation();
-  if (!result.tempo) return null;
-  const { analysis, proposal } = result.tempo;
+  const reading = tempoReading(result, eighths);
+  if (!reading) return null;
+  const { analysis, proposal } = reading;
   const { regionStartSeconds } = result;
 
   const songRows = rows.filter((row) => !row.restoresNextSong);

@@ -811,7 +811,11 @@ const es = {
         uncertainTempo:
           "El pulso no está claro: el tempo puede estar mal, o al doble o a la mitad.",
         unreliableClick:
-          "A partir de aquí el tempo del click sube y baja sin sentido y no se ha podido leer con fiabilidad: se ha puesto el tempo principal de la canción en vez de una marca por cada salto. Revisa la pista de click.",
+          "A partir de aquí los golpes del click no encajan en ningún tempo y no se ha podido leer con fiabilidad: se ha puesto el tempo principal de la canción en vez de una marca por cada salto. Revisa la pista de click.",
+        freeTempo:
+          "Aquí el click sigue a la banda (tempo libre): cambia de velocidad compás a compás y las marcas lo siguen.",
+        clickReadAsEighths:
+          "El click no tiene acento y se ha leído en corcheas: cada dos golpes, un tiempo.",
       },
     },
     levelSongs: {

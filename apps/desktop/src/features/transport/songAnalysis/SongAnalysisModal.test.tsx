@@ -68,6 +68,15 @@ const { useSongStore } = await import("../songStore");
 const audioTrack = (id: string, name: string) =>
   ({ id, name, kind: "audio", depth: 0, parentTrackId: null }) as never;
 
+const wholeSongClip = (id: string, trackId: string) =>
+  ({
+    id,
+    trackId,
+    filePath: `audio/${trackId}.wav`,
+    timelineStartSeconds: 0,
+    durationSeconds: 200,
+  }) as never;
+
 function song(): SongView {
   return {
     id: "s",
@@ -96,10 +105,10 @@ function song(): SongView {
       audioTrack("guide", "Guide"),
     ],
     clips: [
-      { id: "c1", trackId: "keys", timelineStartSeconds: 0, durationSeconds: 200 } as never,
-      { id: "c2", trackId: "drums", timelineStartSeconds: 0, durationSeconds: 200 } as never,
-      { id: "c3", trackId: "click", timelineStartSeconds: 0, durationSeconds: 200 } as never,
-      { id: "c4", trackId: "guide", timelineStartSeconds: 0, durationSeconds: 200 } as never,
+      wholeSongClip("c1", "keys"),
+      wholeSongClip("c2", "drums"),
+      wholeSongClip("c3", "click"),
+      wholeSongClip("c4", "guide"),
     ],
     projectRevision: 1,
   };
@@ -131,6 +140,7 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
         currentSignature: "4/4",
         unchanged: false,
       },
+      asEighths: null,
     },
     tempoUnavailable: null,
     key: {
@@ -166,6 +176,30 @@ afterEach(() => {
 async function analyzeAndReview() {
   fireEvent.click(screen.getByText("transport.songAnalysis.analyze"));
   await waitFor(() => expect(analyzeSong).toHaveBeenCalledTimes(1));
+}
+
+/** A click without accent: 142 as it sounds, 71 read as eighths. */
+function unaccentedTempo(): AnalyzeSongResult["tempo"] {
+  const reading = (bpm: number, at: number[]) => ({
+    analysis: {
+      segments: [{ startSeconds: 0, bpm, beatsPerBar: 4, beatUnit: 4, bars: 40 }],
+      warnings: [{ seconds: 0, kind: "noAccent" as const }],
+      beatCount: 160,
+      downbeatKnown: false,
+    },
+    proposal: {
+      tempoMarkers: [{ startSeconds: 100, bpm, restoresNextSong: false }],
+      signatureMarkers: at.map((startSeconds) => ({
+        startSeconds,
+        signature: "4/4",
+        restoresNextSong: false,
+      })),
+      currentBpm: 120,
+      currentSignature: "4/4",
+      unchanged: false,
+    },
+  });
+  return { ...reading(142, [100, 150.7]), asEighths: reading(71, [100, 152.4]) };
 }
 
 describe("SongAnalysisModal", () => {
@@ -364,6 +398,38 @@ describe("SongAnalysisModal", () => {
     fireEvent.click(screen.getByText(/transport\.songAnalysis\.speechDownload/));
     await screen.findByText("transport.songAnalysis.speechReady");
     expect(downloadSpeechModel).toHaveBeenCalledTimes(1);
+  });
+
+  it("÷2 and ×2 swap a click without accent between its two readings", async () => {
+    analyzeSong.mockResolvedValue(result({ tempo: unaccentedTempo() }));
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+
+    // Nothing names the tempo: the click as it sounds.
+    expect(await screen.findByDisplayValue("142")).toBeTruthy();
+    expect(screen.getByText("0:50.7")).toBeTruthy();
+    // Its bars come from the eighths reading, not 142 halved in place.
+    fireEvent.click(screen.getByText("÷2"));
+    expect(await screen.findByDisplayValue("71")).toBeTruthy();
+    expect(screen.getByText("0:52.4")).toBeTruthy();
+    expect(screen.queryByText("0:50.7")).toBeNull();
+    fireEvent.click(screen.getByText("×2"));
+    expect(await screen.findByDisplayValue("142")).toBeTruthy();
+    // Past the two readings it scales.
+    fireEvent.click(screen.getByText("×2"));
+    expect(await screen.findByDisplayValue("284")).toBeTruthy();
+  });
+
+  it("starts on the eighths reading when the song's name says its tempo", async () => {
+    const named = song();
+    named.regions[1] = { ...named.regions[1], name: "Digno de Adorar-MSM-D-71bpm" };
+    useSongStore.setState({ song: named });
+    analyzeSong.mockResolvedValue(result({ tempo: unaccentedTempo() }));
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+
+    expect(await screen.findByDisplayValue("71")).toBeTruthy();
+    expect(screen.getByText("0:52.4")).toBeTruthy();
   });
 
   it("will not apply an invalid value", async () => {

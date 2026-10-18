@@ -64,13 +64,22 @@ const MIN_BEATS: usize = 4;
 const ERRATIC_CHANGE_FRACTION: f64 = 0.015;
 /// Segments this short (in bars) that change the tempo are suspicious.
 const ERRATIC_SHORT_BARS: u32 = 2;
-/// A click read as this many short tempo changes, going up and down at least
-/// `ERRATIC_MIN_REVERSALS` times, is a misread click, not a band: a real click
-/// changes tempo a few times, or drifts one way (ritardando, accelerando). A
-/// multitrack whose click came out 114, 120, 116, 117.5, 121, 123, 137, 144,
-/// 141.4, 144, 142 bar after bar is the case this guards.
+/// This many short tempo changes, going up and down at least
+/// `ERRATIC_MIN_REVERSALS` times, is not a song changing tempo a few times or
+/// drifting one way (ritardando, accelerando). It is either a live click that
+/// follows the band through a free passage ("Digno de adorar", Miel San
+/// Marcos: 58, 61, 56, 60, 68, 72... bar after bar, every bar clean), or a
+/// misread click. `MISREAD_INTERVAL_SHARE` tells them apart.
 const ERRATIC_MIN_SHORT_CHANGES: usize = 4;
 const ERRATIC_MIN_REVERSALS: usize = 2;
+/// A live click holds each tempo for a bar or more, so even through a free
+/// passage most clicks follow the previous interval to the millisecond (the
+/// real one above changes it at about one click in ten). A misread one
+/// wobbles: a missed or stray click, or onsets smeared by bleed, change
+/// nearly every interval. Over this share of intervals stepping by more than
+/// `MISREAD_INTERVAL_STEP` makes it misread.
+const MISREAD_INTERVAL_SHARE: f64 = 0.4;
+const MISREAD_INTERVAL_STEP: f64 = 0.03;
 /// Segments whose tempos are this close count as the same tempo when
 /// choosing the dominant one.
 const SAME_TEMPO_FRACTION: f64 = 0.01;
@@ -127,6 +136,12 @@ pub enum ClickWarningKind {
     /// The click's tempo jumped up and down bar after bar: it could not be
     /// read reliably, and the song got its dominant tempo instead.
     UnreliableClick,
+    /// The click follows the band through a free passage: its tempo changes
+    /// bar after bar, and the markers follow it.
+    FreeTempo,
+    /// The click has no accent and was read as eighths: one click in two is
+    /// the beat (see `analyze_click_as_eighths`).
+    ClickReadAsEighths,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -153,25 +168,63 @@ pub fn analyze_click(
     sample_rate: u32,
     fallback_beats_per_bar: u32,
 ) -> ClickAnalysis {
+    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, false)
+        .expect("the plain reading always exists")
+}
+
+/// The same click read as eighths: one click in two is the beat, at half the
+/// tempo. A click without accent cannot tell a beat from an eighth (one every
+/// 0.42 s is 142, or 71 in eighths: "Digno de adorar", Miel San Marcos, is
+/// 71), and nothing in the audio settles it: the music's own pulse halved
+/// real songs at 125-128 on real multitracks as readily as it got this one
+/// right. So, as Ableton's ÷2 / ×2, the user picks. The beat is the first
+/// click and every other one from there: a click starts on a beat. `None`
+/// for a click with accent, whose accent already says where the beats are.
+pub fn analyze_click_as_eighths(
+    samples: &[f32],
+    sample_rate: u32,
+    fallback_beats_per_bar: u32,
+) -> Option<ClickAnalysis> {
+    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, true)
+}
+
+fn analyze_click_reading(
+    samples: &[f32],
+    sample_rate: u32,
+    fallback_beats_per_bar: u32,
+    as_eighths: bool,
+) -> Option<ClickAnalysis> {
     let onsets = detect_onsets(samples, sample_rate);
     let (beats, downbeat_known) = classify(&onsets);
+    if as_eighths && downbeat_known {
+        return None;
+    }
+    let mut warnings = Vec::new();
     let beats = if downbeat_known {
         beats
     } else {
-        fold_subdivisions(beats, UNACCENTED_SUBDIVISION_MAX_SECONDS)
+        let beats = fold_subdivisions(beats, UNACCENTED_SUBDIVISION_MAX_SECONDS);
+        if as_eighths {
+            warnings.push(ClickWarning {
+                seconds: beats.first().map_or(0.0, |b| b.seconds),
+                kind: ClickWarningKind::ClickReadAsEighths,
+            });
+            beats.into_iter().step_by(2).collect()
+        } else {
+            beats
+        }
     };
-    let mut warnings = Vec::new();
     if beats.len() < MIN_BEATS {
         warnings.push(ClickWarning {
             seconds: 0.0,
             kind: ClickWarningKind::NoClick,
         });
-        return ClickAnalysis {
+        return Some(ClickAnalysis {
             segments: Vec::new(),
             warnings,
             beat_count: beats.len(),
             downbeat_known: false,
-        };
+        });
     }
     if !downbeat_known {
         warnings.push(ClickWarning {
@@ -179,13 +232,13 @@ pub fn analyze_click(
             kind: ClickWarningKind::NoAccent,
         });
     }
-    tempo_map_from_beats(
+    Some(tempo_map_from_beats(
         &beats,
         downbeat_known,
         fallback_beats_per_bar,
         CLICK_TOLERANCES,
         warnings,
-    )
+    ))
 }
 
 /// Beats (with their downbeats) to the analysis: bars, constant-tempo
@@ -205,17 +258,28 @@ pub(crate) fn tempo_map_from_beats(
         &mut warnings,
     );
     let mut segments = segment_bars(&bars, tolerances, &mut warnings);
-    if let Some(at) = erratic_from(&segments) {
-        // Dozens of markers that jump around are worse than one tempo that
-        // is a little off: keep the dominant one and say so.
-        segments = vec![dominant_segment(&segments)];
-        warnings.retain(|w| w.kind != ClickWarningKind::IrregularBar);
-        warnings.push(ClickWarning {
-            seconds: at,
-            kind: ClickWarningKind::UnreliableClick,
-        });
-    } else {
-        flag_tempo_and_meter_oddities(&segments, &mut warnings);
+    match erratic_span(&segments) {
+        Some((from, to)) if misread_between(beats, from, to) => {
+            // Dozens of markers that jump around are worse than one tempo
+            // that is a little off: keep the dominant one and say so.
+            segments = vec![dominant_segment(&segments)];
+            warnings.retain(|w| w.kind != ClickWarningKind::IrregularBar);
+            warnings.push(ClickWarning {
+                seconds: from,
+                kind: ClickWarningKind::UnreliableClick,
+            });
+        }
+        Some((from, _)) => {
+            // The click is right: the band plays free here. One warning for
+            // the passage instead of one per drifting bar.
+            flag_tempo_and_meter_oddities(&segments, &mut warnings);
+            warnings.retain(|w| w.kind != ClickWarningKind::VariableTempo);
+            warnings.push(ClickWarning {
+                seconds: from,
+                kind: ClickWarningKind::FreeTempo,
+            });
+        }
+        None => flag_tempo_and_meter_oddities(&segments, &mut warnings),
     }
     warnings.sort_by(|a, b| a.seconds.total_cmp(&b.seconds));
     ClickAnalysis {
@@ -815,13 +879,33 @@ fn round_tempo(times: &[f64], period: f64, beat_unit: u32, max_drift: f64) -> (f
     fallback.unwrap_or((times.first().copied().unwrap_or(0.0), raw_bpm))
 }
 
-/// Where the tempo map starts jumping around, if it does (see
-/// `ERRATIC_MIN_SHORT_CHANGES`).
-fn erratic_from(segments: &[TempoSegment]) -> Option<f64> {
+/// Whether the beats in `from..=to` wobble (see `MISREAD_INTERVAL_SHARE`).
+fn misread_between(beats: &[Beat], from: f64, to: f64) -> bool {
+    let times: Vec<f64> = beats
+        .iter()
+        .map(|b| b.seconds)
+        .filter(|t| (from - 1.0e-3..=to + 1.0e-3).contains(t))
+        .collect();
+    let intervals: Vec<f64> = times.windows(2).map(|w| w[1] - w[0]).collect();
+    if intervals.len() < 2 {
+        return false;
+    }
+    let steps = intervals
+        .windows(2)
+        .filter(|pair| (pair[1] / pair[0] - 1.0).abs() > MISREAD_INTERVAL_STEP)
+        .count();
+    steps as f64 > MISREAD_INTERVAL_SHARE * (intervals.len() - 1) as f64
+}
+
+/// The stretch where the tempo map jumps around, if it does (see
+/// `ERRATIC_MIN_SHORT_CHANGES`): from the first short change to the end of
+/// the last one.
+fn erratic_span(segments: &[TempoSegment]) -> Option<(f64, f64)> {
     let mut short_changes = 0;
     let mut reversals = 0;
     let mut last_direction = 0.0_f64;
     let mut first_change: Option<f64> = None;
+    let mut last_change_end = 0.0_f64;
     for pair in segments.windows(2) {
         let [before, after] = pair else {
             continue;
@@ -833,6 +917,7 @@ fn erratic_from(segments: &[TempoSegment]) -> Option<f64> {
         if after.bars <= ERRATIC_SHORT_BARS || before.bars <= ERRATIC_SHORT_BARS {
             short_changes += 1;
             first_change.get_or_insert(after.start_seconds);
+            last_change_end = after.start_seconds + f64::from(after.bars) * after.bar_seconds();
         }
         let direction = change.signum();
         if last_direction != 0.0 && direction != last_direction {
@@ -840,8 +925,9 @@ fn erratic_from(segments: &[TempoSegment]) -> Option<f64> {
         }
         last_direction = direction;
     }
+    let from = first_change?;
     (short_changes >= ERRATIC_MIN_SHORT_CHANGES && reversals >= ERRATIC_MIN_REVERSALS)
-        .then(|| first_change.unwrap_or(0.0))
+        .then_some((from, last_change_end))
 }
 
 /// The tempo most of the song's bars agree on, as one segment anchored on
@@ -1149,7 +1235,7 @@ mod tests {
     }
 
     #[test]
-    fn a_click_whose_tempo_zigzags_gets_its_dominant_tempo() {
+    fn a_live_click_through_a_free_passage_keeps_its_markers() {
         let (mut clicks, mut t) = bars_at(0.0, 120.0, 4, 8);
         for bpm in [114.0, 128.0, 116.0, 131.0, 118.0] {
             let (more, end) = bars_at(t, bpm, 4, 2);
@@ -1157,6 +1243,31 @@ mod tests {
             t = end;
         }
         let (more, _) = bars_at(t, 120.0, 4, 8);
+        clicks.extend(more);
+        let analysis = analyze_click(&render(&clicks), RATE, 4);
+        let bpms: Vec<f64> = analysis.segments.iter().map(|s| s.bpm).collect();
+        assert_eq!(bpms, [120.0, 114.0, 128.0, 116.0, 131.0, 118.0, 120.0]);
+        assert!(
+            kinds(&analysis).contains(&ClickWarningKind::FreeTempo),
+            "{analysis:?}"
+        );
+        assert!(!kinds(&analysis).contains(&ClickWarningKind::UnreliableClick));
+        assert!(!kinds(&analysis).contains(&ClickWarningKind::VariableTempo));
+    }
+
+    #[test]
+    fn a_wobbling_click_gets_its_dominant_tempo() {
+        let (mut clicks, end) = bars_at(0.0, 120.0, 4, 8);
+        // Onsets smeared ±30 ms (bleed, a sloppy click) for 12 bars.
+        let (mut middle, end) = bars_at(end, 120.0, 4, 12);
+        let mut seed = 7_u32;
+        for click in &mut middle {
+            seed = seed.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+            let unit = f64::from(seed >> 16 & 0x7fff) / f64::from(0x7fff);
+            click.seconds += (unit - 0.5) * 0.06;
+        }
+        clicks.extend(middle);
+        let (more, _) = bars_at(end, 120.0, 4, 8);
         clicks.extend(more);
         let analysis = analyze_click(&render(&clicks), RATE, 4);
         assert_eq!(analysis.segments.len(), 1, "{analysis:?}");
@@ -1167,6 +1278,37 @@ mod tests {
             "{analysis:?}"
         );
         assert!(!kinds(&analysis).contains(&ClickWarningKind::VariableTempo));
+    }
+
+    /// Clicks all alike every `period` from `start`.
+    fn unaccented(start: f64, period: f64, count: usize) -> Vec<Click> {
+        (0..count)
+            .map(|i| Click {
+                seconds: start + i as f64 * period,
+                frequency: LOW,
+                amplitude: 0.8,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_unaccented_click_can_be_read_as_eighths() {
+        // "Digno de adorar": a click every 0.4225 s (142), the song at 71.
+        let eighth = 60.0 / 142.0;
+        let samples = render(&unaccented(0.5, eighth, 160));
+        assert_eq!(analyze_click(&samples, RATE, 4).segments[0].bpm, 142.0);
+        let eighths = analyze_click_as_eighths(&samples, RATE, 4).expect("no accent");
+        assert_eq!(eighths.segments.len(), 1, "{eighths:?}");
+        assert_eq!(eighths.segments[0].bpm, 71.0);
+        assert_close(eighths.segments[0].start_seconds, 0.5, 0.002);
+        assert_eq!(eighths.segments[0].bars, 20);
+        assert!(kinds(&eighths).contains(&ClickWarningKind::ClickReadAsEighths));
+    }
+
+    #[test]
+    fn an_accented_click_has_no_eighths_reading() {
+        let (clicks, _) = bars_at(0.5, 142.0, 4, 16);
+        assert!(analyze_click_as_eighths(&render(&clicks), RATE, 4).is_none());
     }
 
     #[test]
