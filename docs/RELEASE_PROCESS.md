@@ -560,8 +560,9 @@ unfinished release. The loop is:
 4. Go back to step 1. Repeat until the pipeline succeeds.
 
 Note: only cancel for a *real* failure on a blocking job. A `continue-on-error`
-job going red (e.g. the `macos-15-intel` validation build) does NOT fail the
-release — don't cancel for those; let the run finish and publish.
+job going red does NOT fail the release — don't cancel for those; let the run
+finish and publish. (Since v1.14.0 a tag runs no such leg: the `macos-15-intel`
+validation build was dropped from releases, see below.)
 
 Auth — the GitHub token lives in the Windows Credential Manager; pull it from
 there. `gh auth login` may reject that token for missing the `read:org`
@@ -593,7 +594,7 @@ Jobs and what each one gates (as of v1.10.0):
 |-----|---------------------|
 | `test` | Yes — unit suites (JS + Rust + native ctest) on all three OSes. |
 | `e2e-windows` | **Disabled** (`if: false`) — see below. |
-| `build-release-assets` | Yes, except the `macos-15-intel` leg (`publish: false`). |
+| `build-release-assets` | Yes. Windows, universal macOS and Linux; all three publish. |
 | `publish-release` | Needs `test` and the publishable `build-release-assets` legs green. Creates a **draft**; the user publishes it. |
 
 `e2e-windows` is a **separate job on purpose**. It used to be two steps at the
@@ -644,26 +645,22 @@ To re-enable, **all three changes go together**: `if:` back to
 `startsWith(github.ref, 'refs/tags/v')`, delete `continue-on-error`, and put
 `e2e-windows` back in `publish-release`'s `needs`.
 
-Triage before "fixing": some jobs are `continue-on-error: true` (e.g. the
-`macos-15-intel` Intel validation build, `publish: false`) — those fail
-red but DO NOT block the release, which still publishes. Also separate a
-real code/workflow bug from a transient runner flake (DNS/network on a
-download step reads as a code error but isn't ours). Prefer a structural
-fix that removes the flaky work over a blind retry — e.g. the Intel runner
-was pulling the arm64 Rust std it never compiles with; scoping the target
-install per-runner deleted the download that flaked.
+Triage before "fixing": separate a real code/workflow bug from a transient
+runner flake (DNS/network on a download step reads as a code error but isn't
+ours). Prefer a structural fix that removes the flaky work over a blind retry
+— e.g. the Intel runner was pulling the arm64 Rust std it never compiles
+with; scoping the target install per-runner deleted the download that flaked.
 
-Known, still open (seen twice in v1.10.0): `macos-15-intel` dies within a
-second of `scripts/build-ffmpeg-universal.sh` starting, with
-`curl: (35) Recv failure: Connection reset by peer` fetching
-`https://ffmpeg.org/releases/ffmpeg-7.1.1.tar.xz`. The `macos-latest` leg runs
-the same script over the same URL and is fine, so it looks specific to the
-Intel runner's route to ffmpeg.org rather than to our code. It is
-`continue-on-error` + `publish: false`, so it does NOT block publishing —
-do not move the tag for it mid-release. If it becomes worth fixing, diagnose
-before adding `curl --retry`: a blind retry would paper over whatever the
-runner is actually hitting (rate limiting vs. no route), and the download is
-cheap to mirror or cache instead.
+**The `macos-15-intel` leg is no longer part of a release** (dropped after
+v1.14.0). It built an x86_64-only app that is never published — Intel Macs
+get the universal DMG from `macos-latest`, whose bundled dylibs step 4c checks
+for both slices — and it never launched it. It still cost ~27 minutes per
+tag: the slowest runner, building FFmpeg + libmpv + the app cold (caches are
+scoped to the tag ref, so no release ever reuses the previous one's), and the
+draft waited for it. It also had runner-specific flakes of its own
+(`curl: (35)` fetching ffmpeg.org, twice in v1.10.0). To check that the app
+still builds on an Intel host, run the Release workflow by hand from Actions
+with **macos_intel** ticked.
 
 Re-trigger after a fix: commit the fix, then MOVE the tag to the new
 commit and force-push it (the pipeline keys on the tag). The release-create

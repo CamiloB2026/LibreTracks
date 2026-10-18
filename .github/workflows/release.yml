@@ -10,6 +10,11 @@ on:
   # android-release.yml, like iOS, so the desktop release never waits for (or
   # fails on) the Android toolchain or a Play credential.
   workflow_dispatch:
+    inputs:
+      macos_intel:
+        description: "Build on the Intel macOS runner (x86_64 only, never published) instead of the universal macOS job"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -276,9 +281,16 @@ jobs:
     needs: test
     strategy:
       fail-fast: false
-      # Tags keep the full official matrix, including Intel validation. Every
-      # non-tag invocation is deliberately reduced to the universal macOS job.
-      matrix: ${{ fromJSON(startsWith(github.ref, 'refs/tags/v') && '{"include":[{"os":"windows-latest","platform":"windows","publish":true},{"os":"macos-latest","platform":"macos","publish":true},{"os":"ubuntu-22.04","platform":"linux","publish":true},{"os":"macos-15-intel","platform":"macos","publish":false}]}' || '{"include":[{"os":"macos-latest","platform":"macos","publish":true}]}') }}
+      # Tags build exactly what gets published. Every non-tag invocation is
+      # reduced to the universal macOS job, or, with the `macos_intel` input,
+      # to the Intel runner.
+      #
+      # The Intel leg is no longer part of a release: it built an x86_64-only
+      # app nobody downloads (Intel Macs get the universal DMG, whose x86_64
+      # slices step 4c already checks) and never launched it, yet the draft
+      # waited ~27 extra minutes for it on every tag. Run it by hand when a
+      # change could break building on an Intel host.
+      matrix: ${{ fromJSON(startsWith(github.ref, 'refs/tags/v') && '{"include":[{"os":"windows-latest","platform":"windows","publish":true},{"os":"macos-latest","platform":"macos","publish":true},{"os":"ubuntu-22.04","platform":"linux","publish":true}]}' || inputs.macos_intel && '{"include":[{"os":"macos-15-intel","platform":"macos","publish":false}]}' || '{"include":[{"os":"macos-latest","platform":"macos","publish":true}]}') }}
     runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.publish == false }}
 
