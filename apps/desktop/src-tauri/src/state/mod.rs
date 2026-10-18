@@ -72,6 +72,7 @@ mod video_library;
 mod video_audio;
 mod regions;
 mod session;
+pub use external_import::parse_external_project;
 pub use session::ExistingProjectDir;
 mod song_analysis;
 pub use song_analysis::AnalysedSection;

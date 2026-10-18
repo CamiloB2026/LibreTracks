@@ -49,75 +49,27 @@ impl DesktopSession {
         resolve_overlap: bool,
         audio: &AudioController,
     ) -> Result<SongPackageImportResponse, DesktopError> {
-        let started_at = Instant::now();
-        let project_path = Path::new(project_path);
-        eprintln!(
-            "[libretracks-import] begin external import path={} desired_seconds={:.3} resolve_overlap={}",
-            project_path.to_string_lossy(),
-            desired_seconds,
-            resolve_overlap
-        );
-        let audio_debug_raw = std::env::var("LIBRETRACKS_AUDIO_DEBUG")
-            .ok()
-            .unwrap_or_else(|| "<unset>".to_string());
-        let audio_debug_enabled = audio_debug_logging_enabled();
-        eprintln!(
-            "[libretracks-import] env LIBRETRACKS_AUDIO_DEBUG raw={} enabled={}",
-            audio_debug_raw, audio_debug_enabled
-        );
-        let kind = detect_external_project_kind(project_path).ok_or_else(|| {
-            DesktopError::AudioCommand(
-                "formato no soportado. Usa un .rpp (Reaper) o .als (Ableton Live)".into(),
-            )
-        })?;
-        eprintln!("[libretracks-import] detected kind={kind:?}");
+        let parsed = parse_external_project(project_path)?;
+        self.import_parsed_external_project_at(parsed, desired_seconds, resolve_overlap, audio)
+    }
 
-        let result = match kind {
-            ExternalProjectKind::Reaper => {
-                let parse_started = Instant::now();
-                let parsed =
-                    parse_reaper_project(project_path).map_err(DesktopError::AudioCommand)?;
-                eprintln!(
-                    "[libretracks-import] parsed reaper title={} tracks={} regions={} markers={} tempo_markers={} time_signature_markers={} duration={:.3}s parse_ms={}",
-                    parsed.title,
-                    parsed.tracks.len(),
-                    parsed.regions.len(),
-                    parsed.section_markers.len(),
-                    parsed.tempo_markers.len(),
-                    parsed.time_signature_markers.len(),
-                    parsed.duration_seconds,
-                    parse_started.elapsed().as_millis()
-                );
-                let insert = if resolve_overlap {
-                    self.resolve_external_insert_seconds(desired_seconds, parsed.duration_seconds)
-                } else {
-                    desired_seconds
-                };
-                self.import_reaper_project(parsed, insert, audio)
-            }
-            ExternalProjectKind::Ableton => {
-                let parse_started = Instant::now();
-                let parsed =
-                    parse_ableton_project(project_path).map_err(DesktopError::AudioCommand)?;
-                eprintln!(
-                    "[libretracks-import] parsed ableton title={} tracks={} regions={} markers={} tempo_markers={} time_signature_markers={} duration={:.3}s parse_ms={}",
-                    parsed.title,
-                    parsed.tracks.len(),
-                    parsed.regions.len(),
-                    parsed.section_markers.len(),
-                    parsed.tempo_markers.len(),
-                    parsed.time_signature_markers.len(),
-                    parsed.duration_seconds,
-                    parse_started.elapsed().as_millis()
-                );
-                let insert = if resolve_overlap {
-                    self.resolve_external_insert_seconds(desired_seconds, parsed.duration_seconds)
-                } else {
-                    desired_seconds
-                };
-                self.import_reaper_project(parsed, insert, audio)
-            }
+    /// Second half of [`Self::import_external_project_at`], for callers that
+    /// parsed first with [`parse_external_project`] (to fail before creating
+    /// the bootstrap session).
+    pub fn import_parsed_external_project_at(
+        &mut self,
+        parsed: ReaperProject,
+        desired_seconds: f64,
+        resolve_overlap: bool,
+        audio: &AudioController,
+    ) -> Result<SongPackageImportResponse, DesktopError> {
+        let started_at = Instant::now();
+        let insert = if resolve_overlap {
+            self.resolve_external_insert_seconds(desired_seconds, parsed.duration_seconds)
+        } else {
+            desired_seconds
         };
+        let result = self.import_reaper_project(parsed, insert, audio);
 
         match &result {
             Ok(response) => {
@@ -606,6 +558,77 @@ impl DesktopSession {
     }
 }
 
+/// Parse a `.rpp`/`.als` and check that it can actually be imported, without
+/// touching any session. Callers that bootstrap an empty `import-session-…`
+/// for the import run this FIRST: a project that fails here must not leave a
+/// new empty session open behind the error.
+///
+/// "Importable" means at least one (unmuted) audio file exists on disk. A
+/// project copied without its audio folder, or one whose paths only exist on
+/// the author's machine, is rejected here with a message that says so instead
+/// of the bare `os error 2` the decoder would give later.
+pub fn parse_external_project(project_path: &str) -> Result<ReaperProject, DesktopError> {
+    let project_path = Path::new(project_path);
+    eprintln!(
+        "[libretracks-import] begin external import path={}",
+        project_path.to_string_lossy()
+    );
+    let audio_debug_raw = std::env::var("LIBRETRACKS_AUDIO_DEBUG")
+        .ok()
+        .unwrap_or_else(|| "<unset>".to_string());
+    let audio_debug_enabled = audio_debug_logging_enabled();
+    eprintln!(
+        "[libretracks-import] env LIBRETRACKS_AUDIO_DEBUG raw={} enabled={}",
+        audio_debug_raw, audio_debug_enabled
+    );
+    let kind = detect_external_project_kind(project_path).ok_or_else(|| {
+        DesktopError::AudioCommand(
+            "formato no soportado. Usa un .rpp (Reaper) o .als (Ableton Live)".into(),
+        )
+    })?;
+    eprintln!("[libretracks-import] detected kind={kind:?}");
+
+    let parse_started = Instant::now();
+    let parsed = match kind {
+        ExternalProjectKind::Reaper => parse_reaper_project(project_path),
+        ExternalProjectKind::Ableton => parse_ableton_project(project_path),
+    }
+    .map_err(DesktopError::AudioCommand)?;
+    eprintln!(
+        "[libretracks-import] parsed {kind:?} title={} tracks={} regions={} markers={} tempo_markers={} time_signature_markers={} duration={:.3}s parse_ms={}",
+        parsed.title,
+        parsed.tracks.len(),
+        parsed.regions.len(),
+        parsed.section_markers.len(),
+        parsed.tempo_markers.len(),
+        parsed.time_signature_markers.len(),
+        parsed.duration_seconds,
+        parse_started.elapsed().as_millis()
+    );
+
+    let sources = parsed
+        .tracks
+        .iter()
+        .flat_map(|track| track.items.iter())
+        .filter(|item| !item.muted)
+        .map(|item| &item.source_path)
+        .collect::<Vec<_>>();
+    let Some(first_source) = sources.first() else {
+        return Err(DesktopError::AudioCommand(
+            "el proyecto no contiene audio importable".into(),
+        ));
+    };
+    if !sources.iter().any(|source| source.is_file()) {
+        return Err(DesktopError::AudioCommand(format!(
+            "no se encontró ninguno de los archivos de audio del proyecto (por ejemplo {}). \
+             Comprueba que la carpeta del proyecto incluye sus audios",
+            first_source.to_string_lossy()
+        )));
+    }
+
+    Ok(parsed)
+}
+
 fn normalize_external_source_key(path: &Path) -> String {
     path.to_string_lossy()
         .replace('\\', "/")
@@ -769,5 +792,67 @@ fn ensure_unique_imported_song_entity_ids(song: &mut Song) {
             marker.id =
                 unique_song_entity_id("time_signature_marker_import", &marker.signature, &mut used);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_external_project;
+    use std::fs;
+
+    fn write_als(dir: &std::path::Path, relative_audio: &str) -> String {
+        let project_path = dir.join("song.als");
+        let als = format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<Ableton><LiveSet><Tracks><AudioTrack>
+    <Name><EffectiveName Value="Bass"/></Name>
+    <DeviceChain><MainSequencer><Sample><ArrangerAutomation><Events>
+        <AudioClip>
+            <CurrentStart Value="0"/>
+            <CurrentEnd Value="8"/>
+            <SampleRef><FileRef><RelativePath Value="{relative_audio}"/></FileRef></SampleRef>
+        </AudioClip>
+    </Events></ArrangerAutomation></Sample></MainSequencer></DeviceChain>
+</AudioTrack></Tracks></LiveSet></Ableton>
+"#
+        );
+        fs::write(&project_path, als).expect("write als");
+        project_path.to_string_lossy().to_string()
+    }
+
+    #[test]
+    fn rejects_a_project_whose_audio_is_all_missing() {
+        // The bootstrap `import-session-…` is only created after this passes, so
+        // rejecting here is what keeps a failed import from leaving an empty
+        // session open (it used to fail later with a bare "os error 2").
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project_path = write_als(temp.path(), "Samples/Bass.wav");
+
+        let error = parse_external_project(&project_path).expect_err("must reject");
+        let message = error.to_string();
+        assert!(
+            message.contains("no se encontró ninguno de los archivos de audio"),
+            "unexpected error: {message}"
+        );
+        assert!(message.contains("Bass.wav"), "should name a file: {message}");
+    }
+
+    #[test]
+    fn accepts_a_project_with_its_audio_present() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("Samples")).expect("mkdir");
+        fs::write(temp.path().join("Samples").join("Bass.wav"), b"wav").expect("write wav");
+        let project_path = write_als(temp.path(), "Samples/Bass.wav");
+
+        let parsed = parse_external_project(&project_path).expect("importable");
+        assert_eq!(parsed.tracks.len(), 1);
+    }
+
+    #[test]
+    fn rejects_an_unsupported_extension_before_anything_else() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let path = temp.path().join("song.txt");
+        fs::write(&path, b"x").expect("write");
+        assert!(parse_external_project(path.to_string_lossy().as_ref()).is_err());
     }
 }

@@ -424,6 +424,12 @@ fn import_external_project_off_lock(
 ) -> Result<TransportSnapshot, String> {
     crate::state::emit_project_load_message(app, 5, "Leyendo proyecto externo...".into());
 
+    // Parse and validate BEFORE the bootstrap below: a project that cannot be
+    // imported must not leave an empty `import-session-…` open behind the
+    // error. Also keeps the parse off the session lock.
+    let parsed =
+        crate::state::parse_external_project(project_path).map_err(|error| error.to_string())?;
+
     let mut session = state
         .session
         .lock()
@@ -435,12 +441,11 @@ fn import_external_project_off_lock(
         .ensure_song_loaded_for_external_import(app, &state.audio)
         .map_err(|error| error.to_string())?;
 
-    // The drop X is the DESIRED position; import_external_project resolves it
-    // against existing songs (falling back to the setlist end if it would
-    // overlap), since a whole project becomes song region(s) that may not
-    // overlap.
+    // The drop X is the DESIRED position; the import resolves it against
+    // existing songs (falling back to the setlist end if it would overlap),
+    // since a whole project becomes song region(s) that may not overlap.
     let response = session
-        .import_external_project_at(project_path, insert_at_seconds, true, &state.audio)
+        .import_parsed_external_project_at(parsed, insert_at_seconds, true, &state.audio)
         .map_err(|error| error.to_string())?;
     // Return as soon as the model is ready; `spawn_project_work` emits
     // project:load-complete and THEN drains the decode in the background (see
@@ -505,6 +510,11 @@ pub fn pick_and_import_external_project_from_dialog(
         target_pick.to_string_lossy()
     );
 
+    // Parse and validate before the bootstrap session exists (see
+    // `import_external_project_off_lock`).
+    let parsed = crate::state::parse_external_project(project_file.to_string_lossy().as_ref())
+        .map_err(|error| error.to_string())?;
+
     let mut session = state
         .session
         .lock()
@@ -514,11 +524,7 @@ pub fn pick_and_import_external_project_from_dialog(
         .map_err(|error| error.to_string())?;
     let insert_at_seconds = session.transport_position_seconds();
     session
-        .import_external_project(
-            project_file.to_string_lossy().as_ref(),
-            insert_at_seconds,
-            &state.audio,
-        )
+        .import_parsed_external_project_at(parsed, insert_at_seconds, false, &state.audio)
         .map_err(|error| error.to_string())?;
     eprintln!("[libretracks-import] wizard waiting for post-import audio preparation");
     session
