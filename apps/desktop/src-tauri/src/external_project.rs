@@ -820,9 +820,16 @@ fn collect_attributes(start: &BytesStart<'_>) -> Vec<(String, String)> {
         .attributes()
         .flatten()
         .map(|attribute| {
+            // Live escapes `&`, `'`, `"`, `<`, `>` in values. Paths are values,
+            // so "Dios & Rey/Bass.wav" arrives as "Dios &amp; Rey/Bass.wav" and
+            // the raw bytes name a file that does not exist.
+            let value = attribute
+                .unescape_value()
+                .map(|value| value.into_owned())
+                .unwrap_or_else(|_| String::from_utf8_lossy(attribute.value.as_ref()).to_string());
             (
                 String::from_utf8_lossy(attribute.key.as_ref()).to_string(),
-                String::from_utf8_lossy(attribute.value.as_ref()).to_string(),
+                value,
             )
         })
         .collect()
@@ -1561,7 +1568,7 @@ fn build_track(builder: ReaperTrackBuilder, index: usize) -> ReaperTrack {
 }
 
 fn build_ableton_track(builder: AbletonTrackBuilder, index: usize) -> ReaperTrack {
-    // Multitrack packs often leave Live's automatic "1-Audio", "2-Audio"...
+    // Multitrack packs often leave Live's automatic "1-Audio" or "1-Click"
     // and only the stems carry the instrument, so the file name is the better
     // track name there.
     let stem_name = builder
@@ -1576,7 +1583,11 @@ fn build_ableton_track(builder: AbletonTrackBuilder, index: usize) -> ReaperTrac
             .name
             .map(|name| name.trim().to_string())
             .filter(|name| !name.is_empty())
-            .filter(|name| stem_name.is_none() || !is_ableton_default_track_name(name))
+            .filter(|name| {
+                stem_name
+                    .as_deref()
+                    .map_or(true, |stem| !is_ableton_default_track_name(name, stem))
+            })
             .or(stem_name)
             .unwrap_or_else(|| format!("Track {}", index + 1)),
         volume: builder.volume.max(0.0),
@@ -1588,13 +1599,14 @@ fn build_ableton_track(builder: AbletonTrackBuilder, index: usize) -> ReaperTrac
     }
 }
 
-/// Live's automatic audio track name: `<number>-Audio`.
-fn is_ableton_default_track_name(name: &str) -> bool {
+/// Live's automatic audio track names: `<number>-Audio` for an empty track,
+/// `<number>-<stem>` once a file is dropped on it.
+fn is_ableton_default_track_name(name: &str, stem: &str) -> bool {
     name.split_once('-')
-        .map(|(number, kind)| {
+        .map(|(number, rest)| {
             !number.is_empty()
                 && number.chars().all(|c| c.is_ascii_digit())
-                && kind.eq_ignore_ascii_case("Audio")
+                && (rest.eq_ignore_ascii_case("Audio") || rest.eq_ignore_ascii_case(stem))
         })
         .unwrap_or(false)
 }
@@ -2259,12 +2271,46 @@ mod tests {
         }
 
         #[test]
+        fn ableton_unescapes_xml_entities_in_paths() {
+                // Live 12 writes the path of a folder named "Dios & Rey's" as
+                // `Dios &amp; Rey&apos;s`. Read raw, no candidate existed and the
+                // import failed with "io error: No such file or directory".
+                let temp = tempfile::tempdir().expect("tempdir");
+                let folder = temp.path().join("Dios & Rey's");
+                let source_path = folder.join("Bass & Keys.wav");
+                fs::create_dir_all(&folder).expect("mkdir");
+                fs::write(&source_path, b"wav").expect("write wav");
+                let project_path = temp.path().join("song.als");
+                let absolute = source_path
+                        .to_string_lossy()
+                        .replace('&', "&amp;")
+                        .replace('\'', "&apos;");
+                fs::write(
+                        &project_path,
+                        ableton_set_with_file_ref(&format!(
+                                r#"<FileRef>
+                                <RelativePathType Value="3"/>
+                                <RelativePath Value="Dios &amp; Rey&apos;s/Bass &amp; Keys.wav"/>
+                                <Path Value="{absolute}"/>
+                            </FileRef>"#
+                        )),
+                )
+                .expect("write als");
+
+                let parsed = parse_ableton_project(&project_path).expect("parse ableton");
+                assert_eq!(parsed.tracks[0].items[0].source_path, source_path);
+        }
+
+        #[test]
         fn ableton_default_track_name_falls_back_to_the_stem_name() {
-                assert!(is_ableton_default_track_name("1-Audio"));
-                assert!(is_ableton_default_track_name("12-Audio"));
-                assert!(!is_ableton_default_track_name("Bass"));
-                assert!(!is_ableton_default_track_name("1-MIDI"));
-                assert!(!is_ableton_default_track_name("Audio"));
+                assert!(is_ableton_default_track_name("1-Audio", "Bass"));
+                assert!(is_ableton_default_track_name("12-Audio", "Bass"));
+                // Live 12 after dropping "Click.m4a" on track 1.
+                assert!(is_ableton_default_track_name("1-Click", "Click"));
+                assert!(!is_ableton_default_track_name("Bass", "Bass"));
+                assert!(!is_ableton_default_track_name("1-MIDI", "Bass"));
+                assert!(!is_ableton_default_track_name("1-Click", "Bass"));
+                assert!(!is_ableton_default_track_name("Audio", "Bass"));
 
                 let temp = tempfile::tempdir().expect("tempdir");
                 let source_path = temp.path().join("Click Track.wav");
