@@ -1125,8 +1125,14 @@ jobs:
           path: target-desktop-native/**/bundle/**/*
           if-no-files-found: error
 
+  # Leaves the release as a DRAFT with every installer attached. Publishing is
+  # a manual click on GitHub ("Publish release"), so the whole pipeline can run
+  # days before the store reviews come back. Until then nothing sees it: the
+  # in-app update check reads `releases/latest` (drafts excluded) and the
+  # download page filters drafts out. Publishing fires website-deploy.yml,
+  # which rebuilds the website.
   publish-release:
-    name: Publish release
+    name: Create draft release
     if: startsWith(github.ref, 'refs/tags/v')
     # e2e-windows is deliberately NOT in this list yet. The job builds the app
     # correctly (vcpkg + ASIO + Bungee all resolve), but the suite cannot get a
@@ -1186,18 +1192,21 @@ jobs:
             exit 1
           fi
 
+          # A re-run (tag moved after a fix) replaces the previous DRAFT. A
+          # release that is already published is never touched: deleting it
+          # would pull the version from users mid-update.
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            IS_DRAFT="$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)"
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::Release $GITHUB_REF_NAME is already published; not replacing it." >&2
+              exit 1
+            fi
             gh release delete "$GITHUB_REF_NAME" --yes
           fi
 
           gh release create "$GITHUB_REF_NAME" "${ASSETS[@]}" \
+            --draft \
             --title "LibreTracks $GITHUB_REF_NAME" \
             "${NOTES_ARGS[@]}"
 
-  notify-website:
-    name: Trigger Website Rebuild
-    needs: publish-release
-    runs-on: ubuntu-latest
-    steps:
-      - name: Send Deploy Hook to Cloudflare
-        run: curl -X POST "${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}"
+          echo "::notice::Draft release $GITHUB_REF_NAME ready. Publish it on GitHub when the store reviews are approved."
