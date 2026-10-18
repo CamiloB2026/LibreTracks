@@ -141,6 +141,10 @@ export function NetworkSessionModal() {
                 <RemoteFirewallNotice textKeys="networkSession.firewall" />
                 {settings ? (
                   <HostSettingsForm
+                    // Remount on new saved settings instead of copying them into
+                    // the draft from an effect: that effect could land after
+                    // the first keystroke and wipe it.
+                    key={JSON.stringify(settings)}
                     settings={settings}
                     disabled={busy}
                     onSave={(next) =>
@@ -462,7 +466,6 @@ function HostSettingsForm({
 }) {
   const { t } = useTranslation();
   const [draft, setDraft] = useState(settings);
-  useEffect(() => setDraft(settings), [settings]);
   const dirty = JSON.stringify(draft) !== JSON.stringify(settings);
 
   return (
