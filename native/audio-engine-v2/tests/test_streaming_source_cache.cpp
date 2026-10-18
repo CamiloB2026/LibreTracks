@@ -670,19 +670,36 @@ TEST_CASE("a missing streaming file backs off instead of retrying every batch") 
     REQUIRE(manager.try_install_native_file(source_id, kSampleRate));
     REQUIRE(std::remove(wav_path.c_str()) == 0);
 
+    constexpr int kBatches = 40;
     uint64_t actual_open_attempts = 0;
     uint64_t actual_open_failures = 0;
-    for (int attempt = 0; attempt < 40; ++attempt) {
+    const auto started = std::chrono::steady_clock::now();
+    for (int attempt = 0; attempt < kBatches; ++attempt) {
         manager.request_block(source_id, 1, /*urgent=*/true);
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
         const auto io = manager.take_fill_io_stats();
         actual_open_attempts += io.open_count;
         actual_open_failures += io.open_failures;
     }
+    const auto elapsed_ms = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - started).count());
 
-    // Forty queue batches span ~200 ms. Exponential 20/40/80/160 ms backoff
-    // should turn them into only a handful of real sf_open calls, not forty.
-    CHECK(actual_open_attempts <= 6);
+    // The bound follows the real elapsed time, not the nominal 40 x 5 ms: a
+    // CI runner oversleeps (1.28 s instead of ~200 ms on macOS), and the
+    // 20/40/80/160/320/500 ms schedule legitimately fits more opens in that.
+    // Count what the schedule allows in `elapsed_ms`, plus one for the
+    // millisecond rounding at each edge.
+    uint64_t allowed_opens = 0;
+    uint64_t next_open_ms = 0;
+    for (unsigned failures = 0; next_open_ms <= elapsed_ms; ++failures) {
+        ++allowed_opens;
+        next_open_ms += std::min<uint64_t>(500, 20ull << std::min(failures, 5u));
+    }
+    INFO("elapsed_ms=" << elapsed_ms << " allowed_opens=" << allowed_opens);
+    CHECK(actual_open_attempts <= allowed_opens + 1);
+    // Without the backoff every batch would open the file again.
+    CHECK(actual_open_attempts < static_cast<uint64_t>(kBatches) / 2);
     CHECK(actual_open_failures == actual_open_attempts);
 }
 
