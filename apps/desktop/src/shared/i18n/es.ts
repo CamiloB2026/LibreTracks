@@ -810,6 +810,8 @@ const es = {
         estimatedWithoutClick: "Tempo estimado de la música, sin click.",
         uncertainTempo:
           "El pulso no está claro: el tempo puede estar mal, o al doble o a la mitad.",
+        unreliableClick:
+          "A partir de aquí el tempo del click sube y baja sin sentido y no se ha podido leer con fiabilidad: se ha puesto el tempo principal de la canción en vez de una marca por cada salto. Revisa la pista de click.",
       },
     },
     levelSongs: {

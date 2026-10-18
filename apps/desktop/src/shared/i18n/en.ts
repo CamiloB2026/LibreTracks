@@ -794,6 +794,8 @@ const en = {
           "The click accents every 3 eighths and was read as 6/8. Check that the bar starts on the right accent.",
         estimatedWithoutClick: "Tempo estimated from the music, without a click.",
         uncertainTempo: "The pulse is unclear: the tempo may be wrong, or double or half.",
+        unreliableClick:
+          "The click's tempo jumped up and down from here on and could not be read reliably: the song's main tempo was kept instead of one marker per jump. Check the click track.",
       },
     },
     levelSongs: {

@@ -59,6 +59,21 @@ const SUBDIVISION_MAX_SECONDS: f64 = 0.22;
 const UNACCENTED_SUBDIVISION_MAX_SECONDS: f64 = 0.34;
 /// Fewer beats than this is not a click track.
 const MIN_BEATS: usize = 4;
+/// Neighbouring segments this far apart (as a fraction of the tempo) are a
+/// real tempo change, not rounding.
+const ERRATIC_CHANGE_FRACTION: f64 = 0.015;
+/// Segments this short (in bars) that change the tempo are suspicious.
+const ERRATIC_SHORT_BARS: u32 = 2;
+/// A click read as this many short tempo changes, going up and down at least
+/// `ERRATIC_MIN_REVERSALS` times, is a misread click, not a band: a real click
+/// changes tempo a few times, or drifts one way (ritardando, accelerando). A
+/// multitrack whose click came out 114, 120, 116, 117.5, 121, 123, 137, 144,
+/// 141.4, 144, 142 bar after bar is the case this guards.
+const ERRATIC_MIN_SHORT_CHANGES: usize = 4;
+const ERRATIC_MIN_REVERSALS: usize = 2;
+/// Segments whose tempos are this close count as the same tempo when
+/// choosing the dominant one.
+const SAME_TEMPO_FRACTION: f64 = 0.01;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -109,6 +124,9 @@ pub enum ClickWarningKind {
     EstimatedWithoutClick,
     /// The music's pulse is weak: the tempo may be wrong, or double or half.
     UncertainTempo,
+    /// The click's tempo jumped up and down bar after bar: it could not be
+    /// read reliably, and the song got its dominant tempo instead.
+    UnreliableClick,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -186,8 +204,19 @@ pub(crate) fn tempo_map_from_beats(
         fallback_beats_per_bar.max(1),
         &mut warnings,
     );
-    let segments = segment_bars(&bars, tolerances, &mut warnings);
-    flag_tempo_and_meter_oddities(&segments, &mut warnings);
+    let mut segments = segment_bars(&bars, tolerances, &mut warnings);
+    if let Some(at) = erratic_from(&segments) {
+        // Dozens of markers that jump around are worse than one tempo that
+        // is a little off: keep the dominant one and say so.
+        segments = vec![dominant_segment(&segments)];
+        warnings.retain(|w| w.kind != ClickWarningKind::IrregularBar);
+        warnings.push(ClickWarning {
+            seconds: at,
+            kind: ClickWarningKind::UnreliableClick,
+        });
+    } else {
+        flag_tempo_and_meter_oddities(&segments, &mut warnings);
+    }
     warnings.sort_by(|a, b| a.seconds.total_cmp(&b.seconds));
     ClickAnalysis {
         segments,
@@ -786,6 +815,75 @@ fn round_tempo(times: &[f64], period: f64, beat_unit: u32, max_drift: f64) -> (f
     fallback.unwrap_or((times.first().copied().unwrap_or(0.0), raw_bpm))
 }
 
+/// Where the tempo map starts jumping around, if it does (see
+/// `ERRATIC_MIN_SHORT_CHANGES`).
+fn erratic_from(segments: &[TempoSegment]) -> Option<f64> {
+    let mut short_changes = 0;
+    let mut reversals = 0;
+    let mut last_direction = 0.0_f64;
+    let mut first_change: Option<f64> = None;
+    for pair in segments.windows(2) {
+        let [before, after] = pair else {
+            continue;
+        };
+        let change = (after.bpm - before.bpm) / before.bpm;
+        if change.abs() <= ERRATIC_CHANGE_FRACTION {
+            continue;
+        }
+        if after.bars <= ERRATIC_SHORT_BARS || before.bars <= ERRATIC_SHORT_BARS {
+            short_changes += 1;
+            first_change.get_or_insert(after.start_seconds);
+        }
+        let direction = change.signum();
+        if last_direction != 0.0 && direction != last_direction {
+            reversals += 1;
+        }
+        last_direction = direction;
+    }
+    (short_changes >= ERRATIC_MIN_SHORT_CHANGES && reversals >= ERRATIC_MIN_REVERSALS)
+        .then(|| first_change.unwrap_or(0.0))
+}
+
+/// The tempo most of the song's bars agree on, as one segment anchored on
+/// the longest run at that tempo and spanning the whole click.
+fn dominant_segment(segments: &[TempoSegment]) -> TempoSegment {
+    let beats = |s: &TempoSegment| f64::from(s.bars) * f64::from(s.beats_per_bar);
+    let support = |bpm: f64| {
+        segments
+            .iter()
+            .filter(|s| ((s.bpm - bpm) / bpm).abs() <= SAME_TEMPO_FRACTION)
+            .map(beats)
+            .sum::<f64>()
+    };
+    let dominant_bpm = segments
+        .iter()
+        .map(|s| s.bpm)
+        .max_by(|a, b| support(*a).total_cmp(&support(*b)))
+        .unwrap_or(120.0);
+    // Ties go to the earliest run (`max_by` keeps the last of equals).
+    let anchor = segments
+        .iter()
+        .rev()
+        .filter(|s| ((s.bpm - dominant_bpm) / dominant_bpm).abs() <= SAME_TEMPO_FRACTION)
+        .max_by(|a, b| beats(a).total_cmp(&beats(b)))
+        .unwrap_or(&segments[0]);
+    let end = segments
+        .iter()
+        .map(|s| s.start_seconds + f64::from(s.bars) * s.bar_seconds())
+        .fold(anchor.start_seconds, f64::max);
+    let mut segment = anchor.clone();
+    // Back to the first click on the anchor's grid, so the bars before it
+    // line up too (the proposal carries it to the song start).
+    let first = segments[0].start_seconds;
+    let bar = segment.bar_seconds();
+    if bar > 0.0 {
+        let bars_before = ((segment.start_seconds - first) / bar).floor().max(0.0);
+        segment.start_seconds -= bars_before * bar;
+        segment.bars = (((end - segment.start_seconds) / bar).ceil() as u32).max(1);
+    }
+    segment
+}
+
 fn flag_tempo_and_meter_oddities(segments: &[TempoSegment], warnings: &mut Vec<ClickWarning>) {
     // Three or more one-bar segments in a row: the tempo is drifting.
     let mut run_start: Option<usize> = None;
@@ -1048,6 +1146,40 @@ mod tests {
             "{analysis:?}"
         );
         assert_eq!(analysis.segments[0].bpm, 120.0);
+    }
+
+    #[test]
+    fn a_click_whose_tempo_zigzags_gets_its_dominant_tempo() {
+        let (mut clicks, mut t) = bars_at(0.0, 120.0, 4, 8);
+        for bpm in [114.0, 128.0, 116.0, 131.0, 118.0] {
+            let (more, end) = bars_at(t, bpm, 4, 2);
+            clicks.extend(more);
+            t = end;
+        }
+        let (more, _) = bars_at(t, 120.0, 4, 8);
+        clicks.extend(more);
+        let analysis = analyze_click(&render(&clicks), RATE, 4);
+        assert_eq!(analysis.segments.len(), 1, "{analysis:?}");
+        assert_eq!(analysis.segments[0].bpm, 120.0);
+        assert_close(analysis.segments[0].start_seconds, 0.0, 0.001);
+        assert!(
+            kinds(&analysis).contains(&ClickWarningKind::UnreliableClick),
+            "{analysis:?}"
+        );
+        assert!(!kinds(&analysis).contains(&ClickWarningKind::VariableTempo));
+    }
+
+    #[test]
+    fn a_few_real_tempo_changes_are_kept() {
+        let (mut clicks, mut t) = bars_at(0.0, 120.0, 4, 8);
+        for bpm in [100.0, 120.0, 100.0] {
+            let (more, end) = bars_at(t, bpm, 4, 8);
+            clicks.extend(more);
+            t = end;
+        }
+        let analysis = analyze_click(&render(&clicks), RATE, 4);
+        assert_eq!(analysis.segments.len(), 4, "{analysis:?}");
+        assert!(!kinds(&analysis).contains(&ClickWarningKind::UnreliableClick));
     }
 
     #[test]
