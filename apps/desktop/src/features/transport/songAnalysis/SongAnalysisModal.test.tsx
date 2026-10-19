@@ -430,7 +430,7 @@ describe("SongAnalysisModal", () => {
     expect(await screen.findByDisplayValue("284")).toBeTruthy();
   });
 
-  it("offers fewer tempo changes than the click has, simplified first", async () => {
+  it("follows the click first and offers fewer tempo changes", async () => {
     // A click that follows the band: three tempos bar by bar, or one
     // simplified, or only the first.
     const segment = (startSeconds: number, bpm: number, bars: number) => ({
@@ -466,11 +466,17 @@ describe("SongAnalysisModal", () => {
     render(<SongAnalysisModal onApplied={() => {}} />);
     await analyzeAndReview();
 
-    expect(await screen.findByDisplayValue("59.4")).toBeTruthy();
-    expect(screen.queryByDisplayValue("56")).toBeNull();
-    fireEvent.click(screen.getByLabelText("transport.songAnalysis.detail.follow"));
     expect(await screen.findByDisplayValue("56")).toBeTruthy();
     expect(screen.getByDisplayValue("63.5")).toBeTruthy();
+    const options = screen.getAllByRole("radio").map((radio) => radio.parentElement?.textContent);
+    expect(options.map((text) => text?.trim())).toEqual([
+      "transport.songAnalysis.detail.follow",
+      "transport.songAnalysis.detail.simplified",
+      "transport.songAnalysis.detail.initial",
+    ]);
+    fireEvent.click(screen.getByLabelText("transport.songAnalysis.detail.simplified"));
+    expect(await screen.findByDisplayValue("59.4")).toBeTruthy();
+    expect(screen.queryByDisplayValue("56")).toBeNull();
     fireEvent.click(screen.getByLabelText("transport.songAnalysis.detail.initial"));
     await waitFor(() => expect(screen.queryByDisplayValue("56")).toBeNull());
     expect(screen.getByDisplayValue("71")).toBeTruthy();

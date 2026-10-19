@@ -24,6 +24,7 @@ import { useSongStore } from "../songStore";
 import { useTransportStore } from "../store";
 import {
   bpmFromNames,
+  DEFAULT_TEMPO_DETAIL,
   buildApplyPayload,
   clickTrackOptions,
   formatSongPosition,
@@ -168,7 +169,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const [rows, setRows] = useState<ReviewRow[]>([]);
   /** The click (without accent) read as eighths: its ÷2 reading. */
   const [eighths, setEighths] = useState(false);
-  const [detail, setDetail] = useState<TempoDetail>("simplified");
+  const [detail, setDetail] = useState<TempoDetail>(DEFAULT_TEMPO_DETAIL);
   const [include, setInclude] = useState({
     tempo: true,
     signature: true,
@@ -238,9 +239,9 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         result.tempo?.asEighths?.analysis.segments[0]?.bpm,
       );
       setEighths(onEighths);
-      setDetail("simplified");
+      setDetail(DEFAULT_TEMPO_DETAIL);
       const reading = tempoReading(result, onEighths);
-      const proposalRows = reading ? reviewRows(tempoLevel(reading, "simplified").proposal) : [];
+      const proposalRows = reading ? reviewRows(tempoLevel(reading, DEFAULT_TEMPO_DETAIL).proposal) : [];
       const detectedKey = result.key?.analysis.key ?? null;
       const estimated =
         result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
@@ -1059,7 +1060,7 @@ type TempoReviewProps = {
   onSeek: (absoluteSeconds: number) => void;
 };
 
-const TEMPO_DETAILS: TempoDetail[] = ["simplified", "follow", "initial"];
+const TEMPO_DETAILS: TempoDetail[] = ["follow", "simplified", "initial"];
 
 /** The tempo reading on show: the click's, or its eighths (÷2) reading. */
 function tempoReading(result: AnalyzeSongResult, eighths: boolean) {

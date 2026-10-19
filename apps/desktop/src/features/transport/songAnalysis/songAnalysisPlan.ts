@@ -186,11 +186,13 @@ export function scaleTempoRows(rows: ReviewRow[], factor: number): ReviewRow[] {
 }
 
 /**
- * How closely the tempo markers follow the click: bar by bar, one tempo per
- * drifting passage (the default: a live click that follows the band would
- * otherwise put dozens of markers), or only the tempo the song starts at.
+ * How closely the tempo markers follow the click: bar by bar (the default,
+ * so metronome and grid match the click), fewer markers with a steady tempo
+ * or a ramp per drifting passage, or only the tempo the song starts at.
  */
 export type TempoDetail = "follow" | "simplified" | "initial";
+
+export const DEFAULT_TEMPO_DETAIL: TempoDetail = "follow";
 
 export function tempoLevel(reading: TempoReading, detail: TempoDetail): TempoLevel {
   if (detail === "simplified") return reading.simplified;
