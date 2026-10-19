@@ -289,6 +289,17 @@ function parseMarkerValue(value: string): { kind: MarkerKind; variant: number | 
 const ANNOUNCEMENT_TAIL_BEATS = 0.3;
 
 /**
+ * A long announcement said from beat 1 of the bar before its section
+ * ("Intro, toda la banda", "Verso, toda la banda" in "Rey de Reyes", 147 BPM)
+ * can fill that bar and run past the section's downbeat: by 0.37 beats
+ * there, with the band coming in on that downbeat. Started this close to a
+ * downbeat, an announcement whose end runs up to `LONG_TAIL_BEATS` past the
+ * next one still belongs to it.
+ */
+const ON_DOWNBEAT_BEATS = 0.25;
+const LONG_TAIL_BEATS = 0.5;
+
+/**
  * Where each announcement's markers go: on the first downbeat after the
  * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`), or `leadBars - 1` bars
  * later for a guide that speaks two bars ahead. A cue said on its own
@@ -401,6 +412,14 @@ export function placeGuideSections(
       grid.timeSignature,
       regions,
     );
+    const start = renderStartSeconds + announcement.startSeconds;
+    const barStart = downbeatFrom(start - ON_DOWNBEAT_BEATS * beatAt(start));
+    if (Math.abs(barStart - start) <= ON_DOWNBEAT_BEATS * beatAt(start)) {
+      const nextBar = downbeatFrom(barStart + beatAt(barStart) / 2);
+      if (startSeconds > nextBar && end <= nextBar + LONG_TAIL_BEATS * beatAt(nextBar)) {
+        startSeconds = nextBar;
+      }
+    }
     for (let extra = 1; extra < leadBars; extra += 1) {
       startSeconds = nextDownbeatAfter(
         startSeconds + beatAt(startSeconds) / 2,

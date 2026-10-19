@@ -232,6 +232,28 @@ describe("guide", () => {
     ]);
   });
 
+  it("a long announcement from beat 1 that runs past the next downbeat lands on it", () => {
+    // "Intro, toda la banda" in "Rey de Reyes": said from a downbeat, it
+    // fills the bar and ends 0.37 beats into the next, where the band comes
+    // in. 120 BPM: bars of 2 s, beats of 0.5 s; song at 100 s.
+    const spoken = (startSeconds: number, endSeconds: number) => {
+      const { analysis, markers } = oneAnnouncement(endSeconds, ["intro", "all_in"]);
+      const withStart = {
+        ...analysis,
+        announcements: [{ ...analysis.announcements[0], startSeconds }],
+      };
+      return placeGuideSections(plain(), "b", 100, withStart, markers, null)[0]?.startSeconds;
+    };
+    expect(spoken(2.0, 4.18)).toBe(104);
+    expect(spoken(1.96, 4.18)).toBe(104);
+    // Started mid-bar: the end still decides.
+    expect(spoken(2.6, 4.18)).toBe(106);
+    // Running more than half a beat past is the next bar.
+    expect(spoken(2.0, 4.3)).toBe(106);
+    // Ending before the downbeat, as usual.
+    expect(spoken(2.0, 3.6)).toBe(104);
+  });
+
   it("a cue said on its own warns a bar before the downbeat", () => {
     // Real: "Bajar intensidad" landed on the drop itself, where the voice
     // guide speaks it too late. 105.3 → downbeat 106 → a bar before, 104.
