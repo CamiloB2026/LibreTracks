@@ -157,6 +157,7 @@ export const GUEST_COMMAND_ROUTES: Readonly<Record<string, GuestCommandRoute>> =
   set_section_marker_kind: "edit",
   set_song_region_chart: "edit",
   set_song_region_compact_width: "edit",
+  set_song_region_tempo: "edit",
   set_song_tempo_marker_ramp: "edit",
   set_voice_guide_config_realtime: "edit",
   set_voice_guide_volume_realtime: "edit",

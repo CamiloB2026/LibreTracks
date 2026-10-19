@@ -1284,6 +1284,7 @@ const es = {
       songCountStyleUpdated: "Conteo de «{{name}}»: {{style}}.",
       regionWarpSourceBpmUpdated:
         "BPM original actualizado a {{bpm}} para {{name}}.",
+      regionTempoUpdated: "«{{name}}» a {{bpm}} BPM.",
       tempoMarkerDeleted: "Marca de BPM borrada en {{time}}.",
       tempoRampOn: "Rampa de tempo activada en {{time}}.",
       tempoRampOff: "Rampa de tempo quitada en {{time}}.",
@@ -2227,6 +2228,15 @@ const es = {
     regionWarpRatioDisplay: "{{source}} → {{target}} (×{{ratio}})",
     regionWarpSemanticsOn: "Warp activado: el pitch preserva la duracion.",
     regionWarpSemanticsOff: "Warp apagado: el pitch cambia la velocidad.",
+    regionTempoLabel: "Tempo de la canción",
+    regionTempoAria: "Tempo de la canción en BPM",
+    regionTempoDownAria: "Bajar 1 BPM la canción",
+    regionTempoUpAria: "Subir 1 BPM la canción",
+    regionTempoReset: "Original",
+    regionTempoResetAria: "Volver al tempo original de la canción",
+    regionTempoHintOriginal:
+      "Tempo original ({{bpm}} BPM). Cambiarlo activa el warp: más rápido o más lento sin cambiar el tono.",
+    regionTempoHintChanged: "{{percent}} % respecto al original ({{bpm}} BPM).",
     cancelJump: "Cancelar salto",
     tracksCount: "{{count}} tracks",
     clipsCount: "{{count}} clips",

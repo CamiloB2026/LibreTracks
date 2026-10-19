@@ -20,6 +20,7 @@ import { SongMasterMeter } from "../tracks/TrackMeter";
 import { isMobileApp } from "../desktopApi";
 import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 import { SongGapVampToggle } from "../live/SongGapVampToggle";
+import { RegionTempoControl } from "./RegionTempoControl";
 
 type RegionMasterFaderProps = {
   regionId: string;
@@ -146,6 +147,10 @@ type TimelineToolbarProps = {
   /** Effective timeline BPM at the start of the selected region. */
   selectedRegionEffectiveBpm: number;
   onSelectedRegionWarpToggle: (nextEnabled: boolean) => void;
+  onSelectedRegionTempoChange: (
+    region: SongRegionSummary,
+    nextBpm: number,
+  ) => void;
   onSelectedRegionMasterGainChange: (nextMasterGain: number) => void;
   onSelectedRegionMasterGainCommit: () => void;
   viewMode: ViewMode;
@@ -285,6 +290,7 @@ export function TimelineToolbar({
   onSelectedRegionTransposeChange,
   selectedRegionEffectiveBpm,
   onSelectedRegionWarpToggle,
+  onSelectedRegionTempoChange,
   onSelectedRegionMasterGainChange,
   onSelectedRegionMasterGainCommit,
   viewMode,
@@ -1051,6 +1057,19 @@ export function TimelineToolbar({
                       ? t("timelineToolbar.regionWarpSemanticsOn")
                       : t("timelineToolbar.regionWarpSemanticsOff")}
                   </small>
+                  <RegionTempoControl
+                    key={selectedRegion.id}
+                    currentBpm={selectedRegionEffectiveBpm}
+                    originalBpm={
+                      warpEnabled && warpSourceBpm
+                        ? warpSourceBpm
+                        : selectedRegionEffectiveBpm
+                    }
+                    disabled={warpControlsDisabled}
+                    onChange={(bpm) =>
+                      onSelectedRegionTempoChange(selectedRegion, bpm)
+                    }
+                  />
                 </>
               ) : (
                 <span>{t("timelineToolbar.regionWarpNoSelection")}</span>

@@ -93,6 +93,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "set_section_marker_kind"
         | "set_song_region_chart"
         | "set_song_region_compact_width"
+        | "set_song_region_tempo"
         | "set_song_tempo_marker_ramp"
         | "set_voice_guide_config_realtime"
         | "set_voice_guide_volume_realtime"
@@ -220,6 +221,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "set_section_marker_kind",
     "set_song_region_chart",
     "set_song_region_compact_width",
+    "set_song_region_tempo",
     "set_song_tempo_marker_ramp",
     "set_voice_guide_config_realtime",
     "set_voice_guide_volume_realtime",
@@ -827,6 +829,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
                 into_value_result(crate::commands::timeline::set_song_region_compact_width(arg(&args, "regionId")?, arg(&args, "widthRem")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
+        "set_song_region_tempo" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::set_song_region_tempo(arg(&args, "regionId")?, arg(&args, "bpm")?, app.state()))
             })
             .await
             .map_err(|error| error.to_string())?

@@ -489,6 +489,7 @@ pub fn run() {
             commands::timeline::discard_song_structure,
             commands::timeline::update_song_region_transpose,
             commands::timeline::update_song_region_warp,
+            commands::timeline::set_song_region_tempo,
             commands::timeline::update_live_region_master_gain,
             commands::timeline::update_song_region_master_gain,
             commands::timeline::update_song_region_master_gains,

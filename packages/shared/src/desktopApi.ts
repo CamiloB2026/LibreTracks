@@ -2171,6 +2171,21 @@ export async function updateSongRegionWarp(
 }
 
 /**
+ * Speed a whole song up or down to `bpm` (tempo at its start) without
+ * changing its pitch. Turns warp on in the same step when it was off, and
+ * scales every tempo marker inside the song by the same factor.
+ */
+export async function setSongRegionTempo(
+  regionId: string,
+  bpm: number,
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("set_song_region_tempo", {
+    regionId,
+    bpm,
+  });
+}
+
+/**
  * Realtime stream of region master gain during a slider drag. Bridge-only:
  * the engine receives the new value but the model is not written and no
  * snapshot is returned. Call `updateSongRegionMasterGain` on pointer-up to

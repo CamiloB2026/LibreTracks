@@ -4,8 +4,8 @@
 //! loaded `Song` and persists it; the pure geometry lives in `timeline_math`.
 
 use libretracks_core::{
-    source_seconds_at_view, Marker, MarkerCategory, MarkerKind, SongRegion, TempoMarker,
-    TimeSignatureMarker, MAX_COMPACT_COLUMN_WIDTH_REM, MAX_TRANSPOSE_SEMITONES,
+    effective_bpm_at, source_seconds_at_view, Marker, MarkerCategory, MarkerKind, SongRegion,
+    TempoMarker, TimeSignatureMarker, MAX_COMPACT_COLUMN_WIDTH_REM, MAX_TRANSPOSE_SEMITONES,
     MIN_COMPACT_COLUMN_WIDTH_REM, MIN_TRANSPOSE_SEMITONES,
 };
 
@@ -16,7 +16,7 @@ use crate::models::TransportSnapshot;
 use super::{
     bar_seconds_at, default_region_name, next_downbeat_after_in_song,
     prune_auto_created_empty_tracks, realign_regions_after_warp_tempo_change,
-    refresh_song_duration, replace_song_region_range, sanitize_region_bounds,
+    refresh_song_duration, replace_song_region_range, sanitize_region_bounds, scale_region_tempo,
     set_song_tempo_at_source_position, shift_song_suffix, snap_regions_after_to_downbeats,
     song_has_active_warp, sort_song_regions, split_clips_crossing_point, timestamp_suffix,
     ui_locale, validate_time_signature, AudioChangeImpact, DesktopSession, TransposeHistoryTarget,
@@ -751,6 +751,77 @@ impl DesktopSession {
             audio,
             AudioChangeImpact::TimelineWindow,
             false,
+            true,
+            UpdatePhase::Commit,
+        )?;
+
+        Ok(self.snapshot())
+    }
+
+    /// Acelera o frena una canción entera: la pone a `bpm` en su arranque sin
+    /// cambiar el tono. Si el warp estaba apagado lo enciende en el mismo paso,
+    /// con el tempo actual como BPM original (el audio suena hoy a ese tempo),
+    /// así un solo cambio = un solo deshacer. Las marcas de tempo de dentro se
+    /// escalan juntas (`scale_region_tempo`).
+    pub fn set_song_region_tempo(
+        &mut self,
+        region_id: &str,
+        bpm: f64,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        if !bpm.is_finite() || bpm < 20.0 || bpm > 300.0 {
+            return Err(DesktopError::AudioCommand(
+                "song bpm must be between 20.0 and 300.0".into(),
+            ));
+        }
+
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        let previous_song = song.clone();
+        let region = song
+            .regions
+            .iter()
+            .find(|region| region.id == region_id)
+            .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+        let current_bpm = effective_bpm_at(&song, region.start_seconds);
+        if !region.warp_enabled && (bpm - current_bpm).abs() < 1e-6 {
+            return Ok(self.snapshot());
+        }
+        let source_bpm = if region.warp_enabled {
+            region.warp_source_bpm.unwrap_or(current_bpm)
+        } else {
+            current_bpm
+        };
+        if !(libretracks_core::MIN_WARP_SOURCE_BPM..=libretracks_core::MAX_WARP_SOURCE_BPM)
+            .contains(&source_bpm)
+        {
+            return Err(DesktopError::AudioCommand(format!(
+                "warp source bpm must be between {} and {}",
+                libretracks_core::MIN_WARP_SOURCE_BPM,
+                libretracks_core::MAX_WARP_SOURCE_BPM
+            )));
+        }
+
+        scale_region_tempo(&mut song, region_id, bpm)?;
+        if let Some(region) = song
+            .regions
+            .iter_mut()
+            .find(|region| region.id == region_id)
+        {
+            region.warp_enabled = true;
+            region.warp_source_bpm = Some(source_bpm);
+        }
+        realign_regions_after_warp_tempo_change(&previous_song, &mut song);
+
+        audio.update_live_region_warp(region_id, true, Some(source_bpm))?;
+        // Realinear traslada las canciones siguientes: sus cues van con ellas.
+        self.persist_song_update_carrying_cues(
+            song,
+            audio,
+            AudioChangeImpact::TimelineWindow,
             true,
             UpdatePhase::Commit,
         )?;

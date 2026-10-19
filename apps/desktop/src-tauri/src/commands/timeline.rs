@@ -551,6 +551,22 @@ pub fn update_song_region_warp(
         .map_err(|error| error.to_string())
 }
 
+#[tauri::command(async)]
+pub fn set_song_region_tempo(
+    region_id: String,
+    bpm: f64,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .set_song_region_tempo(&region_id, bpm, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
 /// Realtime master-gain stream during drag. Bridge-only: pushes the value to
 /// the engine and returns immediately. No model write, no snapshot, no undo.
 /// Use `update_song_region_master_gain` on pointer-up to commit the value.

@@ -6304,6 +6304,28 @@ html.lt-ios body {
   margin-top: 0.35rem;
 }
 
+/* Tempo de la canción dentro del popover de Warp: separado del interruptor. */
+.lt-region-tempo-control {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.lt-region-tempo-control .lt-stepper-control {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.lt-region-tempo-control .lt-stepper-control > span {
+  display: block;
+  margin-bottom: 0.3rem;
+}
+
+.lt-region-tempo-control .lt-stepper-control-row input {
+  width: 4.5rem;
+}
+
 .lt-mono {
   font-family:
     ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Roboto Mono",

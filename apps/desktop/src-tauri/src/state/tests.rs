@@ -6082,3 +6082,86 @@ fn cues_before_a_programmed_jump_still_fire_while_it_waits() {
         "cancelling the programmed jump keeps the cue armed"
     );
 }
+
+#[test]
+fn setting_song_tempo_turns_warp_on_and_scales_every_marker_inside() {
+    let mut song = demo_song();
+    song.tempo_markers = vec![TempoMarker {
+        id: "tempo_inside".into(),
+        start_seconds: 6.0,
+        bpm: 130.0,
+        ramp: false,
+    }];
+    let mut session = session_with_song_dir("region-tempo-scales-markers", song);
+    let audio = crate::audio::engine::AudioController::default();
+
+    session
+        .set_song_region_tempo("region_1", 132.0, &audio)
+        .expect("song tempo should change");
+
+    let song = session.engine.song().expect("song should be loaded");
+    let region = &song.regions[0];
+    assert!(region.warp_enabled, "changing the tempo turns warp on");
+    assert_eq!(region.warp_source_bpm, Some(120.0));
+    assert!((song.bpm - 132.0).abs() < 1e-9);
+    // Same factor (×1,1) for the marker inside: the whole song speeds up.
+    assert!((song.tempo_markers[0].bpm - 143.0).abs() < 1e-9);
+    validate_song(song).expect("song should validate");
+}
+
+#[test]
+fn setting_one_song_tempo_leaves_the_neighbours_alone_and_original_undoes_it() {
+    let mut session = session_with_song_dir(
+        "region-tempo-neighbours",
+        demo_song_with_region_changes_and_sections(),
+    );
+    let audio = crate::audio::engine::AudioController::default();
+
+    session
+        .set_song_region_tempo("region_2", 150.0, &audio)
+        .expect("song tempo should change");
+    {
+        let song = session.engine.song().expect("song should be loaded");
+        let bpm_at = |region_id: &str| {
+            let region = song.regions.iter().find(|r| r.id == region_id).unwrap();
+            libretracks_core::effective_bpm_at(song, region.start_seconds)
+        };
+        assert!((bpm_at("region_1") - 120.0).abs() < 1e-9);
+        assert!((bpm_at("region_2") - 150.0).abs() < 1e-9);
+        // The following song used to inherit 120 BPM: it keeps it.
+        assert!((bpm_at("region_3") - 120.0).abs() < 1e-9);
+        let regions = &song.regions;
+        assert!(!regions[0].warp_enabled && !regions[2].warp_enabled);
+        assert_eq!(regions[1].warp_source_bpm, Some(120.0));
+        validate_song(song).expect("song should validate");
+    }
+
+    session
+        .set_song_region_tempo("region_2", 120.0, &audio)
+        .expect("original tempo should apply");
+    let song = session.engine.song().expect("song should be loaded");
+    let region = song.regions.iter().find(|r| r.id == "region_2").unwrap();
+    assert!(
+        (libretracks_core::warp::region_warp_ratio_in_song(region, song) - 1.0).abs() < 1e-9,
+        "back to the original tempo the ratio is exactly 1"
+    );
+}
+
+#[test]
+fn setting_song_tempo_out_of_range_changes_nothing() {
+    let mut song = demo_song();
+    song.tempo_markers = vec![TempoMarker {
+        id: "tempo_inside".into(),
+        start_seconds: 6.0,
+        bpm: 250.0,
+        ramp: false,
+    }];
+    let mut session = session_with_song_dir("region-tempo-out-of-range", song);
+    let audio = crate::audio::engine::AudioController::default();
+
+    // ×2 would push the inner 250 BPM marker to 500.
+    assert!(session.set_song_region_tempo("region_1", 240.0, &audio).is_err());
+    let song = session.engine.song().expect("song should be loaded");
+    assert!(!song.regions[0].warp_enabled);
+    assert_eq!(song.bpm, 120.0);
+}

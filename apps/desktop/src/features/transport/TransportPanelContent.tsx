@@ -150,6 +150,7 @@ import {
   updateSongRegionMasterGain,
   updateSongRegionTranspose,
   updateSongRegionWarp,
+  setSongRegionTempo,
   updateSongRegionKey,
   setSongRegionCompactWidth,
   updateSongTempo,
@@ -478,6 +479,7 @@ import { useWindowTitle } from "./hooks/useWindowTitle";
 import { useSongStore } from "./songStore";
 import { createMidiLearnHandlers } from "./midi/midiLearnHandlers";
 import { createTapTempoHandler } from "./tempo/tapTempoHandler";
+import { createRegionTempoHandler } from "./tempo/regionTempoHandler";
 import { AndroidBackGuard } from "./mobile/AndroidBackGuard";
 import { MissingMediaModal } from "./panels/MissingMediaModal";
 import { createMissingMediaHandlers } from "./library/missingMediaHandlers";
@@ -5417,6 +5419,21 @@ export function TransportPanelContent() {
     [setStatus, runAction, refreshSongView, applyPlaybackSnapshot, t],
   );
 
+  // Song tempo stepper in the Warp popover. See ./tempo/regionTempoHandler.
+  const handleSelectedRegionTempoChange = useMemo(
+    () =>
+      createRegionTempoHandler({
+        runAction,
+        refreshSongView,
+        applyPlaybackSnapshot,
+        setSongRegionTempo,
+        onWarpEnabled: () => recordProductEvent("feature_warp"),
+        setStatus,
+        t,
+      }),
+    [setStatus, runAction, refreshSongView, applyPlaybackSnapshot, t],
+  );
+
   // Ruler/lane drag commits + cue editing. `song` and editAutomationCue (which
   // the menu factory rebuilds each render) are read through getters, so this
   // factory stays referentially stable across snapshots.
@@ -7445,6 +7462,7 @@ export function TransportPanelContent() {
                     }
                     selectedRegionEffectiveBpm={selectedRegionEffectiveBpm}
                     onSelectedRegionWarpToggle={handleSelectedRegionWarpToggle}
+                    onSelectedRegionTempoChange={handleSelectedRegionTempoChange}
                     onSelectedRegionMasterGainChange={
                       handleSelectedRegionMasterGainChange
                     }

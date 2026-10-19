@@ -151,6 +151,99 @@ pub(super) fn snap_regions_after_to_downbeats(song: &mut Song, moved_region_id: 
     }
 }
 
+/// Pone una canción (región) a `target_bpm` en su arranque multiplicando por
+/// el mismo factor TODAS las marcas de tempo que caen dentro de ella, para que
+/// una canción con varias marcas (o rampas del análisis) acelere entera y no
+/// solo su primer tramo. El warp usa una sola relación por región (tempo al
+/// inicio / BPM original), así que las marcas interiores tienen que moverse con
+/// ella o el clic se separa del audio a partir de la segunda marca.
+///
+/// Lo que va después de la región no cambia: si la canción siguiente heredaba
+/// el tempo (no tiene marca propia en su arranque) se le fija una con el tempo
+/// que tenía, y si la región heredaba el suyo se le crea una marca de arranque.
+pub(super) fn scale_region_tempo(
+    song: &mut Song,
+    region_id: &str,
+    target_bpm: f64,
+) -> Result<(), DesktopError> {
+    const EPS: f64 = 0.0001;
+    let (start, end) = song
+        .regions
+        .iter()
+        .find(|region| region.id == region_id)
+        .map(|region| (region.start_seconds, region.end_seconds))
+        .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+    let current_bpm = effective_bpm_at(song, start);
+    if !(current_bpm.is_finite() && current_bpm > 0.0) {
+        return Ok(());
+    }
+    let factor = target_bpm / current_bpm;
+    if (factor - 1.0).abs() < 1e-9 {
+        return Ok(());
+    }
+
+    let inside = |seconds: f64| seconds >= start - EPS && seconds < end - EPS;
+    let starts_at_zero = start <= EPS;
+    let out_of_range = |bpm: f64| !(20.0..=300.0).contains(&bpm);
+    if song
+        .tempo_markers
+        .iter()
+        .any(|marker| inside(marker.start_seconds) && out_of_range(marker.bpm * factor))
+        || (starts_at_zero && out_of_range(song.bpm * factor))
+    {
+        return Err(DesktopError::AudioCommand(
+            "song bpm must be between 20.0 and 300.0".into(),
+        ));
+    }
+
+    // Antes de tocar nada: la canción siguiente conserva el tempo que tenía.
+    let next_start = song
+        .regions
+        .iter()
+        .map(|region| region.start_seconds)
+        .filter(|seconds| *seconds >= end - EPS)
+        .fold(f64::INFINITY, f64::min);
+    if next_start.is_finite()
+        && !song
+            .tempo_markers
+            .iter()
+            .any(|marker| (marker.start_seconds - next_start).abs() < EPS)
+    {
+        song.tempo_markers.push(TempoMarker {
+            id: format!("tempo_marker_{}_next", timestamp_suffix()),
+            start_seconds: next_start,
+            bpm: effective_bpm_at(song, next_start),
+            ramp: false,
+        });
+    }
+
+    for marker in song.tempo_markers.iter_mut() {
+        if inside(marker.start_seconds) {
+            marker.bpm *= factor;
+        }
+    }
+    if starts_at_zero {
+        song.bpm *= factor;
+    } else if !song
+        .tempo_markers
+        .iter()
+        .any(|marker| (marker.start_seconds - start).abs() < EPS)
+    {
+        song.tempo_markers.push(TempoMarker {
+            id: format!("tempo_marker_{}", timestamp_suffix()),
+            start_seconds: start,
+            bpm: target_bpm,
+            ramp: false,
+        });
+    }
+    song.tempo_markers.sort_by(|left, right| {
+        left.start_seconds
+            .partial_cmp(&right.start_seconds)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    Ok(())
+}
+
 pub(super) fn realign_regions_after_warp_tempo_change(previous_song: &Song, song: &mut Song) {
     // The original guard here was "only act when some region has warp
     // active", but the same realignment is needed for plain tempo
