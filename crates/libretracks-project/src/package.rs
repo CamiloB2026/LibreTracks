@@ -852,7 +852,9 @@ pub struct ExtractedSongPackage {
 /// tidy when every song shares the same track layout. Users who order their set
 /// by song want the opposite: a per-song track lane, even if two songs both
 /// call a track "Bateria". `KeepSeparate` gives them that by always creating a
-/// new track. Surfaced as the `import_merge_matching_tracks` app setting.
+/// new track, and `SongFolder` does the same inside a folder named after the
+/// song, for those who keep each song's tracks together. Surfaced as the
+/// `song_track_layout` app setting.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SongImportTrackMode {
     /// Reuse a destination track with the same name and kind (default).
@@ -860,8 +862,12 @@ pub enum SongImportTrackMode {
     MergeIntoExisting,
     /// Always create a new track, even when the name and kind already exist.
     /// Duplicate names are kept verbatim — the track keeps the name the package
-    /// exported, so the user recognises it; only the ids differ.
+    /// exported, so the user recognises it; only the ids differ. The new
+    /// tracks belong to the imported song (`Track::song_region_id`).
     KeepSeparate,
+    /// Like `KeepSeparate`, but every new track goes inside a new folder named
+    /// after the song, which belongs to the song too: one folder per song.
+    SongFolder,
 }
 
 pub fn import_song_package(
@@ -1060,6 +1066,36 @@ pub fn merge_extracted_song_package(
     // the destination session we reuse that existing track, so its clips append
     // there; only genuinely new names create new tracks.
     let mut target_track_id_by_manifest_id: HashMap<String, String> = HashMap::new();
+    // Known up front so per-song tracks can point at the song they belong to.
+    let region_id = format!("region_import_{}", timestamp_suffix());
+    let owning_region_id =
+        (track_mode != SongImportTrackMode::MergeIntoExisting).then(|| region_id.clone());
+    let song_folder_id = (track_mode == SongImportTrackMode::SongFolder).then(|| {
+        let folder_id = unique_id("track", "song_folder", &mut used_track_ids);
+        next_song.tracks.push(Track {
+            id: folder_id.clone(),
+            name: manifest.song_title.clone(),
+            kind: libretracks_core::TrackKind::Folder,
+            parent_track_id: None,
+            volume: 1.0,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            transpose_enabled: true,
+            audio_to: "master".to_string(),
+            mono_downmix: false,
+            color: None,
+            auto_created: false,
+            midi_port: None,
+            midi_channel: 1,
+            midi_enabled: true,
+            collapsed: false,
+            height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: Some(region_id.clone()),
+        });
+        folder_id
+    });
     for track in &manifest.tracks {
         // Merge into a track that already existed in the destination session,
         // but only those — not tracks we created earlier in THIS loop, so two
@@ -1079,13 +1115,19 @@ pub fn merge_extracted_song_package(
             id: track_id.clone(),
             name: track.name.clone(),
             kind: track.kind,
-            parent_track_id: None,
+            parent_track_id: song_folder_id.clone(),
             volume: track.volume,
             pan: track.pan,
             muted: false,
             solo: false,
             transpose_enabled: track.transpose_enabled,
-            audio_to: "master".to_string(),
+            // Inside the song's folder the track sums through it, the way a
+            // track the user drags into a folder does.
+            audio_to: if song_folder_id.is_some() {
+                "inherit".to_string()
+            } else {
+                "master".to_string()
+            },
             mono_downmix: false,
             color: track.color.clone(),
             auto_created: false,
@@ -1097,7 +1139,7 @@ pub fn merge_extracted_song_package(
             match_aliases: track.match_aliases.clone(),
             // The package's region ids are the source session's; whether the
             // imported tracks belong to the new song is the track mode's call.
-            song_region_id: None,
+            song_region_id: owning_region_id.clone(),
         });
         target_track_id_by_manifest_id.insert(track.id.clone(), track_id);
     }
@@ -1194,7 +1236,7 @@ pub fn merge_extracted_song_package(
         .max(furthest_clip_end_offset)
         .max(furthest_video_end_offset);
     next_song.regions.push(SongRegion {
-        id: format!("region_import_{}", timestamp_suffix()),
+        id: region_id,
         name: manifest.song_title.clone(),
         start_seconds: insert_at_seconds,
         end_seconds: insert_at_seconds + region_span,
@@ -2091,6 +2133,87 @@ mod tests {
                 1
             );
         }
+        // The new track belongs to the imported song; the existing one is
+        // still shared.
+        let imported_region_id = &result
+            .song
+            .regions
+            .iter()
+            .find(|region| region.id != "r_dest")
+            .expect("imported region")
+            .id;
+        let imported_drums = result
+            .song
+            .tracks
+            .iter()
+            .find(|track| track.name == "Drums" && track.id != "existing_drums")
+            .expect("imported drums");
+        assert_eq!(imported_drums.song_region_id.as_ref(), Some(imported_region_id));
+        let existing_drums = result
+            .song
+            .tracks
+            .iter()
+            .find(|track| track.id == "existing_drums")
+            .expect("existing drums");
+        assert_eq!(existing_drums.song_region_id, None);
+        validate_song(&result.song).expect("imported song must stay valid");
+    }
+
+    #[test]
+    fn song_folder_puts_the_imported_tracks_inside_a_folder_named_after_the_song() {
+        let dir = tempdir().expect("tempdir");
+        let song_dir = dir.path();
+        let source = song(); // one "Drums" track + clip
+        let package_path = song_dir.join("verse.ltsong");
+        export_region_as_package(song_dir, song_dir, &source, "r1", &package_path, false)
+            .expect("export");
+
+        let existing = Song {
+            tracks: vec![track("existing_drums", "Drums")],
+            clips: vec![clip("existing_clip", "existing_drums", 0.0, 4.0)],
+            regions: vec![region("r_dest", "Dest", 0.0, 100.0)],
+            section_markers: vec![],
+            ..song()
+        };
+        let result = import_song_package(
+            song_dir,
+            &existing,
+            &package_path,
+            100.0,
+            SongImportTrackMode::SongFolder,
+        )
+        .expect("import package");
+
+        let imported_region = result
+            .song
+            .regions
+            .iter()
+            .find(|region| region.id != "r_dest")
+            .expect("imported region");
+        let folder = result
+            .song
+            .tracks
+            .iter()
+            .find(|track| track.kind == libretracks_core::TrackKind::Folder)
+            .expect("song folder");
+        assert_eq!(folder.name, imported_region.name);
+        assert_eq!(folder.parent_track_id, None);
+        assert_eq!(folder.song_region_id.as_ref(), Some(&imported_region.id));
+
+        // The package's Drums did not merge into the existing one: it sits in
+        // the folder, sums through it and belongs to the song.
+        let imported_drums = result
+            .song
+            .tracks
+            .iter()
+            .find(|track| track.name == "Drums" && track.id != "existing_drums")
+            .expect("imported drums");
+        assert_eq!(imported_drums.parent_track_id.as_ref(), Some(&folder.id));
+        assert_eq!(imported_drums.audio_to, "inherit");
+        assert_eq!(imported_drums.song_region_id.as_ref(), Some(&imported_region.id));
+        // The folder comes before its child, as the arrangement lists them.
+        let position = |id: &str| result.song.tracks.iter().position(|t| t.id == id);
+        assert!(position(&folder.id) < position(&imported_drums.id));
         validate_song(&result.song).expect("imported song must stay valid");
     }
 

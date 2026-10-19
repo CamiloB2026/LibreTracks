@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppSettings, AudioDeviceDescriptor } from "@libretracks/shared/models";
-import { AUTO_SAVE_INTERVAL_PRESETS } from "@libretracks/shared/models";
+import { AUTO_SAVE_INTERVAL_PRESETS, isSongTrackLayout } from "@libretracks/shared/models";
 import type { DecodingCacheInfo } from "@libretracks/shared/desktopApi";
 import {
   getDecodingCacheInfo,
@@ -102,7 +102,7 @@ type SettingsPanelProps = {
   onPauseAtSongEndChange: (value: boolean) => void;
   onVampBetweenSongsChange: (value: boolean) => void;
   onFadeOutStopSecondsChange: (value: number) => void;
-  onImportMergeMatchingTracksChange: (value: boolean) => void;
+  onSongTrackLayoutChange: (value: AppSettings["songTrackLayout"]) => void;
   onReferenceImportedAudioChange: (value: boolean) => void;
   onAutoColorNewTracksChange: (value: boolean) => void;
   onAutoSaveEnabledChange: (value: boolean) => void;
@@ -173,7 +173,7 @@ export function SettingsPanel({
   onPauseAtSongEndChange,
   onVampBetweenSongsChange,
   onFadeOutStopSecondsChange,
-  onImportMergeMatchingTracksChange,
+  onSongTrackLayoutChange,
   onReferenceImportedAudioChange,
   onAutoColorNewTracksChange,
   onAutoSaveEnabledChange,
@@ -810,37 +810,34 @@ export function SettingsPanel({
                       <small>{t("transport.settingsModal.fadeOutStopSecondsHint")}</small>
                     </label>
 
-                    <label className="lt-settings-toggle">
-                      <input
-                        type="checkbox"
-                        checked={appSettings.importMergeMatchingTracks}
-                        disabled={isLoading || isSaving}
-                        onChange={(event) =>
-                          onImportMergeMatchingTracksChange(
-                            event.target.checked,
-                          )
-                        }
-                      />
-                      <span className="lt-settings-toggle-copy">
-                        <span>
-                          {t(
-                            "transport.settingsModal.importMergeMatchingTracks",
-                            {
-                              defaultValue:
-                                "Unir pistas con el mismo nombre al importar",
-                            },
-                          )}
-                        </span>
-                        <small>
-                          {t(
-                            "transport.settingsModal.importMergeMatchingTracksHint",
-                            {
-                              defaultValue:
-                                "Al importar una canción, sus clips se añaden a la pista existente que ya tenga ese nombre. Desactívalo para que cada canción traiga sus propias pistas.",
-                            },
-                          )}
-                        </small>
+                    <label className="lt-settings-field">
+                      <span className="lt-settings-field-label">
+                        {t("transport.settingsModal.songTrackLayout")}
                       </span>
+                      <select
+                        value={appSettings.songTrackLayout}
+                        disabled={isLoading || isSaving}
+                        onChange={(event) => {
+                          if (isSongTrackLayout(event.target.value)) {
+                            onSongTrackLayoutChange(event.target.value);
+                          }
+                        }}
+                      >
+                        <option value="shared">
+                          {t("transport.settingsModal.songTrackLayoutShared")}
+                        </option>
+                        <option value="songFolder">
+                          {t("transport.settingsModal.songTrackLayoutSongFolder")}
+                        </option>
+                        <option value="separate">
+                          {t("transport.settingsModal.songTrackLayoutSeparate")}
+                        </option>
+                      </select>
+                      <small>
+                        {t(
+                          `transport.settingsModal.songTrackLayoutHint_${appSettings.songTrackLayout}`,
+                        )}
+                      </small>
                     </label>
 
                     {/* Solo móvil: escritorio referencia desde siempre y

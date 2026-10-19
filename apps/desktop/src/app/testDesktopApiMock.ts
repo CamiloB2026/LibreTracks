@@ -462,6 +462,7 @@ function buildInitialState(): DesktopApiMockState {
       timelineNavigationScheme: "ableton",
       timelinePlayheadFollowMode: "ahead",
       importMergeMatchingTracks: true,
+      songTrackLayout: "shared",
       autoColorNewTracks: true,
       sessionStorageVolume: null,
       referenceImportedAudio: true,

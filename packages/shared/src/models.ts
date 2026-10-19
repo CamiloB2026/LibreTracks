@@ -1436,8 +1436,18 @@ export type AppSettings = {
    * already exist in the session appends its clips onto that existing track,
    * keeping one lane per instrument across every song. When false each imported
    * song brings its own tracks, even if two songs both name a track "Batería".
+   *
+   * Superseded by {@link AppSettings.songTrackLayout}; the backend keeps it in
+   * step on save for older versions. Read the layout, not this.
    */
   importMergeMatchingTracks: boolean;
+  /**
+   * Where each song's tracks go when a song is imported or laid out from a
+   * template: one lane per instrument shared by every song, a folder per
+   * song, or per-song tracks at the root. Absent in settings files written
+   * before it existed, where it is read from `importMergeMatchingTracks`.
+   */
+  songTrackLayout: SongTrackLayout;
   /**
    * When true (default) a track created without an explicit colour gets one
    * from the timeline palette, cycling through it so two tracks made in a row
@@ -1558,6 +1568,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   timelineNavigationScheme: "ableton",
   timelinePlayheadFollowMode: "ahead",
   importMergeMatchingTracks: true,
+  songTrackLayout: "shared",
   autoColorNewTracks: true,
   sessionStorageVolume: null,
   referenceImportedAudio: true,
@@ -1576,6 +1587,19 @@ function normalizeMidiBinding(binding: MidiBinding): MidiBinding {
     data1: Math.max(0, Math.min(255, Math.floor(binding.data1) || 0)),
     isCc: Boolean(binding.isCc),
   };
+}
+
+/** Where each song's tracks go; see {@link AppSettings.songTrackLayout}. */
+export type SongTrackLayout = "shared" | "songFolder" | "separate";
+
+export const SONG_TRACK_LAYOUTS: readonly SongTrackLayout[] = [
+  "shared",
+  "songFolder",
+  "separate",
+] as const;
+
+export function isSongTrackLayout(value: unknown): value is SongTrackLayout {
+  return SONG_TRACK_LAYOUTS.includes(value as SongTrackLayout);
 }
 
 export function normalizeAppSettings(settings: AppSettings): AppSettings {
@@ -1821,6 +1845,13 @@ export function normalizeAppSettings(settings: AppSettings): AppSettings {
     // Defaults to true when absent (older settings files) so existing users
     // keep the historical merge-on-import behaviour.
     importMergeMatchingTracks: settings.importMergeMatchingTracks ?? true,
+    // Until the user picks a layout it is whatever the old merge switch said.
+    // An unknown value (a newer version's) reads the same way, as in Rust.
+    songTrackLayout: isSongTrackLayout(settings.songTrackLayout)
+      ? settings.songTrackLayout
+      : (settings.importMergeMatchingTracks ?? true)
+        ? "shared"
+        : "separate",
     // Absent in settings files written before automatic track colours shipped:
     // default to on, matching DEFAULT_APP_SETTINGS and the Rust side.
     autoColorNewTracks: settings.autoColorNewTracks ?? true,

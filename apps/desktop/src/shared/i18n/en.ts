@@ -547,7 +547,10 @@ const en = {
       autoColorNewTracks: "Colour new tracks automatically",
       autoColorNewTracksHint:
         "Each new track takes a colour from the palette, cycling through it in order, so you can tell them apart at a glance. Turn it off if you prefer colouring by hand. It never repaints tracks you already have.",
-      importMergeMatchingTracks: "Merge tracks with the same name on import",
+      songTrackLayout: "Each song's tracks",
+      songTrackLayoutShared: "Shared between songs",
+      songTrackLayoutSongFolder: "One folder per song",
+      songTrackLayoutSeparate: "Separate per song",
       pauseAtSongEnd: "Pause at the end of each song",
       vampBetweenSongs: "Vamp between songs (click and pad)",
       vampBetweenSongsHint:
@@ -560,8 +563,12 @@ const en = {
         "How long the song takes to fade when you press “Fade out and stop”. Pressing it again during the fade stops at once.",
       pauseAtSongEndHint:
         "Playback stops when a song ends instead of rolling straight into the next one. Press Play to start the next song. A song jump you queued still happens.",
-      importMergeMatchingTracksHint:
-        "When importing a song, its clips are added to the existing track that already has that name. Turn it off so each song brings its own tracks.",
+      songTrackLayoutHint_shared:
+        "One lane per instrument for the whole set: an imported song's clips go to the track that already has that name.",
+      songTrackLayoutHint_songFolder:
+        "Each song brings its tracks inside a folder named after it, even if another song already has a track with the same name.",
+      songTrackLayoutHint_separate:
+        "Each song brings its own tracks, without a folder, even if another song already has a track with the same name.",
       interfaceZoom: "Interface size",
       interfaceZoomHelp:
         "Scale the whole interface. Lower it if the app is wider than your screen. Shortcut: Cmd/Ctrl +, − and 0 to reset.",
@@ -1330,7 +1337,7 @@ const en = {
       voiceGuideUpdated: "Voice guide updated.",
       timelineNavigationSchemeUpdated: "Timeline navigation scheme updated.",
       timelinePlayheadFollowModeUpdated: "Playhead follow mode updated.",
-      importMergeMatchingTracksUpdated: "Import track behaviour updated.",
+      songTrackLayoutUpdated: "Song track layout updated.",
       pauseAtSongEndUpdated: "Pause at song end updated.",
       vampBetweenSongsUpdated: "Vamp between songs updated.",
       trackMeterModeUpdated: "Track meters updated.",

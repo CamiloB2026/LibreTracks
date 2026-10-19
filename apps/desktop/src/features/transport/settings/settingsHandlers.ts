@@ -329,11 +329,11 @@ export function createSettingsHandlers(deps: SettingsHandlerDeps) {
       );
     },
 
-    handleImportMergeMatchingTracksChange(nextValue: boolean) {
+    handleSongTrackLayoutChange(nextValue: AppSettings["songTrackLayout"]) {
       persistAudioPatch(
-        { importMergeMatchingTracks: nextValue },
-        t("transport.status.importMergeMatchingTracksUpdated", {
-          defaultValue: "Import track behaviour updated.",
+        { songTrackLayout: nextValue },
+        t("transport.status.songTrackLayoutUpdated", {
+          defaultValue: "Song track layout updated.",
         }),
       );
     },

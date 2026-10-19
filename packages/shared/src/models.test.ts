@@ -451,6 +451,35 @@ describe("normalizeAppSettings", () => {
     ).toBe(false);
   });
 
+  it("reads the track layout from the old merge switch until one is chosen", () => {
+    const { songTrackLayout: _omitted, ...withoutLayout } = DEFAULT_APP_SETTINGS;
+    expect(
+      normalizeAppSettings(withoutLayout as AppSettings).songTrackLayout,
+    ).toBe("shared");
+    expect(
+      normalizeAppSettings({
+        ...(withoutLayout as AppSettings),
+        importMergeMatchingTracks: false,
+      }).songTrackLayout,
+    ).toBe("separate");
+    // A chosen layout wins over the old switch.
+    expect(
+      normalizeAppSettings({
+        ...DEFAULT_APP_SETTINGS,
+        importMergeMatchingTracks: true,
+        songTrackLayout: "songFolder",
+      }).songTrackLayout,
+    ).toBe("songFolder");
+    // A newer version's value falls back to the switch.
+    expect(
+      normalizeAppSettings({
+        ...DEFAULT_APP_SETTINGS,
+        importMergeMatchingTracks: false,
+        songTrackLayout: "fromTheFuture" as AppSettings["songTrackLayout"],
+      }).songTrackLayout,
+    ).toBe("separate");
+  });
+
   it("defaults autosave to on every 5 minutes for older settings files", () => {
     const {
       autoSaveEnabled: _enabled,

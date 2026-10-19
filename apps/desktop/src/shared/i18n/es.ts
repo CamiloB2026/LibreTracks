@@ -538,7 +538,10 @@ const es = {
       autoColorNewTracks: "Colorear las pistas nuevas automáticamente",
       autoColorNewTracksHint:
         "Cada pista nueva toma un color de la paleta, recorriéndola en orden, para distinguirlas de un vistazo. Desactívalo si prefieres colorearlas a mano. No repinta las pistas que ya tienes.",
-      importMergeMatchingTracks: "Unir pistas con el mismo nombre al importar",
+      songTrackLayout: "Pistas de cada canción",
+      songTrackLayoutShared: "Compartidas entre canciones",
+      songTrackLayoutSongFolder: "Una carpeta por canción",
+      songTrackLayoutSeparate: "Sueltas por canción",
       pauseAtSongEnd: "Pausar al terminar cada canción",
       vampBetweenSongs: "Vamp entre canciones (click y pad)",
       vampBetweenSongsHint:
@@ -551,8 +554,12 @@ const es = {
         "Lo que tarda en apagarse la canción al pulsar «Fade out y parar». Pulsarlo otra vez durante el fade para en seco.",
       pauseAtSongEndHint:
         "La reproducción se detiene cuando termina una canción en lugar de pasar directamente a la siguiente. Pulsa Play para empezar la siguiente. Un salto de canción que hayas programado se sigue haciendo.",
-      importMergeMatchingTracksHint:
-        "Al importar una canción, sus clips se añaden a la pista existente que ya tenga ese nombre. Desactívalo para que cada canción traiga sus propias pistas.",
+      songTrackLayoutHint_shared:
+        "Un carril por instrumento para todo el set: al importar una canción, sus clips van a la pista que ya tenga ese nombre.",
+      songTrackLayoutHint_songFolder:
+        "Cada canción trae sus pistas dentro de una carpeta con su nombre, aunque otra canción ya tenga una pista que se llame igual.",
+      songTrackLayoutHint_separate:
+        "Cada canción trae sus propias pistas, sin carpeta, aunque otra canción ya tenga una pista que se llame igual.",
       interfaceZoom: "Tamaño de la interfaz",
       interfaceZoomHelp:
         "Escala toda la interfaz. Bájalo si la app es más ancha que tu pantalla. Atajo: Cmd/Ctrl +, − y 0 para restablecer.",
@@ -1354,8 +1361,7 @@ const es = {
         "Navegación de la línea de tiempo actualizada.",
       timelinePlayheadFollowModeUpdated:
         "Modo de seguimiento del cursor actualizado.",
-      importMergeMatchingTracksUpdated:
-        "Comportamiento de pistas al importar actualizado.",
+      songTrackLayoutUpdated: "Pistas de cada canción actualizadas.",
       pauseAtSongEndUpdated: "Pausa al terminar la canción actualizada.",
       vampBetweenSongsUpdated: "Vamp entre canciones actualizado.",
       trackMeterModeUpdated: "Vúmetros de pista actualizados.",

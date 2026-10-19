@@ -838,21 +838,15 @@ impl WaveformGenerationQueue {
     }
 }
 
-/// Read the user's "merge tracks with the same name on import" preference.
-/// Falls back to the historical merging behaviour when the settings store is
-/// unavailable (e.g. very early startup) so an import never silently changes
-/// shape because a read failed.
+/// Read where the user wants each song's tracks (the `song_track_layout`
+/// setting). Falls back to the historical merging behaviour when the settings
+/// store is unavailable (e.g. very early startup) so an import never silently
+/// changes shape because a read failed.
 pub(crate) fn song_import_track_mode(app: &AppHandle) -> SongImportTrackMode {
-    let merge = app
-        .try_state::<crate::infra::settings::AppSettingsStore>()
+    app.try_state::<crate::infra::settings::AppSettingsStore>()
         .and_then(|store| store.current().ok())
-        .map(|settings| settings.import_merge_matching_tracks)
-        .unwrap_or(true);
-    if merge {
-        SongImportTrackMode::MergeIntoExisting
-    } else {
-        SongImportTrackMode::KeepSeparate
-    }
+        .map(|settings| settings.track_layout())
+        .unwrap_or(SongImportTrackMode::MergeIntoExisting)
 }
 
 fn waveform_job_key(song_dir: &Path, waveform_key: &str) -> String {

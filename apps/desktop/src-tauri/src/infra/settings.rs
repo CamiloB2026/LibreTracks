@@ -1,5 +1,6 @@
 use std::{collections::HashMap, fs, io, path::{Path, PathBuf}, sync::Mutex};
 
+use libretracks_project::SongImportTrackMode;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
@@ -354,8 +355,20 @@ pub struct AppSettings {
     /// keeping one lane per instrument across every song. When false each
     /// imported song brings its own tracks, even if two songs both call a track
     /// "Bateria" — what users who order their set song by song expect.
+    ///
+    /// Superseded by `song_track_layout`, which adds "a folder per song". Kept,
+    /// and kept in step with it by [`AppSettings::sync_legacy_track_layout`], so a
+    /// settings file still reads right in a version from before the layout.
     #[serde(default = "default_import_merge_matching_tracks")]
     pub import_merge_matching_tracks: bool,
+    /// Where each song's tracks go when a song is imported or laid out from a
+    /// template: `"shared"` (one lane per instrument for every song),
+    /// `"songFolder"` (a folder per song) or `"separate"` (per-song tracks at
+    /// the root). `None` — every settings file written before the field — is
+    /// read from `import_merge_matching_tracks`; see
+    /// [`AppSettings::track_layout`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub song_track_layout: Option<String>,
     /// When true (default), a track created without an explicit colour gets one
     /// from the timeline palette, cycling through it so two tracks made in a
     /// row never share a colour. Off, new tracks keep the historical single
@@ -496,6 +509,7 @@ impl Default for AppSettings {
             timeline_navigation_scheme: default_timeline_navigation_scheme(),
             timeline_playhead_follow_mode: default_timeline_playhead_follow_mode(),
             import_merge_matching_tracks: default_import_merge_matching_tracks(),
+            song_track_layout: None,
             auto_color_new_tracks: default_auto_color_new_tracks(),
             auto_save_enabled: default_auto_save_enabled(),
             auto_save_interval_minutes: default_auto_save_interval_minutes(),
@@ -527,6 +541,30 @@ impl Default for AppSettings {
 /// out in English on a Spanish phone that had never touched the setting. Not
 /// persisted: it is a fact about the running UI, not a preference.
 static DISPLAYED_UI_LANGUAGE: Mutex<Option<String>> = Mutex::new(None);
+
+impl AppSettings {
+    /// The track layout in force. A value this version does not know (written
+    /// by a newer one) falls back to the old switch rather than to a guess.
+    pub fn track_layout(&self) -> SongImportTrackMode {
+        match self.song_track_layout.as_deref() {
+            Some("shared") => SongImportTrackMode::MergeIntoExisting,
+            Some("separate") => SongImportTrackMode::KeepSeparate,
+            Some("songFolder") => SongImportTrackMode::SongFolder,
+            _ if self.import_merge_matching_tracks => SongImportTrackMode::MergeIntoExisting,
+            _ => SongImportTrackMode::KeepSeparate,
+        }
+    }
+
+    /// Bring the old merge switch in line with the layout the user chose, so
+    /// an older version reading this file keeps merging only under "shared".
+    /// Called on every save: the UI writes the layout, never the switch.
+    pub fn sync_legacy_track_layout(&mut self) {
+        if self.song_track_layout.is_some() {
+            self.import_merge_matching_tracks =
+                self.track_layout() == SongImportTrackMode::MergeIntoExisting;
+        }
+    }
+}
 
 pub fn set_displayed_ui_language(language: &str) {
     let language = language.trim().to_ascii_lowercase();
@@ -711,7 +749,11 @@ pub fn save_app_settings(app: &AppHandle, settings: &AppSettings) -> Result<Path
         fs::create_dir_all(parent_dir)?;
     }
 
-    let contents = serde_json::to_string_pretty(settings)
+    // Only the file needs the old switch in step: this process reads the
+    // layout through `track_layout`, which prefers the new field.
+    let mut settings = settings.clone();
+    settings.sync_legacy_track_layout();
+    let contents = serde_json::to_string_pretty(&settings)
         .map_err(|error| io::Error::other(error.to_string()))?;
     fs::write(&settings_path, contents)?;
     Ok(settings_path)
@@ -862,6 +904,49 @@ mod tests {
         let settings: AppSettings =
             serde_json::from_str(r#"{ "importMergeMatchingTracks": false }"#).expect("explicit");
         assert!(!settings.import_merge_matching_tracks);
+    }
+
+    #[test]
+    fn track_layout_is_read_from_the_old_merge_switch_until_one_is_chosen() {
+        let settings: AppSettings = serde_json::from_str("{}").expect("defaults");
+        assert_eq!(settings.track_layout(), SongImportTrackMode::MergeIntoExisting);
+
+        let settings: AppSettings =
+            serde_json::from_str(r#"{ "importMergeMatchingTracks": false }"#).expect("old off");
+        assert_eq!(settings.track_layout(), SongImportTrackMode::KeepSeparate);
+
+        // The layout, once chosen, wins over the old switch.
+        let settings: AppSettings = serde_json::from_str(
+            r#"{ "importMergeMatchingTracks": true, "songTrackLayout": "songFolder" }"#,
+        )
+        .expect("layout");
+        assert_eq!(settings.track_layout(), SongImportTrackMode::SongFolder);
+
+        // A layout from a newer version falls back to the switch.
+        let settings: AppSettings = serde_json::from_str(
+            r#"{ "importMergeMatchingTracks": false, "songTrackLayout": "fromTheFuture" }"#,
+        )
+        .expect("unknown layout");
+        assert_eq!(settings.track_layout(), SongImportTrackMode::KeepSeparate);
+    }
+
+    #[test]
+    fn saving_a_layout_keeps_the_old_switch_meaning_the_same() {
+        let mut settings = AppSettings::default();
+        settings.song_track_layout = Some("songFolder".into());
+        settings.sync_legacy_track_layout();
+        assert!(!settings.import_merge_matching_tracks);
+
+        settings.song_track_layout = Some("shared".into());
+        settings.sync_legacy_track_layout();
+        assert!(settings.import_merge_matching_tracks);
+
+        // Without a layout the switch is the user's own and is left alone.
+        let mut settings = AppSettings::default();
+        settings.import_merge_matching_tracks = false;
+        settings.sync_legacy_track_layout();
+        assert!(!settings.import_merge_matching_tracks);
+        assert_eq!(settings.song_track_layout, None);
     }
 
     #[test]

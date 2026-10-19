@@ -2096,7 +2096,7 @@ export function TransportPanelContent() {
     handleTrackMeterModeChange,
     handleFadeOutStopSecondsChange,
     handleMidiPlatformSettingsChange,
-    handleImportMergeMatchingTracksChange,
+    handleSongTrackLayoutChange,
     handleAutoColorNewTracksChange,
     handleReferenceImportedAudioChange,
     handleAutoSaveEnabledChange,
@@ -8135,8 +8135,8 @@ export function TransportPanelContent() {
               onPauseAtSongEndChange={handlePauseAtSongEndChange}
               onVampBetweenSongsChange={handleVampBetweenSongsChange}
               onFadeOutStopSecondsChange={handleFadeOutStopSecondsChange}
-              onImportMergeMatchingTracksChange={
-                handleImportMergeMatchingTracksChange
+              onSongTrackLayoutChange={
+                handleSongTrackLayoutChange
               }
               onAutoColorNewTracksChange={handleAutoColorNewTracksChange}
               onReferenceImportedAudioChange={handleReferenceImportedAudioChange}
