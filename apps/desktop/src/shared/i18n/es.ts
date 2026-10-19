@@ -2215,7 +2215,7 @@ const es = {
     regionTransposeNoSelection: "Selecciona una region para cambiar el tono.",
     regionMasterNoSelection:
       "Selecciona una region para ajustar el volumen master.",
-    regionWarpLabel: "Warp de Region",
+    regionWarpLabel: "Warp y tempo",
     regionWarpSummaryOff: "Apagado",
     regionWarpToggleAria: "Activar warp en la region seleccionada",
     regionWarpToggleOn: "Activado",
@@ -2226,8 +2226,8 @@ const es = {
     regionWarpSourceBpmUpAria: "Subir 1 el BPM original",
     regionWarpNoSelection: "Selecciona una region para activar warp.",
     regionWarpRatioDisplay: "{{source}} → {{target}} (×{{ratio}})",
-    regionWarpSemanticsOn: "Warp activado: el pitch preserva la duracion.",
-    regionWarpSemanticsOff: "Warp apagado: el pitch cambia la velocidad.",
+    regionWarpSemanticsOn: "Cambiar el tono no cambia la velocidad.",
+    regionWarpSemanticsOff: "Cambiar el tono también cambia la velocidad.",
     regionTempoLabel: "Tempo de la canción",
     regionTempoAria: "Tempo de la canción en BPM",
     regionTempoDownAria: "Bajar 1 BPM la canción",
@@ -2235,7 +2235,7 @@ const es = {
     regionTempoReset: "Original",
     regionTempoResetAria: "Volver al tempo original de la canción",
     regionTempoHintOriginal:
-      "Tempo original ({{bpm}} BPM). Cambiarlo activa el warp: más rápido o más lento sin cambiar el tono.",
+      "Tempo original. Al cambiarlo se activa el warp y la canción va más rápida o más lenta sin cambiar el tono.",
     regionTempoHintChanged: "{{percent}} % respecto al original ({{bpm}} BPM).",
     cancelJump: "Cancelar salto",
     tracksCount: "{{count}} tracks",

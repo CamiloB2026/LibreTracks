@@ -70,9 +70,11 @@ export function RegionTempoControl({
   const atOriginal = Math.abs(draft - originalBpm) < 0.005;
 
   return (
-    <div className="lt-region-tempo-control">
-      <label className="lt-stepper-control">
-        <span>{t("timelineToolbar.regionTempoLabel")}</span>
+    <div className="lt-warp-panel-section lt-region-tempo-control">
+      <span className="lt-warp-panel-label">
+        {t("timelineToolbar.regionTempoLabel")}
+      </span>
+      <div className="lt-warp-panel-row">
         <div className="lt-stepper-control-row">
           <button
             type="button"
@@ -107,16 +109,18 @@ export function RegionTempoControl({
           >
             +
           </button>
-          <button
-            type="button"
-            aria-label={t("timelineToolbar.regionTempoResetAria")}
-            disabled={disabled || atOriginal}
-            onClick={() => commit(originalBpm, true)}
-          >
-            {t("timelineToolbar.regionTempoReset")}
-          </button>
+          <span className="lt-region-tempo-unit">BPM</span>
         </div>
-      </label>
+        <button
+          type="button"
+          className="lt-region-tempo-reset"
+          aria-label={t("timelineToolbar.regionTempoResetAria")}
+          disabled={disabled || atOriginal}
+          onClick={() => commit(originalBpm, true)}
+        >
+          {t("timelineToolbar.regionTempoReset")}
+        </button>
+      </div>
       <small className="lt-warp-semantics-hint">
         {atOriginal
           ? t("timelineToolbar.regionTempoHintOriginal", {

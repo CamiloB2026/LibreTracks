@@ -6271,7 +6271,7 @@ html.lt-ios body {
 }
 
 .lt-control-group-warp .lt-control-popover-panel {
-  min-width: 16rem;
+  min-width: 22rem;
 }
 
 .lt-control-group-warp .lt-control-group-body {
@@ -6304,26 +6304,120 @@ html.lt-ios body {
   margin-top: 0.35rem;
 }
 
-/* Tempo de la canción dentro del popover de Warp: separado del interruptor. */
-.lt-region-tempo-control {
-  margin-top: 0.6rem;
-  padding-top: 0.6rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.lt-region-tempo-control .lt-stepper-control {
-  display: block;
+/* Popover "Warp y tempo": dos bloques apilados (Warp arriba, Tempo debajo),
+   cada uno con su etiqueta pequena como la cabecera del popover. */
+.lt-warp-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
   width: 100%;
   min-width: 0;
 }
 
-.lt-region-tempo-control .lt-stepper-control > span {
-  display: block;
-  margin-bottom: 0.3rem;
+.lt-warp-panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.lt-warp-panel-section + .lt-warp-panel-section {
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.lt-warp-panel-label {
+  color: #bacac5;
+  font: 600 10px/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.lt-warp-panel-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.lt-warp-panel .lt-warp-semantics-hint {
+  margin-top: 0;
+}
+
+.lt-warp-panel-row .lt-warp-semantics-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.lt-warp-toggle,
+.lt-region-tempo-reset {
+  flex: 0 0 auto;
+  height: 32px;
+  border: 0;
+  border-radius: 2px;
+  background: #0e0e0e;
+  color: #e5e2e1;
+  padding: 0 0.75rem;
+  font: 700 11px/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.lt-warp-toggle {
+  min-width: 6.5rem;
+}
+
+/* Sobre el fondo del popover los botones negros se leian como texto suelto. */
+.lt-warp-panel .lt-warp-toggle,
+.lt-warp-panel .lt-region-tempo-reset,
+.lt-warp-panel .lt-stepper-control-row button,
+.lt-warp-panel .lt-stepper-control-row input {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lt-warp-toggle:hover,
+.lt-region-tempo-reset:hover {
+  color: #57f1db;
+  background: rgb(87 241 219 / 0.12);
+}
+
+.lt-warp-toggle.is-active {
+  color: #57f1db;
+  background: rgb(87 241 219 / 0.16);
+  box-shadow: inset 0 0 0 1px rgb(87 241 219 / 0.35);
+}
+
+.lt-warp-toggle:disabled,
+.lt-region-tempo-reset:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.lt-region-tempo-control .lt-stepper-control-row button {
+  min-width: 2rem;
+  font-size: 14px;
 }
 
 .lt-region-tempo-control .lt-stepper-control-row input {
   width: 4.5rem;
+  font-size: 13px;
+}
+
+.lt-region-tempo-unit {
+  color: #bacac5;
+  font: 600 10px/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.12em;
+  margin-left: 0.15rem;
+}
+
+.lt-region-tempo-reset {
+  margin-left: auto;
+}
+
+.lt-mobile .lt-warp-toggle,
+.lt-mobile .lt-region-tempo-reset {
+  height: 2.5rem;
 }
 
 .lt-mono {

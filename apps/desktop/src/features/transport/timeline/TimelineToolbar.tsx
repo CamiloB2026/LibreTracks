@@ -1039,24 +1039,29 @@ export function TimelineToolbar({
             data-lt-tour={TOUR_TARGETS.toolbarWarp}
             details={
               selectedRegion ? (
-                <>
-                  <button
-                    type="button"
-                    className={`lt-vamp-button ${warpEnabled ? "is-active" : ""}`}
-                    aria-label={t("timelineToolbar.regionWarpToggleAria")}
-                    aria-pressed={warpEnabled}
-                    disabled={warpControlsDisabled}
-                    onClick={() => onSelectedRegionWarpToggle(!warpEnabled)}
-                  >
-                    {warpEnabled
-                      ? t("timelineToolbar.regionWarpToggleOn")
-                      : t("timelineToolbar.regionWarpToggleOff")}
-                  </button>
-                  <small className="lt-warp-semantics-hint">
-                    {warpEnabled
-                      ? t("timelineToolbar.regionWarpSemanticsOn")
-                      : t("timelineToolbar.regionWarpSemanticsOff")}
-                  </small>
+                <div className="lt-warp-panel">
+                  <div className="lt-warp-panel-section">
+                    <span className="lt-warp-panel-label">Warp</span>
+                    <div className="lt-warp-panel-row">
+                      <button
+                        type="button"
+                        className={`lt-warp-toggle ${warpEnabled ? "is-active" : ""}`}
+                        aria-label={t("timelineToolbar.regionWarpToggleAria")}
+                        aria-pressed={warpEnabled}
+                        disabled={warpControlsDisabled}
+                        onClick={() => onSelectedRegionWarpToggle(!warpEnabled)}
+                      >
+                        {warpEnabled
+                          ? t("timelineToolbar.regionWarpToggleOn")
+                          : t("timelineToolbar.regionWarpToggleOff")}
+                      </button>
+                      <small className="lt-warp-semantics-hint">
+                        {warpEnabled
+                          ? t("timelineToolbar.regionWarpSemanticsOn")
+                          : t("timelineToolbar.regionWarpSemanticsOff")}
+                      </small>
+                    </div>
+                  </div>
                   <RegionTempoControl
                     key={selectedRegion.id}
                     currentBpm={selectedRegionEffectiveBpm}
@@ -1070,7 +1075,7 @@ export function TimelineToolbar({
                       onSelectedRegionTempoChange(selectedRegion, bpm)
                     }
                   />
-                </>
+                </div>
               ) : (
                 <span>{t("timelineToolbar.regionWarpNoSelection")}</span>
               )

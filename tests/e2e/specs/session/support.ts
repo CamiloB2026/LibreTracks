@@ -289,7 +289,7 @@ export async function measureRenderedPitch(trackId: string): Promise<number> {
 
 /**
  * Enable or disable warp on the currently selected region via the toolbar's
- * "Warp de Region" popover. Warp matters for transpose semantics: WITHOUT warp,
+ * "Warp y tempo" popover. Warp matters for transpose semantics: WITHOUT warp,
  * a pitch change is global vari-speed (resampling) that shifts every track
  * regardless of its per-track "T"; the per-track transpose-enable flag only has
  * an effect when warp is on. Re-selects the region first (playback can drop it).
@@ -301,7 +301,7 @@ export async function setRegionWarp(enabled: boolean, regionIndex = 0) {
   }
   await (await regionHotspot(targetId, regionIndex)).click();
 
-  const trigger = await $('button[aria-label="Warp de Region settings"]');
+  const trigger = await $('button[aria-label="Warp y tempo settings"]');
   await trigger.waitForClickable({ timeout: 15_000 });
   if ((await trigger.getAttribute("aria-expanded")) !== "true") {
     await trigger.click();
