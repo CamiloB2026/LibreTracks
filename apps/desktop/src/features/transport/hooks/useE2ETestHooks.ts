@@ -25,6 +25,8 @@ import {
   deletePad,
   saveSettings,
   createAudioTracksWithClips,
+  createClipsWithAutoTracks,
+  createEmptySong,
   createSongRegion,
   createSectionMarker,
   deleteTracks,
@@ -256,6 +258,28 @@ export interface E2ETestHooks {
   saveSessionAsTemplateAt: (templatePath: string) => Promise<string>;
   /** List the `.lttemplate` files in the default templates folder. */
   listSessionTemplates: () => Promise<Array<{ name: string; path: string }>>;
+  /**
+   * Save the two song-template settings (the rest stay as they are): the
+   * default template (`"builtin:band"`, a `.lttemplate` path or null) and
+   * where each song's tracks go.
+   */
+  setSongTemplateSettings: (
+    defaultSongTemplate: string | null,
+    songTrackLayout: AppSettings["songTrackLayout"],
+  ) => Promise<void>;
+  /**
+   * «+ Nueva canción»: a new empty song after the last one, laid out from
+   * `template` (or from the default template when it is null).
+   */
+  createEmptySong: (name: string | null, template: string | null) => Promise<void>;
+  /**
+   * The compact-view column drop: every file lands at `timelineStartSeconds`
+   * with its own auto track, unless a song template sends it somewhere else.
+   */
+  createClipsWithAutoTracks: (
+    filePaths: string[],
+    timelineStartSeconds: number,
+  ) => Promise<void>;
   /**
    * Create a new session named `name` in `parentDir` from the template at
    * `templatePath`, through the production project-load flow (no dialog).
@@ -571,6 +595,18 @@ export function useE2ETestHooks(
         return templatePath;
       },
       listSessionTemplates: () => listSessionTemplates(),
+      setSongTemplateSettings: async (defaultSongTemplate, songTrackLayout) => {
+        const base = await getSettings();
+        await saveSettings({ ...base, defaultSongTemplate, songTrackLayout });
+      },
+      createEmptySong: async (name, template) => {
+        await createEmptySong(name ?? undefined, template);
+      },
+      createClipsWithAutoTracks: async (filePaths, timelineStartSeconds) => {
+        await createClipsWithAutoTracks(
+          filePaths.map((filePath) => ({ filePath, timelineStartSeconds })),
+        );
+      },
       createSessionFromTemplate: (templatePath, name, parentDir) => {
         void createSongFromTemplateNamed(templatePath, name, parentDir);
       },

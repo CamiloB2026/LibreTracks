@@ -29,6 +29,10 @@ export type E2ESongView = {
     solo: boolean;
     transposeEnabled: boolean;
     color?: string | null;
+    autoCreated?: boolean;
+    /** The song a track was made for, in the per-song track layouts. */
+    songRegionId?: string | null;
+    matchAliases?: string[];
   }>;
   clips: Array<{
     id: string;
@@ -930,6 +934,63 @@ class AppPage {
             };
           }
         ).__ltE2E.listSessionTemplates(),
+    );
+  }
+
+  /** Save the default song template and the song track layout settings. */
+  async setSongTemplateSettings(
+    defaultSongTemplate: string | null,
+    songTrackLayout: "shared" | "songFolder" | "separate",
+  ): Promise<void> {
+    await browser.execute(
+      (tpl: string | null, layout: string) =>
+        (
+          window as unknown as {
+            __ltE2E: {
+              setSongTemplateSettings: (
+                template: string | null,
+                layout: string,
+              ) => Promise<void>;
+            };
+          }
+        ).__ltE2E.setSongTemplateSettings(tpl, layout),
+      defaultSongTemplate,
+      songTrackLayout,
+    );
+  }
+
+  /** «+ Nueva canción», from `template` or (null) the default template. */
+  async createEmptySong(name: string | null, template: string | null): Promise<void> {
+    await browser.execute(
+      (n: string | null, tpl: string | null) =>
+        (
+          window as unknown as {
+            __ltE2E: {
+              createEmptySong: (name: string | null, template: string | null) => Promise<void>;
+            };
+          }
+        ).__ltE2E.createEmptySong(n, tpl),
+      name,
+      template,
+    );
+  }
+
+  /** Drop audio files into a compact-view song column at one position. */
+  async createClipsWithAutoTracks(
+    filePaths: string[],
+    timelineStartSeconds: number,
+  ): Promise<void> {
+    await browser.execute(
+      (paths: string[], at: number) =>
+        (
+          window as unknown as {
+            __ltE2E: {
+              createClipsWithAutoTracks: (paths: string[], at: number) => Promise<void>;
+            };
+          }
+        ).__ltE2E.createClipsWithAutoTracks(paths, at),
+      filePaths,
+      timelineStartSeconds,
     );
   }
 
