@@ -151,7 +151,15 @@ impl Placement {
         if bars as u32 == self.bars && off.abs() <= CONTIGUOUS_BEATS * beat {
             let beats = bars * f64::from(self.beats_per_bar);
             let exact = 240.0 * beats / ((*start - self.start) * f64::from(self.beat_unit));
-            self.bpm = (exact * 1000.0).round() / 1000.0;
+            // Two decimals when they still land on the grid (71.03, not
+            // 71.031); three otherwise.
+            let hundredths = (exact * 100.0).round() / 100.0;
+            let landing = self.start + 240.0 * beats / (hundredths * f64::from(self.beat_unit));
+            self.bpm = if (landing - *start).abs() <= GRID_SNAP_SECONDS {
+                hundredths
+            } else {
+                (exact * 1000.0).round() / 1000.0
+            };
             *start = self.start + bars * self.bar_seconds();
             return true;
         }
