@@ -124,6 +124,8 @@ pub(crate) fn song_with_sections(a: f64, b: f64, c: f64) -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }],
         clips: vec![
             clip("c1", 1.0, 1.0),

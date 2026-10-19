@@ -470,6 +470,22 @@ pub struct Track {
     /// the session and travels with the .ltpkg/template.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height_offset: Option<i32>,
+    /// Words that make a dropped stem land on this track (or, on a folder,
+    /// inside it) when a template organises a drop: "EG", "Guitarra"… Matched
+    /// against the file name, see `track_matching`. Empty — the default, and
+    /// what sessions saved before this field deserialize to — means the track
+    /// never receives stems by name. Left out on save when empty, so a session
+    /// without aliases writes exactly as before and older versions, which
+    /// ignore unknown fields, open the ones that have them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub match_aliases: Vec<String>,
+    /// The song (region) this track was created for, when a template laid out
+    /// per-song tracks ("folder per song" / "separate" modes). `None` — the
+    /// default — is a track shared by every song. It is what lets a drop into a
+    /// song find that song's own tracks while they are still empty, which
+    /// deducing ownership from the clips could not.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub song_region_id: Option<String>,
 }
 
 pub fn default_audio_to() -> String {

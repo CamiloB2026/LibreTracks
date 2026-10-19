@@ -687,6 +687,8 @@ mod tests {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         };
         let video = |id: &str, track_id: &str| VideoClip {
             id: id.into(),

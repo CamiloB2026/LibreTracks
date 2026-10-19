@@ -285,6 +285,8 @@ pub fn import_wav_song(
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             })
             .collect(),
         clips: imported_files
@@ -375,6 +377,8 @@ pub fn append_wav_files_to_song(
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         });
 
         next_song.clips.push(Clip {

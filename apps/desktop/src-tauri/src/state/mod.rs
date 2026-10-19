@@ -3728,6 +3728,10 @@ pub(super) fn strip_song_to_template(mut song: Song) -> Song {
         // Auto-created tracks vanish once empty; a template has no clips, so
         // pin every track as explicit to preserve the whole layout.
         track.auto_created = false;
+        // A template has no songs, so a track can't belong to one. The match
+        // aliases stay: they are layout, and the reason a template is useful
+        // when stems are dropped.
+        track.song_region_id = None;
     }
 
     song

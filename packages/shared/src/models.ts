@@ -572,6 +572,13 @@ export type TrackSummary = {
    * shifts every row by the same amount and keeps the differences the user
    * set. Absent/null = the track just follows the global height. */
   heightOffset?: number | null;
+  /** Words a dropped stem's file name is matched against so a template drops
+   * it here ("EG", "Guitarra"…). On a folder, a match creates a child inside
+   * it. Absent/empty = the track never receives stems by name. */
+  matchAliases?: string[];
+  /** The song (region id) this track was created for when a template lays
+   * out per-song tracks. Absent/null = shared by every song. */
+  songRegionId?: string | null;
 };
 
 export function formatTransposeSemitones(value: number): string {

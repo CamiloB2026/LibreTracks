@@ -90,6 +90,8 @@ fn song_with(regions: Vec<SongRegion>, clips: Vec<Clip>) -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }],
         clips,
         midi_clips: vec![],

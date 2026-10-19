@@ -312,6 +312,8 @@ impl DesktopSession {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             });
             imported_track_ids_by_index.push(track_id.clone());
 

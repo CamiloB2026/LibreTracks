@@ -86,6 +86,8 @@ fn three_songs() -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }],
         clips: vec![clip("c1", 1.0), clip("c2", 9.0), clip("c3", 17.0)],
         midi_clips: vec![],

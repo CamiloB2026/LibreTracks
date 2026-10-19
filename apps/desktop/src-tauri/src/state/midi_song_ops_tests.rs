@@ -54,6 +54,8 @@ fn track(id: &str, kind: TrackKind) -> Track {
         midi_enabled: true,
         collapsed: false,
         height_offset: None,
+        match_aliases: Vec::new(),
+        song_region_id: None,
     }
 }
 

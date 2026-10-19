@@ -6,6 +6,7 @@ pub mod model;
 pub mod net_clock;
 pub mod song_structure;
 pub mod tempo_ramp;
+pub mod track_matching;
 pub mod validation;
 pub mod video_schedule;
 pub mod warp;
@@ -86,6 +87,8 @@ mod tests {
                     midi_enabled: true,
                     collapsed: false,
                     height_offset: None,
+                    match_aliases: Vec::new(),
+                    song_region_id: None,
                 },
                 Track {
                     id: "track_click".into(),
@@ -106,6 +109,8 @@ mod tests {
                     midi_enabled: true,
                     collapsed: false,
                     height_offset: None,
+                    match_aliases: Vec::new(),
+                    song_region_id: None,
                 },
             ],
             clips: vec![Clip {

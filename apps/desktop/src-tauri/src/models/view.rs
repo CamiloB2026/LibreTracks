@@ -497,6 +497,10 @@ pub struct TrackSummary {
     /// the arrangement can keep one track tall among collapsed ones. `None`
     /// = the track just follows the global height.
     pub height_offset: Option<i32>,
+    /// Words a dropped stem's file name is matched against to land here.
+    pub match_aliases: Vec<String>,
+    /// The song this track was created for; `None` = shared by every song.
+    pub song_region_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -834,6 +838,8 @@ pub(crate) fn song_to_view(
                 midi_enabled: track.midi_enabled,
                 collapsed: track.collapsed,
                 height_offset: track.height_offset,
+                match_aliases: track.match_aliases.clone(),
+                song_region_id: track.song_region_id.clone(),
             })
             .collect(),
         automation_cues: automation_cues_to_summary(song, &automation.cues, automation_run_counts),
@@ -1603,6 +1609,8 @@ mod tests {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }
     }
 

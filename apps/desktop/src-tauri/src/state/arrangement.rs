@@ -566,6 +566,8 @@ impl DesktopSession {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             });
             append_clip_to_song(
                 &mut song,
@@ -645,6 +647,8 @@ impl DesktopSession {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             });
             append_clip_to_song(
                 &mut song,
@@ -1126,5 +1130,7 @@ pub(super) fn new_track(
         // they are about to drag into it.
         collapsed: false,
         height_offset: None,
+        match_aliases: Vec::new(),
+        song_region_id: None,
     }
 }

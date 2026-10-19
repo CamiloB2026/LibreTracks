@@ -1094,6 +1094,10 @@ pub fn merge_extracted_song_package(
             midi_enabled: track.midi_enabled,
             collapsed: track.collapsed,
             height_offset: track.height_offset,
+            match_aliases: track.match_aliases.clone(),
+            // The package's region ids are the source session's; whether the
+            // imported tracks belong to the new song is the track mode's call.
+            song_region_id: None,
         });
         target_track_id_by_manifest_id.insert(track.id.clone(), track_id);
     }
@@ -1349,6 +1353,8 @@ mod tests {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }
     }
 
@@ -1387,6 +1393,8 @@ mod tests {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }
     }
 

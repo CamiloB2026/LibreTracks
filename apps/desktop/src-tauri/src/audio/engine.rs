@@ -3573,6 +3573,8 @@ mod tests {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             }],
             clips: vec![Clip {
                 id: "clip".into(),

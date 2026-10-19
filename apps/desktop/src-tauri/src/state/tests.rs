@@ -104,6 +104,8 @@ fn demo_song() -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         }],
         clips: vec![Clip {
             id: "clip_1".into(),
@@ -367,6 +369,8 @@ fn demo_song_with_folder_track() -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: Vec::new(),
+            song_region_id: None,
         },
     );
     // Make the audio track a child of the folder.
@@ -458,6 +462,8 @@ fn hierarchy_song() -> Song {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
             Track {
                 id: "track_child_a".into(),
@@ -478,6 +484,8 @@ fn hierarchy_song() -> Song {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
             Track {
                 id: "track_folder_b".into(),
@@ -498,6 +506,8 @@ fn hierarchy_song() -> Song {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
             Track {
                 id: "track_child_b".into(),
@@ -518,6 +528,8 @@ fn hierarchy_song() -> Song {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
         ],
         clips: vec![],
@@ -1053,6 +1065,8 @@ fn song_to_view_preserves_track_ids_and_parent_ids_verbatim() {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
             Track {
                 id: "track-drums_01".into(),
@@ -1073,6 +1087,8 @@ fn song_to_view_preserves_track_ids_and_parent_ids_verbatim() {
                 midi_enabled: true,
                 collapsed: false,
                 height_offset: None,
+                match_aliases: Vec::new(),
+                song_region_id: None,
             },
         ],
         clips: vec![],
@@ -1256,6 +1272,8 @@ fn batch_move_can_reassign_clip_to_another_track() {
         midi_enabled: true,
         collapsed: false,
         height_offset: None,
+        match_aliases: Vec::new(),
+        song_region_id: None,
     });
     let mut session = session_with_song_dir("batch-move-track", song);
     let audio = crate::audio::engine::AudioController::default();
@@ -2416,6 +2434,8 @@ fn song_with_folder_hierarchy() -> Song {
             midi_enabled: true,
             collapsed: false,
             height_offset: None,
+            match_aliases: vec!["drums".into(), "kick".into()],
+            song_region_id: Some("region_1".into()),
         },
     );
     song.tracks.push(Track {
@@ -2437,6 +2457,8 @@ fn song_with_folder_hierarchy() -> Song {
         midi_enabled: true,
         collapsed: false,
         height_offset: None,
+        match_aliases: Vec::new(),
+        song_region_id: None,
     });
     song
 }
@@ -2458,6 +2480,10 @@ fn strip_song_to_template_keeps_structure_and_drops_content() {
     assert_eq!(folder.kind, TrackKind::Folder);
     assert_eq!(folder.audio_to, "bus_a");
     assert_eq!(folder.color.as_deref(), Some("#ff0000"));
+    // The aliases are layout and travel with the template; the song a track
+    // was made for does not, because a template has no songs.
+    assert_eq!(folder.match_aliases, vec!["drums", "kick"]);
+    assert_eq!(folder.song_region_id, None);
     let child = template
         .tracks
         .iter()
