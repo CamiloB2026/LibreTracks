@@ -2302,6 +2302,9 @@ const es = {
       folderHint: "Pulsa para abrir. Arrástrala al timeline para crear una canción con su nombre.",
       dragHintFolderSong: "Suelta en el timeline para crear una canción con esta carpeta",
       importingFolder: "Importando «{{name}}»…",
+      noAudioInFolder: "No hay audio en «{{name}}» ni en sus subcarpetas",
+      tooMuchAudio:
+        "«{{name}}» tiene más de {{count}} audios: parece una carpeta de varias canciones. Añade la carpeta de una sola canción.",
       inThisSession: "En esta sesión ({{count}})",
       addFolderAsSong: "Añadir «{{name}}» como canción en el cursor",
       addSelection: "Añadir al timeline ({{count}})",

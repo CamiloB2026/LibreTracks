@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createBrowserDrop, type BrowserDropDeps } from "./browserDrop";
 
 const importAudioFilesFromPaths = vi.fn();
+const listLibraryFolderAudio = vi.fn();
 vi.mock("../../desktopApi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../desktopApi")>();
   return {
     ...actual,
     importAudioFilesFromPaths: (files: unknown) => importAudioFilesFromPaths(files),
+    listLibraryFolderAudio: (path: string) => listLibraryFolderAudio(path),
   };
 });
 
@@ -29,14 +31,18 @@ function setup(overTimeline: boolean) {
     runAction: async (action: () => Promise<void>) => action(),
     mergeLibraryAssets: vi.fn(),
     setStatus: vi.fn(),
-    t: (key: string) => key,
+    t: (key: string, options?: Record<string, unknown>) =>
+      options ? `${key} ${JSON.stringify(options)}` : key,
     getPlayheadSeconds: () => 7,
   } as unknown as BrowserDropDeps;
   return { drop: createBrowserDrop(deps), dragDrop, deps };
 }
 
 describe("folder library drops", () => {
-  beforeEach(() => importAudioFilesFromPaths.mockReset());
+  beforeEach(() => {
+    importAudioFilesFromPaths.mockReset();
+    listLibraryFolderAudio.mockReset();
+  });
 
   // Same road as a file dropped from the OS file manager: one import path.
   it("sends disk files down the external-drop path at the drop point", () => {
@@ -66,28 +72,63 @@ describe("folder library drops", () => {
     expect(dragDrop.handleNativeExternalTimelineDrop).not.toHaveBeenCalled();
   });
 
+  // The stems of a Reaper project sit in Media/: the backend looks there.
   it("turns a disk folder into one song named after it", async () => {
+    listLibraryFolderAudio.mockResolvedValue({
+      paths: ["D:/Oceans/Media/Drums.wav"],
+      truncated: false,
+    });
     importAudioFilesFromPaths.mockResolvedValue({
-      assets: [{ filePath: "D:/Oceans/Drums.wav", durationSeconds: 200 }],
+      assets: [{ filePath: "D:/Oceans/Media/Drums.wav", durationSeconds: 200 }],
       skipped: [],
     });
     const { drop, dragDrop, deps } = setup(true);
     drop.dropFolderAt({
+      folderPath: "D:/Oceans",
       folderName: "Oceans",
-      audioPaths: ["D:/Oceans/Drums.wav"],
       clientX: 0,
       clientY: 0,
       ctrlKey: false,
       metaKey: false,
     });
     await vi.waitFor(() => expect(dragDrop.dropLibraryFolder).toHaveBeenCalled());
+    expect(listLibraryFolderAudio).toHaveBeenCalledWith("D:/Oceans");
+    expect(importAudioFilesFromPaths).toHaveBeenCalledWith([
+      { fileName: "Drums.wav", sourcePath: "D:/Oceans/Media/Drums.wav" },
+    ]);
     expect(deps.mergeLibraryAssets).toHaveBeenCalled();
     expect(dragDrop.dropLibraryFolder).toHaveBeenCalledWith({
-      payload: [{ file_path: "D:/Oceans/Drums.wav", durationSeconds: 200 }],
+      payload: [{ file_path: "D:/Oceans/Media/Drums.wav", durationSeconds: 200 }],
       folderName: "Oceans",
       timelineStartSeconds: 42,
       layout: "vertical",
     });
+  });
+
+  it("says so when a folder has no audio, instead of an empty song", async () => {
+    listLibraryFolderAudio.mockResolvedValue({ paths: [], truncated: false });
+    const { drop, dragDrop, deps } = setup(true);
+    drop.addFolderAtPlayhead("/Documents/Empty", "Empty");
+    await vi.waitFor(() =>
+      expect(deps.setStatus).toHaveBeenLastCalledWith(
+        'library.folders.noAudioInFolder {"name":"Empty"}',
+      ),
+    );
+    expect(importAudioFilesFromPaths).not.toHaveBeenCalled();
+    expect(dragDrop.dropLibraryFolder).not.toHaveBeenCalled();
+  });
+
+  it("refuses a folder of several songs", async () => {
+    listLibraryFolderAudio.mockResolvedValue({ paths: ["a.wav", "b.wav"], truncated: true });
+    const { drop, dragDrop, deps } = setup(true);
+    drop.addFolderAtPlayhead("D:/MultiTracks", "MultiTracks");
+    await vi.waitFor(() =>
+      expect(deps.setStatus).toHaveBeenLastCalledWith(
+        'library.folders.tooMuchAudio {"name":"MultiTracks","count":2}',
+      ),
+    );
+    expect(importAudioFilesFromPaths).not.toHaveBeenCalled();
+    expect(dragDrop.dropLibraryFolder).not.toHaveBeenCalled();
   });
 
   // While dragging, the timeline draws where it would land, labelled by what

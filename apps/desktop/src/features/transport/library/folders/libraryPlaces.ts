@@ -47,8 +47,3 @@ function normalizeForSearch(value: string): string {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 }
-
-/** The files of a listing that can go straight onto the timeline as audio. */
-export function audioPathsOf(entries: LibraryDirEntry[]): string[] {
-  return entries.filter((entry) => entry.kind === "audio").map((entry) => entry.path);
-}

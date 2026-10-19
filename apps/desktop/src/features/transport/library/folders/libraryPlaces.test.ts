@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { LibraryDirEntry } from "../../desktopApi";
 import { classifyDroppedPaths } from "../dragDrop";
-import { addPlace, audioPathsOf, filterEntries, placeLabel, removePlace } from "./libraryPlaces";
+import { addPlace, filterEntries, placeLabel, removePlace } from "./libraryPlaces";
 
 const entry = (name: string, kind: LibraryDirEntry["kind"] = "audio"): LibraryDirEntry => ({
   name,
@@ -47,10 +47,5 @@ describe("library places", () => {
     const entries = [entry("Batería.wav"), entry("Bajo.wav")];
     expect(filterEntries(entries, "bateria").map((e) => e.name)).toEqual(["Batería.wav"]);
     expect(filterEntries(entries, "  ")).toBe(entries);
-  });
-
-  it("takes only the audio of a listing for a folder song", () => {
-    const entries = [entry("Song", "folder"), entry("Drums.wav"), entry("Clip.mp4", "video")];
-    expect(audioPathsOf(entries)).toEqual(["D:/Stems/Drums.wav"]);
   });
 });

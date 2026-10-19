@@ -2271,6 +2271,9 @@ const en = {
       folderHint: "Click to open. Drag it onto the timeline to create a song named after it.",
       dragHintFolderSong: "Drop on the timeline to create a song from this folder",
       importingFolder: "Importing “{{name}}”…",
+      noAudioInFolder: "No audio in “{{name}}” or its subfolders",
+      tooMuchAudio:
+        "“{{name}}” has more than {{count}} audio files: it looks like a folder of several songs. Add the folder of a single song.",
       inThisSession: "In this session ({{count}})",
       addFolderAsSong: "Add “{{name}}” as a song at the playhead",
       addSelection: "Add to timeline ({{count}})",

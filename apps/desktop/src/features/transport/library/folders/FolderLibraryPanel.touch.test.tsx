@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import i18n from "../../../../shared/i18n";
@@ -70,11 +70,9 @@ describe("FolderLibraryPanel on touch", () => {
   it("adds a whole folder as a song at the playhead", async () => {
     renderPanel();
     fireEvent.click(screen.getByRole("button", { name: /Add “Stems” as a song/ }));
-    await waitFor(() =>
-      expect(browserDrop.addFolderAtPlayhead).toHaveBeenCalledWith("Stems", [
-        "/Documents/Stems/Drums.wav",
-        "/Documents/Stems/Bass.wav",
-      ]),
-    );
+    // The audio is looked up when it is placed, subfolders included (see
+    // browserDrop), so the panel hands over the folder, not a listing.
+    expect(browserDrop.addFolderAtPlayhead).toHaveBeenCalledWith("/Documents/Stems", "Stems");
+    expect(listLibraryDir).not.toHaveBeenCalled();
   });
 });

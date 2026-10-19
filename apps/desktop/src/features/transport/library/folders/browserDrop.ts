@@ -1,4 +1,8 @@
-import { importAudioFilesFromPaths, type LibraryAssetSummary } from "../../desktopApi";
+import {
+  importAudioFilesFromPaths,
+  listLibraryFolderAudio,
+  type LibraryAssetSummary,
+} from "../../desktopApi";
 import { libraryAssetFileName } from "../../helpers";
 import { classifyDroppedPaths, resolveFolderDropLayout } from "../dragDrop";
 import type { LibraryDragDrop } from "../libraryDragDrop";
@@ -26,7 +30,8 @@ export type BrowserDropDeps = {
  * from the user's disk, so they take the same road as files dropped from the
  * OS file manager (import by reference, then place) — no second import path to
  * keep in step. A folder becomes one song named after it, like dropping a
- * folder of the classic library.
+ * folder of the classic library; its audio may sit in a subfolder (see
+ * list_library_folder_audio).
  *
  * Both return false when the pointer is not over the timeline, so the caller
  * can treat the gesture as cancelled.
@@ -39,8 +44,8 @@ export function createBrowserDrop(deps: BrowserDropDeps) {
   }
 
   function placeFolder(args: {
+    folderPath: string;
     folderName: string;
-    audioPaths: string[];
     seconds: number;
     layout: "horizontal" | "vertical";
   }) {
@@ -50,14 +55,24 @@ export function createBrowserDrop(deps: BrowserDropDeps) {
     }
     void deps.runAction(async () => {
       deps.setStatus(deps.t("library.folders.importingFolder", { name: args.folderName }));
-      const imported = args.audioPaths.length
-        ? await importAudioFilesFromPaths(
-            args.audioPaths.map((path) => ({
-              fileName: libraryAssetFileName(path),
-              sourcePath: path,
-            })),
-          )
-        : { assets: [], skipped: [] };
+      const audio = await listLibraryFolderAudio(args.folderPath);
+      if (audio.truncated) {
+        // Not one song: a folder of several (the MultiTracks folder itself).
+        deps.setStatus(
+          deps.t("library.folders.tooMuchAudio", { name: args.folderName, count: audio.paths.length }),
+        );
+        return;
+      }
+      if (!audio.paths.length) {
+        deps.setStatus(deps.t("library.folders.noAudioInFolder", { name: args.folderName }));
+        return;
+      }
+      const imported = await importAudioFilesFromPaths(
+        audio.paths.map((path) => ({
+          fileName: libraryAssetFileName(path),
+          sourcePath: path,
+        })),
+      );
       deps.mergeLibraryAssets(imported.assets);
       await deps.dragDrop().dropLibraryFolder({
         payload: imported.assets.map((asset) => ({
@@ -80,8 +95,8 @@ export function createBrowserDrop(deps: BrowserDropDeps) {
   }
 
   function dropFolderAt(args: {
+    folderPath: string;
     folderName: string;
-    audioPaths: string[];
     clientX: number;
     clientY: number;
     ctrlKey: boolean;
@@ -90,8 +105,8 @@ export function createBrowserDrop(deps: BrowserDropDeps) {
     const drop = deps.dragDrop().resolveTimelineDropFromClientPoint(args.clientX, args.clientY);
     if (!drop.isOverTimeline) return false;
     placeFolder({
+      folderPath: args.folderPath,
       folderName: args.folderName,
-      audioPaths: args.audioPaths,
       seconds: drop.dropSeconds,
       layout: resolveFolderDropLayout(args.ctrlKey, args.metaKey),
     });
@@ -116,10 +131,10 @@ export function createBrowserDrop(deps: BrowserDropDeps) {
   }
 
   /** Touch: a folder becomes a song starting at the playhead. */
-  function addFolderAtPlayhead(folderName: string, audioPaths: string[]) {
+  function addFolderAtPlayhead(folderPath: string, folderName: string) {
     placeFolder({
+      folderPath,
       folderName,
-      audioPaths,
       seconds: deps.getPlayheadSeconds(),
       layout: resolveFolderDropLayout(false, false),
     });

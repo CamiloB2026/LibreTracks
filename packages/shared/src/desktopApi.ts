@@ -1854,6 +1854,19 @@ export async function listLibraryDir(path: string): Promise<LibraryDirEntry[]> {
   return invokeCommand<LibraryDirEntry[]>("list_library_dir", { path });
 }
 
+export type LibraryFolderAudio = {
+  paths: string[];
+  /** Too much audio for one song: `paths` stops at the limit. */
+  truncated: boolean;
+};
+
+/** The audio of a folder added as a song. Looks into subfolders, down to the
+ * first level that has audio in each (the stems of a Reaper project live in
+ * `Media/`). Rejects when the folder is gone. */
+export async function listLibraryFolderAudio(path: string): Promise<LibraryFolderAudio> {
+  return invokeCommand<LibraryFolderAudio>("list_library_folder_audio", { path });
+}
+
 /** Ask the user for a disk folder to add to the folder library. `null` =
  * cancelled. */
 export async function pickLibraryPlace(): Promise<string | null> {

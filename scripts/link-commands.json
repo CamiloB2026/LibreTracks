@@ -48,6 +48,7 @@
     "get_system_resource_snapshot",
     "list_default_sessions",
     "list_library_dir",
+    "list_library_folder_audio",
     "list_session_templates",
     "load_pad_key",
     "move_library_asset",

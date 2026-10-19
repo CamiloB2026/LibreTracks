@@ -179,11 +179,90 @@ fn list_tree_entries(folder_uri: &str) -> Result<Vec<LibraryDirEntry>, String> {
 
 #[tauri::command(async)]
 pub fn list_library_dir(path: String) -> Result<Vec<LibraryDirEntry>, String> {
+    list_any(&path)
+}
+
+/// How far below a folder "add it as a song" looks for its audio. Enough for
+/// the usual project layouts (Reaper `Media/`, Ableton `Samples/Imported/`)
+/// without turning a drop of a whole disk into a scan of it.
+const FOLDER_AUDIO_MAX_DEPTH: usize = 3;
+/// More audio than one song plausibly has: a folder of several songs.
+const FOLDER_AUDIO_MAX_FILES: usize = 128;
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryFolderAudio {
+    pub paths: Vec<String>,
+    /// Stopped at FOLDER_AUDIO_MAX_FILES; `paths` is not the whole folder.
+    pub truncated: bool,
+}
+
+/// The audio of a folder dropped as a song. Each branch goes down only to its
+/// first level with audio: a song folder whose stems sit in a subfolder
+/// (`Song/Media/*.wav`) gives those stems, while one with the stems at the top
+/// ignores its subfolders (backups, alternate mixes). A folder's own audio
+/// comes before its subfolders', each in listing order. A subfolder that
+/// cannot be read is skipped; the folder itself must be readable.
+fn collect_folder_audio(
+    root: &str,
+    list: &dyn Fn(&str) -> Result<Vec<LibraryDirEntry>, String>,
+) -> Result<LibraryFolderAudio, String> {
+    let mut out = LibraryFolderAudio {
+        paths: Vec::new(),
+        truncated: false,
+    };
+    let entries = list(root)?;
+    collect_level(entries, 0, list, &mut out);
+    Ok(out)
+}
+
+fn collect_level(
+    entries: Vec<LibraryDirEntry>,
+    depth: usize,
+    list: &dyn Fn(&str) -> Result<Vec<LibraryDirEntry>, String>,
+    out: &mut LibraryFolderAudio,
+) {
+    let (folders, files): (Vec<_>, Vec<_>) = entries
+        .into_iter()
+        .partition(|entry| entry.kind == LibraryDirEntryKind::Folder);
+    let audio: Vec<_> = files
+        .into_iter()
+        .filter(|entry| entry.kind == LibraryDirEntryKind::Audio)
+        .collect();
+    if !audio.is_empty() {
+        for entry in audio {
+            if out.paths.len() == FOLDER_AUDIO_MAX_FILES {
+                out.truncated = true;
+                return;
+            }
+            out.paths.push(entry.path);
+        }
+        return;
+    }
+    if depth == FOLDER_AUDIO_MAX_DEPTH {
+        return;
+    }
+    for folder in folders {
+        if out.truncated {
+            return;
+        }
+        if let Ok(children) = list(&folder.path) {
+            collect_level(children, depth + 1, list, out);
+        }
+    }
+}
+
+fn list_any(path: &str) -> Result<Vec<LibraryDirEntry>, String> {
     #[cfg(target_os = "android")]
     if path.starts_with("content://") {
-        return list_tree_entries(&path);
+        return list_tree_entries(path);
     }
-    list_dir_entries(Path::new(&path))
+    list_dir_entries(Path::new(path))
+}
+
+#[tauri::command(async)]
+pub fn list_library_folder_audio(path: String) -> Result<LibraryFolderAudio, String> {
+    collect_folder_audio(&path, &list_any)
 }
 
 /// The user removed a place. Android: give back its persistable permission,
@@ -278,6 +357,93 @@ mod tests {
         let entries = list_dir_entries(dir.path()).expect("list");
         assert_eq!(entries.len(), 1, "the nested file is not listed");
         assert_eq!(entries[0].kind, LibraryDirEntryKind::Folder);
+    }
+
+    fn folder_audio(root: &Path) -> LibraryFolderAudio {
+        collect_folder_audio(&root.to_string_lossy(), &list_any).expect("collect")
+    }
+
+    fn names(audio: &LibraryFolderAudio, root: &Path) -> Vec<String> {
+        audio
+            .paths
+            .iter()
+            .map(|path| {
+                Path::new(path)
+                    .strip_prefix(root)
+                    .unwrap()
+                    .to_string_lossy()
+                    .replace('\\', "/")
+            })
+            .collect()
+    }
+
+    #[test]
+    fn folder_audio_finds_stems_in_a_subfolder() {
+        // A Reaper project: the .rpp at the top, the stems under Media/ and
+        // Reaper's own peak files one level further down.
+        let dir = tempfile::tempdir().expect("temp dir");
+        let media = dir.path().join("Media");
+        fs::create_dir_all(media.join("peaks")).unwrap();
+        fs::write(dir.path().join("Song.rpp"), b"").unwrap();
+        for name in ["GUIA_01.wav", "CLICK_02.wav", "CLICK_02.wav.asd"] {
+            fs::write(media.join(name), b"").unwrap();
+        }
+        fs::write(media.join("peaks").join("CLICK_02.wav.reapeaks"), b"").unwrap();
+
+        let audio = folder_audio(dir.path());
+        assert_eq!(names(&audio, dir.path()), ["Media/CLICK_02.wav", "Media/GUIA_01.wav"]);
+        assert!(!audio.truncated);
+    }
+
+    #[test]
+    fn folder_audio_at_the_top_ignores_subfolders() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        fs::create_dir(dir.path().join("Backup")).unwrap();
+        fs::write(dir.path().join("Backup").join("Old Bass.wav"), b"").unwrap();
+        fs::write(dir.path().join("Bass.wav"), b"").unwrap();
+
+        assert_eq!(names(&folder_audio(dir.path()), dir.path()), ["Bass.wav"]);
+    }
+
+    #[test]
+    fn folder_audio_stops_at_the_depth_limit() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let mut deep = dir.path().to_path_buf();
+        for level in 1..=FOLDER_AUDIO_MAX_DEPTH + 1 {
+            deep = deep.join(format!("L{level}"));
+            fs::create_dir(&deep).unwrap();
+            if level == FOLDER_AUDIO_MAX_DEPTH {
+                fs::write(deep.join("Reached.wav"), b"").unwrap();
+            }
+        }
+        fs::write(deep.join("TooDeep.wav"), b"").unwrap();
+
+        let found = names(&folder_audio(dir.path()), dir.path());
+        assert_eq!(found, ["L1/L2/L3/Reached.wav"]);
+
+        fs::remove_file(dir.path().join("L1/L2/L3/Reached.wav")).unwrap();
+        assert!(folder_audio(dir.path()).paths.is_empty(), "the file below the limit is not reached");
+    }
+
+    #[test]
+    fn folder_audio_of_many_songs_is_truncated() {
+        let dir = tempfile::tempdir().expect("temp dir");
+        for song in 0..3 {
+            let song_dir = dir.path().join(format!("Song {song}"));
+            fs::create_dir(&song_dir).unwrap();
+            for stem in 0..FOLDER_AUDIO_MAX_FILES / 2 {
+                fs::write(song_dir.join(format!("{stem}.wav")), b"").unwrap();
+            }
+        }
+
+        let audio = folder_audio(dir.path());
+        assert!(audio.truncated);
+        assert_eq!(audio.paths.len(), FOLDER_AUDIO_MAX_FILES);
+    }
+
+    #[test]
+    fn folder_audio_of_a_missing_folder_is_an_error() {
+        assert!(collect_folder_audio("/definitely/not/here/lt", &list_any).is_err());
     }
 
     #[test]

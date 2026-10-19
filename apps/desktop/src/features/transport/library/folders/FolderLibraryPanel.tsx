@@ -12,13 +12,12 @@ import { useTranslation } from "react-i18next";
 import { DRAG_THRESHOLD_PX } from "../../constants";
 import {
   isMobileApp,
-  listLibraryDir,
   pickLibraryPlace,
   type LibraryDirEntry,
 } from "../../desktopApi";
 import { clientToZoomedCoords } from "../../../../shared/uiZoom";
 import type { BrowserDrop } from "./browserDrop";
-import { audioPathsOf, filterEntries, placeLabel } from "./libraryPlaces";
+import { filterEntries, placeLabel } from "./libraryPlaces";
 import { useFolderTree, type FolderListing } from "./useFolderTree";
 import type { LibrarySettings } from "./useLibrarySettings";
 import "./folderLibrary.css";
@@ -111,19 +110,6 @@ export function FolderLibraryPanel({
     });
   };
 
-  /** The audio of a folder: from its listing when open, else read it now. */
-  const folderAudio = useCallback(
-    async (path: string) => {
-      const listing = tree.listings.get(path);
-      const entries =
-        listing?.status === "ready"
-          ? listing.entries
-          : await listLibraryDir(path).catch(() => [] as LibraryDirEntry[]);
-      return audioPathsOf(entries);
-    },
-    [tree.listings],
-  );
-
   // Window-level listeners while a row is pressed: the drag leaves the panel.
   useEffect(() => {
     if (!drag) return;
@@ -154,16 +140,13 @@ export function FolderLibraryPanel({
         browserDrop.dropPathsAt(item.paths, event.clientX, event.clientY);
         return;
       }
-      const { clientX, clientY, ctrlKey, metaKey } = event;
-      void folderAudio(item.path).then((audioPaths) => {
-        browserDrop.dropFolderAt({
-          folderName: item.name,
-          audioPaths,
-          clientX,
-          clientY,
-          ctrlKey,
-          metaKey,
-        });
+      browserDrop.dropFolderAt({
+        folderPath: item.path,
+        folderName: item.name,
+        clientX: event.clientX,
+        clientY: event.clientY,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
       });
     };
 
@@ -184,13 +167,7 @@ export function FolderLibraryPanel({
     };
     // Re-bind only when a press starts or ends, not on every move.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag !== null, browserDrop, folderAudio]);
-
-  const addFolderAsSong = (path: string, name: string) => {
-    void folderAudio(path).then((audioPaths) =>
-      browserDrop.addFolderAtPlayhead(name, audioPaths),
-    );
-  };
+  }, [drag !== null, browserDrop]);
 
   const startPress = (event: ReactPointerEvent, item: DragItem) => {
     // Touch has no drag (it fights the list's scrolling): tap and the action
@@ -383,7 +360,7 @@ export function FolderLibraryPanel({
       title={t("library.folders.addFolderAsSong", { name })}
       onClick={(event) => {
         event.stopPropagation();
-        addFolderAsSong(path, name);
+        browserDrop.addFolderAtPlayhead(path, name);
       }}
     >
       <span className="material-symbols-outlined">playlist_add</span>
