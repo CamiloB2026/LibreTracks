@@ -398,7 +398,7 @@ pub(super) fn write_silent_test_wav(path: &Path, duration_seconds: u32) {
     writer.finalize().expect("wav should finalize");
 }
 
-fn session_with_song_dir(song_name: &str, song: Song) -> DesktopSession {
+pub(super) fn session_with_song_dir(song_name: &str, song: Song) -> DesktopSession {
     let root = tempdir().expect("temp dir should exist");
     let root_path = root.keep();
     let song_dir = create_song_folder(&root_path, song_name).expect("song dir should exist");

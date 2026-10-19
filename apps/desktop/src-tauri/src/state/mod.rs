@@ -77,6 +77,7 @@ pub use session::ExistingProjectDir;
 mod song_analysis;
 pub use song_analysis::AnalysedSection;
 mod song_edit;
+mod song_templates;
 mod song_reorder;
 mod song_structure;
 mod structure_guard;
@@ -443,6 +444,9 @@ pub struct DesktopSession {
     pub(super) mix_revision: u64,
     /// «Fade out y parar» in progress (see `fade_stop`).
     pub(super) fade_stop: Option<fade_stop::FadeStop>,
+    /// Lo que organizó la plantilla en el último drop de stems, para el
+    /// toast. El comando lo recoge (`take`) y lo emite como evento.
+    pub(crate) last_template_drop: Option<song_templates::TemplateDropSummary>,
     pub(super) undo_stack: Vec<Song>,
     pub(super) redo_stack: Vec<Song>,
     pub(super) live_history_anchor: Option<Song>,
@@ -587,6 +591,7 @@ impl Default for DesktopSession {
             project_revision: 0,
             mix_revision: 0,
             fade_stop: None,
+            last_template_drop: None,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             live_history_anchor: None,
@@ -4574,3 +4579,5 @@ mod video_tests;
 mod charts_tests;
 #[cfg(test)]
 mod midi_song_ops_tests;
+#[cfg(test)]
+mod song_template_tests;

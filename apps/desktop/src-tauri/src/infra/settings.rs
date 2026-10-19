@@ -369,6 +369,12 @@ pub struct AppSettings {
     /// [`AppSettings::track_layout`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub song_track_layout: Option<String>,
+    /// The template a new song is laid out from, and that organises the stems
+    /// dropped into it: `"builtin:band"` or the path of a `.lttemplate`. `None`
+    /// (the default) = no template, and new songs and drops behave as they
+    /// always did.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_song_template: Option<String>,
     /// When true (default), a track created without an explicit colour gets one
     /// from the timeline palette, cycling through it so two tracks made in a
     /// row never share a colour. Off, new tracks keep the historical single
@@ -510,6 +516,7 @@ impl Default for AppSettings {
             timeline_playhead_follow_mode: default_timeline_playhead_follow_mode(),
             import_merge_matching_tracks: default_import_merge_matching_tracks(),
             song_track_layout: None,
+            default_song_template: None,
             auto_color_new_tracks: default_auto_color_new_tracks(),
             auto_save_enabled: default_auto_save_enabled(),
             auto_save_interval_minutes: default_auto_save_interval_minutes(),

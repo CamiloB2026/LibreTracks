@@ -15,9 +15,11 @@
 //!    (`HiHat`) and between letters and digits (`EG1`).
 //! 2. The part every file of the batch shares at the start (`Way Maker - `) is
 //!    ignored, and so is the song's own name, so a song called "Keys to the
-//!    Kingdom" does not send its whole multitrack to the keys. If ignoring it
-//!    leaves nothing but numbers (two files `EG 1`, `EG 2` share "EG"), the
-//!    whole name is used instead.
+//!    Kingdom" does not send its whole multitrack to the keys. A shared start
+//!    of a single word that is itself an alias is the instrument, not a title
+//!    (`EG Lead`, `EG Rhythm`; `Click`, `Click alt`), and stays. If ignoring
+//!    the start leaves nothing but numbers (`EG 1`, `EG 2`), the whole name is
+//!    used instead.
 //! 3. An alias matches when its words appear in the name consecutively and
 //!    whole: `ag` does not match `stage`. A plural `s`/`es` on the name's
 //!    word is tolerated for aliases of three letters or more (`Pads`, `BGVs`).
@@ -54,6 +56,14 @@ pub fn match_stems<S: AsRef<str>>(
     } else {
         0
     };
+    // One shared word that names an instrument is what the batch is, not the
+    // song it comes from: keep it.
+    let batch_prefix =
+        if batch_prefix == 1 && best_target(&files[0][..1], &target_aliases).is_some() {
+            0
+        } else {
+            batch_prefix
+        };
 
     files
         .iter()
@@ -335,6 +345,24 @@ mod tests {
         assert_eq!(
             run(&["EG 1.wav", "EG 2.wav"], None),
             [Some(GUITARS), Some(GUITARS)]
+        );
+    }
+
+    #[test]
+    fn a_shared_single_word_that_is_an_instrument_is_kept() {
+        // "eg" is what both are; without it "lead" would send one to the vox.
+        assert_eq!(
+            run(&["EG Lead.wav", "EG Rhythm.wav"], None),
+            [Some(GUITARS), Some(GUITARS)],
+        );
+        assert_eq!(
+            run(&["Click.wav", "Click alt.wav"], None),
+            [Some(CLICK), Some(CLICK)]
+        );
+        // A one-word title that is not an instrument still goes.
+        assert_eq!(
+            run(&["Hosanna Click.wav", "Hosanna Keys.wav"], None),
+            [Some(CLICK), Some(KEYS)],
         );
     }
 

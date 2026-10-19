@@ -13,6 +13,7 @@ use crate::audio::engine::{jump_debug_logging_enabled, AudioController};
 use crate::infra::error::DesktopError;
 use crate::models::TransportSnapshot;
 
+use super::song_templates::apply_song_template;
 use super::{
     bar_seconds_at, default_region_name, next_downbeat_after_in_song,
     prune_auto_created_empty_tracks, realign_regions_after_warp_tempo_change,
@@ -207,7 +208,9 @@ impl DesktopSession {
             structure: None,
         };
 
+        let region_id = region.id.clone();
         replace_song_region_range(&mut song, region);
+        let laid_out = apply_song_template(&mut song, &region_id, None, audio)?;
         // The song must envelop every region or the engine's validator refuses
         // to load the session with "Region X is outside its song". Drawing a
         // region past the last clip left `duration_seconds` behind, so the
@@ -216,7 +219,12 @@ impl DesktopSession {
         // region path already does this; this one was the exception.
         refresh_song_duration(&mut song);
         audio.update_live_song_regions(&song)?;
-        self.persist_song_update(song, audio, AudioChangeImpact::TransportOnly, true)?;
+        let impact = if laid_out {
+            AudioChangeImpact::StructureRebuild
+        } else {
+            AudioChangeImpact::TransportOnly
+        };
+        self.persist_song_update(song, audio, impact, true)?;
 
         Ok(self.snapshot())
     }
@@ -230,9 +238,14 @@ impl DesktopSession {
     /// Only used by the compact view's "+ Nueva canción" button. In the
     /// DAW view, regions are still created implicitly when clips drop onto
     /// empty timeline.
+    ///
+    /// The song is laid out from `template` (a template reference, see
+    /// `song_templates`) or, without one, from the default template in
+    /// Settings; with neither it comes out empty as it always did.
     pub fn create_empty_song(
         &mut self,
         name: Option<&str>,
+        template: Option<&str>,
         audio: &AudioController,
     ) -> Result<TransportSnapshot, DesktopError> {
         let mut song = self
@@ -289,8 +302,10 @@ impl DesktopSession {
             structure: None,
         };
 
+        let region_id = region.id.clone();
         song.regions.push(region);
         sort_song_regions(&mut song.regions);
+        let laid_out = apply_song_template(&mut song, &region_id, template, audio)?;
 
         // Anchor the new song to the project's global bpm so it doesn't
         // inherit the previous song's tempo marker. Without this any tempo
@@ -319,7 +334,12 @@ impl DesktopSession {
         }
 
         audio.update_live_song_regions(&song)?;
-        self.persist_song_update(song, audio, AudioChangeImpact::TransportOnly, true)?;
+        let impact = if laid_out {
+            AudioChangeImpact::StructureRebuild
+        } else {
+            AudioChangeImpact::TransportOnly
+        };
+        self.persist_song_update(song, audio, impact, true)?;
 
         Ok(self.snapshot())
     }

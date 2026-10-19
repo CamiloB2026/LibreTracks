@@ -366,10 +366,12 @@ pub fn create_song_region(
 /// "+ Nueva canción" button. The new song is placed one bar after the
 /// previous one's end (or at t=0 for the first song) and is itself one
 /// bar wide so it's visible in the DAW view immediately; it resizes to
-/// fit the first clip dropped into it.
+/// fit the first clip dropped into it. `template` lays it out from a song
+/// template; without it the default template in Settings applies, if any.
 #[tauri::command(async)]
 pub fn create_empty_song(
     name: Option<String>,
+    template: Option<String>,
     state: State<'_, DesktopState>,
 ) -> Result<TransportSnapshot, String> {
     let mut session = state
@@ -378,7 +380,7 @@ pub fn create_empty_song(
         .map_err(|_| DesktopError::StatePoisoned.to_string())?;
 
     session
-        .create_empty_song(name.as_deref(), &state.audio)
+        .create_empty_song(name.as_deref(), template.as_deref(), &state.audio)
         .map_err(|error| error.to_string())
 }
 

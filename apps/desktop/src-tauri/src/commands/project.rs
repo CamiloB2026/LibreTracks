@@ -21,7 +21,7 @@ use std::thread;
 // Only the mobile pickers' return type derives it.
 #[cfg(any(target_os = "android", target_os = "ios"))]
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::commands::events::{
     emit_library_import_complete_event, emit_project_load_complete_event,
@@ -1590,6 +1590,18 @@ pub fn create_clips_batch(
     Ok(snapshot)
 }
 
+/// Evento con lo que la plantilla organizó en el último drop de stems
+/// (`{ matched, unmatched }`), para el toast «12 stems organizados».
+pub const TEMPLATE_DROP_SUMMARY_EVENT: &str = "song-template:drop-summary";
+
+fn emit_template_drop_summary(app: &AppHandle, session: &mut crate::state::DesktopSession) {
+    if let Some(summary) = session.last_template_drop.take() {
+        if let Err(error) = app.emit(TEMPLATE_DROP_SUMMARY_EVENT, summary) {
+            eprintln!("[song-templates] failed to emit drop summary: {error}");
+        }
+    }
+}
+
 /// Drop one or more audio files into a compact-view song column. The
 /// state layer creates an auto track per file; the file stem becomes
 /// the track name. Used by the compact view's drop handler.
@@ -1607,6 +1619,7 @@ pub fn create_clips_with_auto_tracks(
     let snapshot = session
         .create_clips_with_auto_tracks(&requests, &state.audio)
         .map_err(|error| error.to_string())?;
+    emit_template_drop_summary(&app, &mut session);
 
     if let Some(song_dir) = snapshot.song_dir.as_deref() {
         let requested_paths = requests
@@ -1637,6 +1650,7 @@ pub fn create_audio_tracks_with_clips(
     let snapshot = session
         .create_audio_tracks_with_clips(&requests, &state.audio)
         .map_err(|error| error.to_string())?;
+    emit_template_drop_summary(&app, &mut session);
 
     if let Some(song_dir) = snapshot.song_dir.as_deref() {
         let requested_paths = requests
