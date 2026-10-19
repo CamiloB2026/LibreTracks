@@ -209,6 +209,8 @@ struct TempoMarker {
     Id     id;
     Frame  frame = 0;
     double bpm = 120.0;
+    // Glides to the next tempo marker's bpm, reached there (see tempo_ramp.h).
+    bool   ramp = false;
 };
 
 struct TimeSignatureMarker {

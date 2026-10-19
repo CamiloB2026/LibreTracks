@@ -37,6 +37,7 @@ fn tempo(id: &str, start: f64, bpm: f64) -> TempoMarker {
         id: id.into(),
         start_seconds: start,
         bpm,
+        ramp: false,
     }
 }
 
@@ -45,6 +46,7 @@ fn proposed(start: f64, bpm: f64) -> ProposedTempoMarker {
         start_seconds: start,
         bpm,
         restores_next_song: false,
+        ramp: false,
     }
 }
 
@@ -138,6 +140,7 @@ fn a_restoring_marker_at_the_next_song_start_is_written_there() {
                 start_seconds: 120.0,
                 bpm: 64.0,
                 restores_next_song: true,
+                ramp: false,
             },
         ],
         &[],

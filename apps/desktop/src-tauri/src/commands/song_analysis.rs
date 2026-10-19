@@ -14,8 +14,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
     analyze_click, analyze_click_as_eighths, analyze_guide, analyze_key, analyze_music_tempo,
-    propose_tempo_markers, ClickAnalysis, ExistingTiming, GuideAnalysis, GuideTemplate,
-    KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal,
+    initial_tempo_only, propose_tempo_markers, simplify_segments, ClickAnalysis, ExistingTiming,
+    GuideAnalysis, GuideTemplate, KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker,
+    SongSpan, TempoProposal, TempoSegment,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -79,18 +80,51 @@ pub struct AnalyzeSongRequest {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TempoResult {
-    pub analysis: ClickAnalysis,
-    pub proposal: TempoProposal,
+    #[serde(flatten)]
+    pub reading: TempoReading,
     /// A click without accent read as eighths (÷2), for the review's ÷2 / ×2:
     /// nothing in the audio says which reading is right.
     pub as_eighths: Option<TempoReading>,
 }
 
+/// One reading of the click, with the tempo map at each level of detail the
+/// review offers: following the click (`proposal`), simplified, or only the
+/// tempo the song starts at.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TempoReading {
     pub analysis: ClickAnalysis,
     pub proposal: TempoProposal,
+    pub simplified: TempoLevel,
+    pub initial: TempoLevel,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TempoLevel {
+    pub segments: Vec<TempoSegment>,
+    pub proposal: TempoProposal,
+}
+
+impl TempoReading {
+    fn new(analysis: ClickAnalysis, span: SongSpan, existing: &ExistingTiming) -> Self {
+        let level = |segments: Vec<TempoSegment>| {
+            let reduced = ClickAnalysis {
+                segments,
+                ..analysis.clone()
+            };
+            TempoLevel {
+                proposal: propose_tempo_markers(&reduced, span, existing),
+                segments: reduced.segments,
+            }
+        };
+        Self {
+            proposal: propose_tempo_markers(&analysis, span, existing),
+            simplified: level(simplify_segments(&analysis.segments)),
+            initial: level(initial_tempo_only(&analysis.segments)),
+            analysis,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -557,18 +591,13 @@ fn run_job(
             } else {
                 analyze_click(&samples, rate, tempo.fallback_beats_per_bar)
             };
-            let proposal = propose_tempo_markers(&analysis, tempo.span, &tempo.existing);
             let as_eighths = (!tempo.from_music && !analysis.downbeat_known)
                 .then(|| analyze_click_as_eighths(&samples, rate, tempo.fallback_beats_per_bar))
                 .flatten()
                 .filter(|eighths| !eighths.segments.is_empty())
-                .map(|analysis| TempoReading {
-                    proposal: propose_tempo_markers(&analysis, tempo.span, &tempo.existing),
-                    analysis,
-                });
+                .map(|analysis| TempoReading::new(analysis, tempo.span, &tempo.existing));
             result.tempo = Some(TempoResult {
-                analysis,
-                proposal,
+                reading: TempoReading::new(analysis, tempo.span, &tempo.existing),
                 as_eighths,
             });
         }

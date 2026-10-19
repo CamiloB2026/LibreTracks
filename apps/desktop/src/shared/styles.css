@@ -2354,6 +2354,14 @@ html.lt-ios body {
   gap: 0.5rem;
 }
 
+.lt-song-analysis-detail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.9rem;
+  margin: 0.5rem 0;
+}
+
 /* While analysing: a spinner by the caption and a sheen over the bar, so a
    long stage (bouncing the tracks, one announcement) never looks stuck. */
 .lt-song-analysis-status {

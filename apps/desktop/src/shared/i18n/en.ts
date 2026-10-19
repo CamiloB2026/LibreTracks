@@ -770,6 +770,12 @@ const en = {
       changes: "Changes",
       segmentCount_one: "{{count}} tempo section",
       segmentCount_other: "{{count}} tempo sections",
+      detailLabel: "Tempo changes:",
+      detail: {
+        simplified: "Simplified",
+        follow: "Follow the click",
+        initial: "Starting tempo only",
+      },
       unchanged: "The song already has this tempo and meter.",
       applyTempo: "Apply tempo",
       applySignature: "Apply meter",
@@ -780,6 +786,7 @@ const en = {
       kindSignature: "Meter",
       nextSongStart: "Next song",
       restoresNextSong: "Keeps the value the next song had",
+      rampToNext: "Ramp: glides to the next marker's tempo",
       missingFiles_one: "{{count}} audio file could not be read.",
       missingFiles_other: "{{count}} audio files could not be read.",
       warning: {
@@ -788,7 +795,7 @@ const en = {
           "The click does not mark beat 1: the bar start is a guess and the tempo could be double or half. Check it and edit it if needed.",
         clickGap: "The click stops here and comes back later.",
         variableTempo:
-          "The tempo changes bar by bar (ritardando or accelerando). One marker per bar was placed.",
+          "The tempo changes bar by bar (ritardando or accelerando). “Follow the click” puts one marker per bar; “Simplified”, one tempo for the passage.",
         irregularBar: "A lone bar of a different length.",
         compoundGuess:
           "The click accents every 3 eighths and was read as 6/8. Check that the bar starts on the right accent.",
@@ -797,7 +804,7 @@ const en = {
         unreliableClick:
           "From here on the click's hits fit no tempo and could not be read reliably: the song's main tempo was kept instead of one marker per jump. Check the click track.",
         freeTempo:
-          "Here the click follows the band (free tempo): its speed changes bar by bar and the markers follow it.",
+          "Here the click follows the band (free tempo) and changes speed bar by bar. “Simplified” gives the passage one tempo, which ends back on the click; “Follow the click” puts one marker per bar.",
         clickReadAsEighths:
           "The click has no accent and was read as eighths: one beat every two clicks.",
       },
@@ -946,6 +953,8 @@ const en = {
       songKey: "Song key",
       songKeyNone: "No key",
       changeBpm: "Change BPM",
+      tempoRamp: "Ramp to the next marker ({{from}} → {{to}} BPM)",
+      tempoRampNoNext: "Ramp (needs another BPM marker after it)",
       changeRegionWarpSourceBpm: "Change Original BPM",
       songFades: "Song Fades",
       songFadeIn: "Fade in: {{seconds}} s",
@@ -1257,6 +1266,8 @@ const en = {
       songCountStyleUpdated: "Count-in for {{name}}: {{style}}.",
       regionWarpSourceBpmUpdated: "Original BPM updated to {{bpm}} for {{name}}.",
       tempoMarkerDeleted: "BPM marker deleted at {{time}}.",
+      tempoRampOn: "Tempo ramp turned on at {{time}}.",
+      tempoRampOff: "Tempo ramp removed at {{time}}.",
       tracksReordered: "{{count}} track(s) reordered.",
       trackCreated: "Track created: {{name}}",
       trackRenamed: "Track renamed: {{name}}",

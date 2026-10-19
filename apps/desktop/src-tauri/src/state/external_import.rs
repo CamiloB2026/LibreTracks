@@ -671,6 +671,7 @@ fn upsert_imported_tempo_marker(song: &mut Song, start_seconds: f64, bpm: f64) {
         id: format!("tempo_marker_import_{}", timestamp_suffix()),
         start_seconds,
         bpm,
+        ramp: false,
     });
     song.tempo_markers.sort_by(|left, right| {
         left.start_seconds

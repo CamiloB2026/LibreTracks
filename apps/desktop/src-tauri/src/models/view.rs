@@ -453,6 +453,7 @@ pub struct TempoMarkerSummary {
     pub start_seconds: f64,
     pub source_start_seconds: f64,
     pub bpm: f64,
+    pub ramp: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1303,6 +1304,7 @@ fn tempo_marker_to_warped_summary(song: &Song, marker: &TempoMarker) -> TempoMar
         start_seconds: warp_timeline_seconds_at(song, marker.start_seconds),
         source_start_seconds: marker.start_seconds,
         bpm: marker.bpm,
+        ramp: marker.ramp,
     }
 }
 
@@ -1678,6 +1680,7 @@ mod tests {
             id: "t".into(),
             start_seconds: 0.0,
             bpm: 120.0,
+            ramp: false,
         }];
         song.regions = vec![region("r1", 0.0, 10.0), region("r2", 10.0, 26.0)];
         // r2 grabada a 100 BPM y estirada a los 120 del timeline.
@@ -1711,6 +1714,7 @@ mod tests {
                     id: "t_coro".into(),
                     start_seconds: 18.0,
                     bpm: 150.0,
+                    ramp: false,
                 }],
                 ..OriginalSnapshot::default()
             },

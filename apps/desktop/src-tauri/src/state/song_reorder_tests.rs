@@ -141,6 +141,7 @@ fn moving_the_last_song_first_carries_everything_inside_it() {
         id: "t3".into(),
         start_seconds: 16.0,
         bpm: 120.0,
+        ramp: false,
     }];
     song.section_markers = vec![section("s2", 10.0), section("s3", 20.0)];
     song.midi_clips = vec![MidiClip {

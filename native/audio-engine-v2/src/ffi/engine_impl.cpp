@@ -3216,6 +3216,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                         marker.id = update.id;
                         marker.frame = std::max<Frame>(0, update.frame);
                         marker.bpm = std::clamp(update.bpm, 20.0, 300.0);
+                        marker.ramp = update.ramp;
                         song.tempo_markers.push_back(std::move(marker));
                     }
                     std::sort(song.tempo_markers.begin(), song.tempo_markers.end(),
@@ -3355,6 +3356,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                         marker.id = update.id;
                         marker.frame = std::max<Frame>(0, update.frame);
                         marker.bpm = std::clamp(update.bpm, 20.0, 300.0);
+                        marker.ramp = update.ramp;
                         song.tempo_markers.push_back(std::move(marker));
                     }
                     std::sort(song.tempo_markers.begin(), song.tempo_markers.end(),
@@ -3518,6 +3520,7 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                     marker.id = update.id;
                     marker.frame = std::max<Frame>(0, update.frame);
                     marker.bpm = std::clamp(update.bpm, 20.0, 300.0);
+                    marker.ramp = update.ramp;
                     song.tempo_markers.push_back(std::move(marker));
                 }
                 std::sort(song.tempo_markers.begin(), song.tempo_markers.end(),

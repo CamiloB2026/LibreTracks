@@ -140,6 +140,8 @@ private:
 
     static VoiceSpec make_voice_spec(int preset, float pitch_semitones, float gain) noexcept;
     void trigger_voice(const VoiceSpec& spec, double sample_rate) noexcept;
+    void fire_beat(bool downbeat, double sample_rate) noexcept;
+    void fire_subdivision(double sample_rate) noexcept;
     Voice* free_voice() noexcept;
 
     // Clear which beats have already fired, WITHOUT touching the clicks that

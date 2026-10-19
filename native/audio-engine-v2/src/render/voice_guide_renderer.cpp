@@ -1,4 +1,5 @@
 #include <lt_engine/render/voice_guide_renderer.h>
+#include <lt_engine/session/tempo_ramp.h>
 #include <lt_engine/devices/device_channel_layout.h>
 
 #include <lt_engine/sources/audio_decoder.h>
@@ -62,12 +63,7 @@ std::pair<int, int> signature_at(const Song* song, Frame frame) noexcept {
 
 double bpm_at(const Song* song, Frame frame) noexcept {
     if (!song) return 120.0;
-    double bpm = song->bpm;
-    for (const auto& marker : song->tempo_markers) {
-        if (marker.frame > frame) break;
-        bpm = marker.bpm;
-    }
-    return std::clamp(bpm, 20.0, 300.0);
+    return tempo_span_at(song, frame).bpm_at(static_cast<double>(frame));
 }
 
 Frame timing_segment_start(const Song* song, Frame frame) noexcept {
@@ -668,14 +664,25 @@ void VoiceGuideRenderer::render(float** output_channels,
                     }
                     return effective_count_style(style, beats_per_bar, beat_unit);
                 };
+                // The frame `beats` beats before a target downbeat. Inside a
+                // tempo ramp the beats before it are not evenly spaced: they
+                // are laid back along the ramp from the target itself, so the
+                // count lands on the same frames whatever frame we are on.
+                auto frame_before = [&](Frame target, double beats) {
+                    const TempoSpan ramp = tempo_span_at(song, target - 1);
+                    if (!ramp.is_ramp())
+                        return target - static_cast<Frame>(std::llround(beats * beat_frames));
+                    const double quarters = beats * 4.0 / static_cast<double>(beat_unit);
+                    return static_cast<Frame>(std::llround(
+                        ramp.frame_after(static_cast<double>(target), -quarters, sample_rate)));
+                };
                 // Frames between the start of the count and the downbeat. With
                 // the count off only the name plays, at the plain lead distance.
-                auto lead_span_for = [&](VoiceGuideCountStyle style) {
+                auto lead_span_for = [&](VoiceGuideCountStyle style, Frame target) {
                     const int bars = count_in
                         ? voice_guide_count_span_bars(style, lead_bars)
                         : lead_bars;
-                    return static_cast<Frame>(
-                        std::llround(beats_per_bar * bars * beat_frames));
+                    return target - frame_before(target, beats_per_bar * bars);
                 };
                 // Two independent announce targets, evaluated separately so one
                 // never silences the other (a pending automation jump further
@@ -733,7 +740,7 @@ void VoiceGuideRenderer::render(float** output_channels,
                         // The count style follows the DESTINATION's song (for a
                         // jump, where you land, not where the trigger sits).
                         const VoiceGuideCountStyle style = style_for(cue_anchor_frame);
-                        const Frame lead_span = lead_span_for(style);
+                        const Frame lead_span = lead_span_for(style, target_frame);
                         const Frame count_bar_start = target_frame - lead_span;
                         const Frame cue_window_start = cue_anchor_frame - lead_span;
 
@@ -819,9 +826,12 @@ void VoiceGuideRenderer::render(float** output_channels,
                         if (count_in) {
                             const int lead_beats =
                                 beats_per_bar * voice_guide_count_span_bars(style, lead_bars);
+                            const bool in_ramp = tempo_span_at(song, target_frame - 1).is_ramp();
                             for (int b = 0; b < lead_beats; ++b) {
-                                const Frame beat_frame = count_bar_start
-                                    + static_cast<Frame>(std::llround(b * beat_frames));
+                                const Frame beat_frame = in_ramp
+                                    ? frame_before(target_frame, lead_beats - b)
+                                    : count_bar_start
+                                        + static_cast<Frame>(std::llround(b * beat_frames));
                                 if (beat_frame != abs_frame) continue;
                                 const int beat_number =
                                     voice_guide_count_number(style, beats_per_bar, b);
@@ -899,7 +909,7 @@ void VoiceGuideRenderer::render(float** output_channels,
                     // window before a section or jump downbeat.
                     auto in_lead_window = [&](Frame downbeat, Frame anchor) {
                         if (downbeat <= abs_frame) return false;
-                        const Frame win_start = downbeat - lead_span_for(style_for(anchor));
+                        const Frame win_start = downbeat - lead_span_for(style_for(anchor), downbeat);
                         return cue->frame >= win_start && cue->frame <= downbeat;
                     };
                     const Frame jump_anchor = jump_target.destination_frame > 0

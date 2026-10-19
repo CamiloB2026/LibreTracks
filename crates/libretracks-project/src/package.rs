@@ -1228,6 +1228,7 @@ pub fn merge_extracted_song_package(
             id: format!("tempo_marker_import_{}", timestamp_suffix()),
             start_seconds: insert_at_seconds,
             bpm: injected_bpm,
+            ramp: false,
         });
     }
     for marker in &manifest.tempo_markers {
@@ -1469,11 +1470,13 @@ mod tests {
                 id: "a".into(),
                 start_seconds: 0.0,
                 bpm: 100.0,
+                ramp: false,
             },
             TempoMarker {
                 id: "b".into(),
                 start_seconds: 10.0,
                 bpm: 140.0,
+                ramp: false,
             },
         ];
         assert_eq!(song_bpm_at(&s, 5.0), 100.0);

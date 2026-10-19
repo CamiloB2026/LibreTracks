@@ -200,7 +200,8 @@ TEST_CASE("parse SetSongTiming") {
         "bpm":132.5,
         "beats_per_bar":7,
         "beat_unit":8,
-        "tempo_markers":[{"id":"tempo_a","frame":96000,"bpm":99.0}],
+        "tempo_markers":[{"id":"tempo_a","frame":96000,"bpm":99.0},
+                         {"id":"tempo_b","frame":192000,"bpm":80.0,"ramp":true}],
         "time_signature_markers":[{"id":"sig_a","frame":144000,"beats_per_bar":3,"beat_unit":4}]
     })");
     REQUIRE(std::holds_alternative<CmdSetSongTiming>(cmd));
@@ -209,10 +210,13 @@ TEST_CASE("parse SetSongTiming") {
     CHECK(c.bpm == doctest::Approx(132.5));
     CHECK(c.beats_per_bar == 7);
     CHECK(c.beat_unit == 8);
-    REQUIRE(c.tempo_markers.size() == 1);
+    REQUIRE(c.tempo_markers.size() == 2);
     CHECK(c.tempo_markers[0].id == "tempo_a");
     CHECK(c.tempo_markers[0].frame == 96000);
     CHECK(c.tempo_markers[0].bpm == doctest::Approx(99.0));
+    // No "ramp" field: a step, as every session before ramps.
+    CHECK_FALSE(c.tempo_markers[0].ramp);
+    CHECK(c.tempo_markers[1].ramp);
     REQUIRE(c.time_signature_markers.size() == 1);
     CHECK(c.time_signature_markers[0].id == "sig_a");
     CHECK(c.time_signature_markers[0].beats_per_bar == 3);

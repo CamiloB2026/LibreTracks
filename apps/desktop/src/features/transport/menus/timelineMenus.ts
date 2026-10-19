@@ -96,6 +96,7 @@ import type { ExportSongTarget } from "../panels/ExportSongModal";
 import { openRenderSong } from "../render/renderStore";
 import { openSongAnalysis } from "../songAnalysis/songAnalysisStore";
 import { openStructureEditor } from "../structure/structureEditor";
+import { tempoRampAction } from "../tempo/tempoRampAction";
 import type { ShortcutActionId } from "../keyboard/actions";
 import { createVideoMenus } from "./videoMenus";
 
@@ -826,6 +827,7 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
           });
         },
       },
+      tempoRampAction(marker, { ...d, song: d.songRef.current }),
       {
         label: t("transport.menu.deleteMarker"),
         onSelect: async () => {

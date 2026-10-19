@@ -249,6 +249,7 @@ struct CmdSetSongTiming {
         Id     id;
         Frame  frame = 0;
         double bpm = 120.0;
+        bool   ramp = false;
     };
     struct TimeSignatureMarkerUpdate {
         Id     id;

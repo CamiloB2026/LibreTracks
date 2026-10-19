@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { buildSongTempoRegions } from "./models";
-import { buildVisibleTimelineGrid, firstIndexAtOrAfter } from "./timelineMath";
+import {
+  buildVisibleTimelineGrid,
+  firstIndexAtOrAfter,
+  getCumulativeMusicalPosition,
+  nextDownbeatAfter,
+  rampQuartersBetween,
+  rampSecondsAfter,
+  snapToTimelineGrid,
+} from "./timelineMath";
 
 describe("firstIndexAtOrAfter", () => {
   it("encuentra el primer índice >= target", () => {
@@ -120,5 +128,77 @@ describe("una marca de compás empieza compás, como el metrónomo", () => {
       [3, false],
       [5, true],
     ]);
+  });
+});
+
+describe("rampas de tempo", () => {
+  // Un compás a 60 y luego 60 → 120 BPM en 10 s, 4/4: dentro de la rampa el
+  // tiempo k cae donde 60·t + 3·t² = 60·k.
+  const beatAt = (k: number) => 4 + (-60 + Math.sqrt(3600 + 720 * k)) / 6;
+  const song = {
+    id: "s",
+    title: "S",
+    bpm: 60,
+    timeSignature: "4/4",
+    durationSeconds: 30,
+    tempoMarkers: [
+      { id: "ramp", startSeconds: 4, bpm: 60, ramp: true },
+      { id: "fast", startSeconds: 14, bpm: 120 },
+    ],
+    timeSignatureMarkers: [],
+    sectionMarkers: [],
+    regions: [],
+    tracks: [],
+    clips: [],
+    projectRevision: 1,
+  } as never;
+
+  it("las fórmulas se invierten", () => {
+    const ramp = { startSeconds: 2, endSeconds: 12, startBpm: 140, endBpm: 70 };
+    for (const from of [0, 2, 7, 12, 15]) {
+      for (const quarters of [-2, 0, 0.5, 3, 40]) {
+        const to = rampSecondsAfter(ramp, from, quarters);
+        expect(rampQuartersBetween(ramp, from, to)).toBeCloseTo(quarters, 9);
+      }
+    }
+  });
+
+  it("la región de tempo lleva el bpm del final de la rampa", () => {
+    const ramp = buildSongTempoRegions(song).find((region) => region.startSeconds === 4);
+    expect(ramp?.bpm).toBe(60);
+    expect(ramp?.endBpm).toBe(120);
+  });
+
+  it("la rejilla pone cada tiempo donde lo pone la rampa", () => {
+    const grid = buildVisibleTimelineGrid({
+      durationSeconds: 30,
+      bpm: 60,
+      timeSignature: "4/4",
+      regions: buildSongTempoRegions(song),
+      zoomLevel: 20,
+      pixelsPerSecond: 400,
+      viewportStartSeconds: 4,
+      viewportEndSeconds: 13.9,
+    });
+    const inRamp = grid.markers.filter((m) => m.seconds >= 4 - 1e-9 && m.seconds < 14);
+    // 15 tiempos (el 16.º es la marca de 120 a los 14 s), empezando el compás 2.
+    expect(inRamp.length).toBe(15);
+    inRamp.forEach((marker, index) => {
+      expect(marker.seconds).toBeCloseTo(beatAt(index), 6);
+    });
+    expect(inRamp[0].barNumber).toBe(2);
+    expect(inRamp[4].isBarStart).toBe(true);
+  });
+
+  it("posición musical, ajuste y siguiente compás siguen la rampa", () => {
+    const regions = buildSongTempoRegions(song);
+    expect(nextDownbeatAfter(4.5, 60, "4/4", regions)).toBeCloseTo(beatAt(4), 6);
+    expect(getCumulativeMusicalPosition(beatAt(5) + 1e-6, regions, 60, "4/4").display).toBe(
+      "3.2.00",
+    );
+    expect(snapToTimelineGrid(beatAt(6) + 0.05, 60, "4/4", 20, 400, regions)).toBeCloseTo(
+      beatAt(6),
+      6,
+    );
   });
 });

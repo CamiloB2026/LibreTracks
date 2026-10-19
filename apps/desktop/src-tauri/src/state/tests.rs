@@ -197,6 +197,7 @@ fn musical_position_summary_uses_tempo_markers_beyond_song_duration() {
         id: "tempo_far".into(),
         start_seconds: 12.0,
         bpm: 60.0,
+        ramp: false,
     }];
 
     let summary = musical_position_summary(&song, 13.0);
@@ -227,6 +228,7 @@ fn musical_position_summary_restarts_the_bar_at_a_time_signature_marker_off_the_
         id: "tempo_mid_bar".into(),
         start_seconds: 5.0,
         bpm: 60.0,
+        ramp: false,
     }];
     assert_eq!(musical_position_summary(&song, 5.0).display, "3.3.00");
 }
@@ -4094,11 +4096,13 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             id: "tempo_middle".into(),
             start_seconds: 10.0,
             bpm: 130.0,
+            ramp: false,
         },
         TempoMarker {
             id: "tempo_following".into(),
             start_seconds: 17.384615384615387,
             bpm: 140.0,
+            ramp: false,
         },
     ];
     song.regions = vec![

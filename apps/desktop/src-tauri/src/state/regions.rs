@@ -309,6 +309,7 @@ impl DesktopSession {
                 id: format!("tempo_marker_{}", timestamp_suffix()),
                 start_seconds,
                 bpm: song.bpm,
+                ramp: false,
             });
             song.tempo_markers.sort_by(|left, right| {
                 left.start_seconds
@@ -1500,6 +1501,7 @@ impl DesktopSession {
                 id: format!("tempo_marker_{}", timestamp_suffix()),
                 start_seconds: clamped_start_seconds,
                 bpm,
+                ramp: false,
             });
             song.tempo_markers.sort_by(|left, right| {
                 left.start_seconds
@@ -1545,6 +1547,41 @@ impl DesktopSession {
             AudioChangeImpact::TransportOnly
         };
         // Realinear traslada las canciones siguientes: sus cues van con ellas.
+        self.persist_song_update_carrying_cues(song, audio, impact, true, UpdatePhase::Commit)?;
+
+        Ok(self.snapshot())
+    }
+
+    /// Turn a tempo marker's ramp on or off: with it the tempo glides from
+    /// this marker's bpm to the next tempo marker's (`TempoMarker::ramp`).
+    pub fn set_song_tempo_marker_ramp(
+        &mut self,
+        marker_id: &str,
+        ramp: bool,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        let previous_song = song.clone();
+        let marker = song
+            .tempo_markers
+            .iter_mut()
+            .find(|marker| marker.id == marker_id)
+            .ok_or_else(|| DesktopError::AudioCommand("tempo marker not found".into()))?;
+        if marker.ramp == ramp {
+            return Ok(self.snapshot());
+        }
+        marker.ramp = ramp;
+        realign_regions_after_warp_tempo_change(&previous_song, &mut song);
+
+        let impact = if song_has_active_warp(&song) {
+            AudioChangeImpact::TimelineWindow
+        } else {
+            AudioChangeImpact::TransportOnly
+        };
         self.persist_song_update_carrying_cues(song, audio, impact, true, UpdatePhase::Commit)?;
 
         Ok(self.snapshot())

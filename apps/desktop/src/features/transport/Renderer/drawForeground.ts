@@ -7,7 +7,7 @@ import type {
 } from "../desktopApi";
 import { secondsToScreenX } from "../timeline/timelineMath";
 
-import { drawRulerMarker, drawRulerTempoMarker } from "./drawBackground";
+import { drawRulerMarker, drawRulerTempoMarker, drawRulerTempoRamp } from "./drawBackground";
 
 export type RulerForegroundLayerArgs = {
   width: number;
@@ -188,6 +188,13 @@ export function drawRulerForegroundLayer(
     );
   }
 
+  const sortedTempo = [...args.tempoMarkers].sort((a, b) => a.startSeconds - b.startSeconds);
+  sortedTempo.forEach((marker, index) => {
+    const next = sortedTempo[index + 1];
+    if (marker.ramp && next && next.bpm !== marker.bpm) {
+      drawRulerTempoRamp(context, marker, next, args.width, args.cameraX, args.pixelsPerSecond);
+    }
+  });
   for (const marker of args.tempoMarkers) {
     drawRulerTempoMarker(
       context,

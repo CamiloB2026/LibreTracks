@@ -4046,6 +4046,7 @@ pub(super) fn set_song_tempo_at_source_position(song: &mut Song, start_seconds: 
             id: format!("tempo_marker_{}", timestamp_suffix()),
             start_seconds,
             bpm,
+            ramp: false,
         });
         song.tempo_markers.sort_by(|left, right| {
             left.start_seconds

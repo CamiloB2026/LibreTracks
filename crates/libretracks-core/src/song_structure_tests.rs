@@ -123,6 +123,7 @@ fn base_song() -> Song {
             id: "t0".into(),
             start_seconds: ORIGIN,
             bpm: 120.0,
+            ramp: false,
         }],
         time_signature_markers: vec![TimeSignatureMarker {
             id: "ts0".into(),
@@ -476,6 +477,7 @@ fn two_section_song(tempo_marker_on_verse: bool) -> Song {
         id: "t_coro".into(),
         start_seconds: ORIGIN + 16.0,
         bpm: 140.0,
+        ramp: false,
     }];
     if tempo_marker_on_verse {
         song.tempo_markers.insert(
@@ -484,6 +486,7 @@ fn two_section_song(tempo_marker_on_verse: bool) -> Song {
                 id: "t_verso".into(),
                 start_seconds: ORIGIN,
                 bpm: 120.0,
+                ramp: false,
             },
         );
     }
@@ -1112,6 +1115,7 @@ fn the_base_tempo_comes_from_a_marker_of_the_previous_song() {
             id: "t_prev".into(),
             start_seconds: 0.0,
             bpm: 90.0,
+            ramp: false,
         },
     );
     song.time_signature_markers.insert(

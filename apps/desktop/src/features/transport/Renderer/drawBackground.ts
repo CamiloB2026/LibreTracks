@@ -704,6 +704,47 @@ export function drawRulerMarker(
   context.restore();
 }
 
+/**
+ * A tempo ramp in the tempo lane: a slope from one marker to the next, up
+ * when it speeds up, as Ableton draws a sloped tempo-automation segment.
+ * Drawn under the flags, in the gap between the tempo and meter flags.
+ */
+export function drawRulerTempoRamp(
+  context: CanvasRenderingContext2D,
+  from: TempoMarkerSummary,
+  to: TempoMarkerSummary,
+  width: number,
+  cameraX: number,
+  pixelsPerSecond: number,
+) {
+  const x0 = secondsToScreenX(from.startSeconds, cameraX, pixelsPerSecond);
+  const x1 = secondsToScreenX(to.startSeconds, cameraX, pixelsPerSecond);
+  if (x1 < 0 || x0 > width || x1 - x0 < 2) {
+    return;
+  }
+  const high = TEMPO_FLAG_TOP + TEMPO_FLAG_HEIGHT + 1;
+  const low = BAND_SPLIT + 3;
+  const rising = to.bpm > from.bpm;
+  const y0 = rising ? low : high;
+  const y1 = rising ? high : low;
+  context.save();
+  context.fillStyle = "rgba(87, 241, 219, 0.14)";
+  context.beginPath();
+  context.moveTo(x0, low);
+  context.lineTo(x0, y0);
+  context.lineTo(x1, y1);
+  context.lineTo(x1, low);
+  context.closePath();
+  context.fill();
+  context.strokeStyle = "rgba(87, 241, 219, 0.85)";
+  context.lineWidth = 1.5;
+  context.beginPath();
+  context.moveTo(x0, y0);
+  context.lineTo(x1, y1);
+  context.stroke();
+  context.restore();
+}
+
 export function drawRulerTempoMarker(
   context: CanvasRenderingContext2D,
   marker: TempoMarkerSummary,

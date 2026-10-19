@@ -7,6 +7,7 @@
 //!
 //! With `ONSETS=1` it dumps every click's time, level and pitch instead.
 //! With `EIGHTHS=1` it reads a click without accent as eighths (÷2).
+//! With `DETAIL=simplified` or `DETAIL=initial` it prints that tempo map.
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -54,9 +55,18 @@ fn main() {
         analysis.beat_count,
         analysis.downbeat_known
     );
-    for segment in &analysis.segments {
+    let segments = match std::env::var("DETAIL").as_deref() {
+        Ok("simplified") => libretracks_analysis::simplify_segments(&analysis.segments),
+        Ok("initial") => libretracks_analysis::initial_tempo_only(&analysis.segments),
+        _ => analysis.segments.clone(),
+    };
+    for segment in &segments {
+        let ramp = segment
+            .end_bpm
+            .map(|to| format!(" -> {to:.2}"))
+            .unwrap_or_default();
         println!(
-            "  {:>8.3} s  {:>7.2} BPM  {}  ({} bars)",
+            "  {:>8.3} s  {:>7.2} BPM{ramp}  {}  ({} bars)",
             segment.start_seconds,
             segment.bpm,
             segment.signature(),

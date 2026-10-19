@@ -260,6 +260,7 @@ fn moving_a_warped_song_keeps_the_cue_on_the_same_visible_beat() {
         id: "t".into(),
         start_seconds: 0.0,
         bpm: 120.0,
+        ramp: false,
     }];
     // r2 suena a 100 BPM y se estira a los 120 de la línea de tiempo.
     song.regions[1].warp_enabled = true;

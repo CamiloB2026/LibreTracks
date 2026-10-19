@@ -137,11 +137,21 @@ impl BuiltRegion {
 // ── Helpers de tempo y compás ──────────────────────────────────────────────
 
 /// Tempo que rige en `position` (relativa) del original: la última marca de
-/// tempo en o antes de ella, o el tempo base si no hay ninguna.
+/// tempo en o antes de ella, o el tempo base si no hay ninguna. Dentro de una
+/// rampa, el tempo al que ha llegado ahí.
 pub fn governing_bpm_at(snapshot: &OriginalSnapshot, position: f64) -> f64 {
-    governing_tempo_marker(snapshot, position)
-        .map(|marker| marker.bpm)
-        .unwrap_or(snapshot.base_bpm)
+    match governing_tempo_marker(snapshot, position) {
+        Some(marker) if marker.ramp => {
+            let absolute = position + snapshot.origin_seconds;
+            crate::tempo_ramp::tempo_spans_of(snapshot.base_bpm, &snapshot.tempo_markers)
+                .into_iter()
+                .rev()
+                .find(|span| span.start <= marker.start_seconds + POSITION_EPS)
+                .map_or(marker.bpm, |span| span.bpm_at(absolute))
+        }
+        Some(marker) => marker.bpm,
+        None => snapshot.base_bpm,
+    }
 }
 
 /// Compás que rige en `position` (relativa) del original, igual que
@@ -626,6 +636,7 @@ pub fn build_arrangement(
                 id,
                 start_seconds: origin + span.destination,
                 bpm: wanted,
+                ramp: false,
             });
             generated_tempo.push(true);
         }
@@ -637,6 +648,7 @@ pub fn build_arrangement(
                     id,
                     start_seconds: marker.start_seconds + span.shift(),
                     bpm: marker.bpm,
+                    ramp: marker.ramp,
                 });
             }
         }

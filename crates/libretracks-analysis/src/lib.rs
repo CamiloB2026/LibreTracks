@@ -12,6 +12,7 @@ pub mod guide_text;
 pub mod key;
 pub mod music;
 pub mod proposal;
+pub mod simplify;
 
 pub use click::{
     analyze_click, analyze_click_as_eighths, ClickAnalysis, ClickWarning, ClickWarningKind,
@@ -27,3 +28,4 @@ pub use proposal::{
     propose_tempo_markers, ExistingTiming, ProposedSignatureMarker, ProposedTempoMarker, SongSpan,
     TempoProposal,
 };
+pub use simplify::{initial_tempo_only, simplify_segments};

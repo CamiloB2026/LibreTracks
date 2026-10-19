@@ -8,6 +8,7 @@ import type {
   ProposedSignatureMarker,
   ProposedTempoMarker,
   SectionChange,
+  TempoReading,
 } from "@libretracks/shared/desktopApi";
 import type { SongView, TransportSnapshot } from "@libretracks/shared/models";
 
@@ -114,13 +115,21 @@ function song(): SongView {
   };
 }
 
+/** A reading whose click holds its tempos: every level of detail is the same. */
+function withLevels<R extends Pick<TempoReading, "analysis" | "proposal">>(
+  reading: R,
+): R & TempoReading {
+  const level = { segments: reading.analysis.segments, proposal: reading.proposal };
+  return { ...reading, simplified: level, initial: level };
+}
+
 function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
   return {
     cancelled: false,
     regionId: "b",
     regionStartSeconds: 100,
     renderStartSeconds: 100,
-    tempo: {
+    tempo: withLevels({
       analysis: {
         segments: [{ startSeconds: 0.5, bpm: 92, beatsPerBar: 6, beatUnit: 8, bars: 40 }],
         warnings: [{ seconds: 61, kind: "clickGap" }],
@@ -141,7 +150,7 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
         unchanged: false,
       },
       asEighths: null,
-    },
+    }),
     tempoUnavailable: null,
     key: {
       analysis: {
@@ -180,25 +189,26 @@ async function analyzeAndReview() {
 
 /** A click without accent: 142 as it sounds, 71 read as eighths. */
 function unaccentedTempo(): AnalyzeSongResult["tempo"] {
-  const reading = (bpm: number, at: number[]) => ({
-    analysis: {
-      segments: [{ startSeconds: 0, bpm, beatsPerBar: 4, beatUnit: 4, bars: 40 }],
-      warnings: [{ seconds: 0, kind: "noAccent" as const }],
-      beatCount: 160,
-      downbeatKnown: false,
-    },
-    proposal: {
-      tempoMarkers: [{ startSeconds: 100, bpm, restoresNextSong: false }],
-      signatureMarkers: at.map((startSeconds) => ({
-        startSeconds,
-        signature: "4/4",
-        restoresNextSong: false,
-      })),
-      currentBpm: 120,
-      currentSignature: "4/4",
-      unchanged: false,
-    },
-  });
+  const reading = (bpm: number, at: number[]) =>
+    withLevels({
+      analysis: {
+        segments: [{ startSeconds: 0, bpm, beatsPerBar: 4, beatUnit: 4, bars: 40 }],
+        warnings: [{ seconds: 0, kind: "noAccent" as const }],
+        beatCount: 160,
+        downbeatKnown: false,
+      },
+      proposal: {
+        tempoMarkers: [{ startSeconds: 100, bpm, restoresNextSong: false }],
+        signatureMarkers: at.map((startSeconds) => ({
+          startSeconds,
+          signature: "4/4",
+          restoresNextSong: false,
+        })),
+        currentBpm: 120,
+        currentSignature: "4/4",
+        unchanged: false,
+      },
+    });
   return { ...reading(142, [100, 150.7]), asEighths: reading(71, [100, 152.4]) };
 }
 
@@ -418,6 +428,53 @@ describe("SongAnalysisModal", () => {
     // Past the two readings it scales.
     fireEvent.click(screen.getByText("×2"));
     expect(await screen.findByDisplayValue("284")).toBeTruthy();
+  });
+
+  it("offers fewer tempo changes than the click has, simplified first", async () => {
+    // A click that follows the band: three tempos bar by bar, or one
+    // simplified, or only the first.
+    const segment = (startSeconds: number, bpm: number, bars: number) => ({
+      startSeconds,
+      bpm,
+      beatsPerBar: 4,
+      beatUnit: 4,
+      bars,
+    });
+    const proposal = (bpms: number[]) => ({
+      tempoMarkers: bpms.map((bpm, index) => ({
+        startSeconds: 100 + index * 10,
+        bpm,
+        restoresNextSong: false,
+      })),
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+      currentBpm: 120,
+      currentSignature: "4/4",
+      unchanged: false,
+    });
+    const follow = [segment(0, 71, 8), segment(10, 56, 1), segment(20, 63.5, 1)];
+    analyzeSong.mockResolvedValue(
+      result({
+        tempo: {
+          analysis: { segments: follow, warnings: [], beatCount: 40, downbeatKnown: true },
+          proposal: proposal([71, 56, 63.5]),
+          simplified: { segments: follow.slice(0, 2), proposal: proposal([71, 59.4]) },
+          initial: { segments: follow.slice(0, 1), proposal: proposal([71]) },
+          asEighths: null,
+        },
+      }),
+    );
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+
+    expect(await screen.findByDisplayValue("59.4")).toBeTruthy();
+    expect(screen.queryByDisplayValue("56")).toBeNull();
+    fireEvent.click(screen.getByLabelText("transport.songAnalysis.detail.follow"));
+    expect(await screen.findByDisplayValue("56")).toBeTruthy();
+    expect(screen.getByDisplayValue("63.5")).toBeTruthy();
+    fireEvent.click(screen.getByLabelText("transport.songAnalysis.detail.initial"));
+    await waitFor(() => expect(screen.queryByDisplayValue("56")).toBeNull());
+    expect(screen.getByDisplayValue("71")).toBeTruthy();
+    expect(screen.queryByDisplayValue("59.4")).toBeNull();
   });
 
   it("starts on the eighths reading when the song's name says its tempo", async () => {

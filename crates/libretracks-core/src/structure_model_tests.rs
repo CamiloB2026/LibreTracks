@@ -66,6 +66,7 @@ fn full_structure() -> SongStructure {
                 id: "t1".into(),
                 start_seconds: 0.0,
                 bpm: 120.0,
+                ramp: false,
             }],
             time_signature_markers: vec![TimeSignatureMarker {
                 id: "ts1".into(),

@@ -274,6 +274,7 @@ EngineCommand command_from_json(const std::string& raw) {
             marker.id = item.at("id").get<Id>();
             marker.frame = item.at("frame").get<Frame>();
             marker.bpm = item.at("bpm").get<double>();
+            marker.ramp = item.value("ramp", false);
             cmd.tempo_markers.push_back(std::move(marker));
         }
         for (const auto& item : j.at("time_signature_markers")) {
@@ -339,6 +340,7 @@ EngineCommand command_from_json(const std::string& raw) {
             marker.id = item.at("id").get<Id>();
             marker.frame = item.at("frame").get<Frame>();
             marker.bpm = item.at("bpm").get<double>();
+            marker.ramp = item.value("ramp", false);
             cmd.tempo_markers.push_back(std::move(marker));
         }
         for (const auto& item : j.at("time_signature_markers")) {
@@ -437,6 +439,7 @@ EngineCommand command_from_json(const std::string& raw) {
                 marker.id = item.at("id").get<Id>();
                 marker.frame = item.at("frame").get<Frame>();
                 marker.bpm = item.at("bpm").get<double>();
+                marker.ramp = item.value("ramp", false);
                 cmd.tempo_markers.push_back(std::move(marker));
             }
         }

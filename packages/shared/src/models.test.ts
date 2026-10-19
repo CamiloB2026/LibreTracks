@@ -613,6 +613,20 @@ describe("getEffectiveBpmAt", () => {
     expect(getEffectiveBpmAt(song, 25)).toBe(80);
   });
 
+  it("follows a tempo ramp to the next marker", () => {
+    const song = makeSong({
+      bpm: 100,
+      tempoMarkers: [
+        { id: "m1", startSeconds: 10, bpm: 60, ramp: true },
+        { id: "m2", startSeconds: 20, bpm: 120 },
+      ],
+    });
+    expect(getEffectiveBpmAt(song, 5)).toBe(100);
+    expect(getEffectiveBpmAt(song, 10)).toBe(60);
+    expect(getEffectiveBpmAt(song, 15)).toBeCloseTo(90, 9);
+    expect(getEffectiveBpmAt(song, 25)).toBe(120);
+  });
+
   it("applies varispeed scaling inside a transposed non-warp region", () => {
     const song = makeSong({
       bpm: 120,

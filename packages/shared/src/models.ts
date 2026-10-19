@@ -1,6 +1,8 @@
 import { AUX_FADER_SCALE, positionToGain } from "./faderScale";
 import {
   getCumulativeMusicalPosition,
+  rampBpmAt,
+  type TempoRamp,
   type TimelineRegion,
 } from "./timelineMath";
 
@@ -403,6 +405,9 @@ export type TempoMarkerSummary = {
   startSeconds: number;
   sourceStartSeconds?: number;
   bpm: number;
+  /** The tempo glides from `bpm` to the next tempo marker's, reached there
+   * (a ramp, as a sloped segment of Ableton's tempo automation). */
+  ramp?: boolean;
 };
 
 export type TimeSignatureMarkerSummary = {
@@ -2072,6 +2077,34 @@ export type CreateClipArgs = {
   timelineStartSeconds: number;
 };
 
+/**
+ * The tempo ramp in force at `seconds`: from a ramp marker at or before it to
+ * the next tempo marker. Null on a steady tempo. View seconds and bpms, before
+ * varispeed.
+ */
+export function tempoRampAt(
+  song: SongView | null | undefined,
+  seconds: number,
+): TempoRamp | null {
+  if (!song || song.tempoMarkers.length === 0) return null;
+  const sorted = [...song.tempoMarkers].sort((a, b) => a.startSeconds - b.startSeconds);
+  let index = -1;
+  for (let i = 0; i < sorted.length; i += 1) {
+    if (sorted[i].startSeconds <= seconds + 1e-9) index = i;
+    else break;
+  }
+  const marker = sorted[index];
+  const next = sorted[index + 1];
+  if (!marker?.ramp || !next || next.startSeconds <= marker.startSeconds) return null;
+  if (next.bpm === marker.bpm) return null;
+  return {
+    startSeconds: marker.startSeconds,
+    endSeconds: next.startSeconds,
+    startBpm: marker.bpm,
+    endBpm: next.bpm,
+  };
+}
+
 export function buildSongTempoRegions(
   song: SongView | null | undefined,
 ): SongTempoRegionSummary[] {
@@ -2134,13 +2167,25 @@ export function buildSongTempoRegions(
       continue;
     }
 
-    const displayBpm = applyVarispeedBpmAt(song, startSeconds, bpm);
+    const ramp = tempoRampAt(song, startSeconds);
+    const displayBpm = applyVarispeedBpmAt(
+      song,
+      startSeconds,
+      ramp ? rampBpmAt(ramp, startSeconds) : bpm,
+    );
     regions.push({
       id: `tempo-region-${startSeconds.toFixed(4)}`,
       name: `Tempo ${displayBpm.toFixed(2)} ${timeSignature}`,
       startSeconds,
       endSeconds: marker.startSeconds,
       bpm: displayBpm,
+      // A boundary inside a ramp (a meter marker, a varispeed song) splits
+      // it: each part keeps the ramp's line.
+      ...(ramp
+        ? {
+            endBpm: applyVarispeedBpmAt(song, startSeconds, rampBpmAt(ramp, marker.startSeconds)),
+          }
+        : {}),
       timeSignature,
       startsBar,
       transposeSemitones: 0,
@@ -2372,6 +2417,11 @@ export function getEffectiveBpmAt(
 ): number {
   const base = getSongBaseBpm(song);
   if (!song || song.tempoMarkers.length === 0) return base;
+  // Inside a ramp, the tempo it has reached there.
+  const ramp = tempoRampAt(song, positionSeconds + 0.001);
+  if (ramp) {
+    return applyVarispeedBpmAt(song, positionSeconds, rampBpmAt(ramp, positionSeconds));
+  }
   let bestBpm = base;
   let bestStart = -Infinity;
   for (const marker of song.tempoMarkers) {

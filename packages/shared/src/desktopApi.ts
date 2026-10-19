@@ -914,6 +914,14 @@ export async function upsertSongTempoMarker(
   return invokeCommand<TransportSnapshot>("upsert_song_tempo_marker", { startSeconds, bpm });
 }
 
+/** Turn a tempo marker's ramp to the next tempo marker on or off. */
+export async function setSongTempoMarkerRamp(
+  markerId: string,
+  ramp: boolean,
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("set_song_tempo_marker_ramp", { markerId, ramp });
+}
+
 export async function deleteSongTempoMarker(markerId: string): Promise<TransportSnapshot> {
   return invokeCommand<TransportSnapshot>("delete_song_tempo_marker", { markerId });
 }
@@ -1433,6 +1441,8 @@ export type ClickTempoSegment = {
   beatsPerBar: number;
   beatUnit: number;
   bars: number;
+  /** A ramp from `bpm` to this across its bars. */
+  endBpm?: number;
 };
 
 export type ClickAnalysis = {
@@ -1448,6 +1458,8 @@ export type ProposedTempoMarker = {
   bpm: number;
   /** Puts back the tempo the next song had; not part of the analysis. */
   restoresNextSong: boolean;
+  /** Ramps to the next marker's bpm (a ritardando, an accelerando). */
+  ramp?: boolean;
 };
 
 export type ProposedSignatureMarker = {
@@ -1463,6 +1475,21 @@ export type TempoProposal = {
   currentSignature: string;
   /** The song already has exactly these markers. */
   unchanged: boolean;
+};
+
+/** The tempo map at one level of detail: its segments and its markers. */
+export type TempoLevel = { segments: ClickTempoSegment[]; proposal: TempoProposal };
+
+/**
+ * One reading of the click. `proposal` follows the click bar by bar;
+ * `simplified` gives a drifting passage one tempo; `initial` keeps only the
+ * tempo the song starts at.
+ */
+export type TempoReading = {
+  analysis: ClickAnalysis;
+  proposal: TempoProposal;
+  simplified: TempoLevel;
+  initial: TempoLevel;
 };
 
 export type AnalyzeSongRequest = {
@@ -1517,13 +1544,13 @@ export type AnalyzeSongResult = {
   regionStartSeconds: number;
   /** The song's start on the rendered timeline (differs with warp/varispeed). */
   renderStartSeconds: number;
-  tempo: {
-    analysis: ClickAnalysis;
-    proposal: TempoProposal;
-    /** A click without accent read as eighths (÷2): one click in two is the
-     * beat. Null when the click has an accent or the tempo is from the music. */
-    asEighths: { analysis: ClickAnalysis; proposal: TempoProposal } | null;
-  } | null;
+  tempo:
+    | (TempoReading & {
+        /** A click without accent read as eighths (÷2): one click in two is the
+         * beat. Null when the click has an accent or the tempo is from the music. */
+        asEighths: TempoReading | null;
+      })
+    | null;
   /** Why a chosen click was not analysed: "song_analysis_warp" | "song_analysis_varispeed". */
   tempoUnavailable: string | null;
   /** The key in the song's ORIGINAL key: the transpose is taken out. */

@@ -8,7 +8,9 @@ import type {
   ProposedSignatureMarker,
   ProposedTempoMarker,
   SongView,
+  TempoLevel,
   TempoProposal,
+  TempoReading,
 } from "../desktopApi";
 import { isCueTrackName } from "../levelSongs/levelSongsPlan";
 import { CUE_KINDS, MARKER_KINDS, markerKindVariants } from "../markerKinds";
@@ -26,6 +28,8 @@ const CLICK_NAME = /\b(click|clic|clik|metr[oó]nom[oe]?)\b/i;
 const MIN_SONG_OVERLAP_SECONDS = 0.01;
 /** Same marker position, as the backend compares them. */
 const SAME_POSITION_SECONDS = 0.0005;
+/** A marker this close to 0 sets the song's own tempo (`SONG_ORIGIN_SECONDS`). */
+const SESSION_ORIGIN_SECONDS = 0.0001;
 
 export type ClickTrackOption = { id: string; name: string; looksLikeClick: boolean };
 
@@ -181,6 +185,24 @@ export function scaleTempoRows(rows: ReviewRow[], factor: number): ReviewRow[] {
   });
 }
 
+/**
+ * How closely the tempo markers follow the click: bar by bar, one tempo per
+ * drifting passage (the default: a live click that follows the band would
+ * otherwise put dozens of markers), or only the tempo the song starts at.
+ */
+export type TempoDetail = "follow" | "simplified" | "initial";
+
+export function tempoLevel(reading: TempoReading, detail: TempoDetail): TempoLevel {
+  if (detail === "simplified") return reading.simplified;
+  if (detail === "initial") return reading.initial;
+  return { segments: reading.analysis.segments, proposal: reading.proposal };
+}
+
+/** The detail choice matters only when the click changes tempo somewhere. */
+export function offersTempoDetail(reading: TempoReading): boolean {
+  return reading.analysis.segments.length > 1;
+}
+
 /** The guide stem: a voice announcing the sections. */
 const GUIDE_NAME = /\b(guides?|gu[ií]as?|cues?)\b/i;
 
@@ -283,17 +305,28 @@ export function placeGuideSections(
   if (!region) return [];
   let grid = song;
   if (tempo) {
+    // A marker at the session's very start is the song's own tempo or
+    // meter (that is how applying writes it), not a marker: the grid's
+    // regions skip markers at 0.
+    const atOrigin = (seconds: number) => seconds <= SESSION_ORIGIN_SECONDS;
+    const originTempo = tempo.tempoMarkers.find((marker) => atOrigin(marker.startSeconds));
+    const originSignature = tempo.signatureMarkers.find((marker) =>
+      atOrigin(marker.startSeconds),
+    );
     const inside = (seconds: number) =>
       seconds >= region.startSeconds - SAME_POSITION_SECONDS &&
       seconds < region.endSeconds - SAME_POSITION_SECONDS;
     grid = {
       ...song,
+      bpm: originTempo?.bpm ?? song.bpm,
+      timeSignature: originSignature?.signature ?? song.timeSignature,
       tempoMarkers: [
         ...song.tempoMarkers.filter((marker) => !inside(marker.startSeconds)),
         ...tempo.tempoMarkers.map((marker, index) => ({
           id: `proposed-tempo-${index}`,
           startSeconds: marker.startSeconds,
           bpm: marker.bpm,
+          ramp: marker.ramp === true,
         })),
       ].sort((a, b) => a.startSeconds - b.startSeconds),
       timeSignatureMarkers: [
@@ -397,7 +430,15 @@ export function parseSignature(text: string): string | null {
 
 /** One editable row of the review: a proposed marker and its current text. */
 export type ReviewRow =
-  | { kind: "tempo"; index: number; startSeconds: number; restoresNextSong: boolean; text: string }
+  | {
+      kind: "tempo";
+      index: number;
+      startSeconds: number;
+      restoresNextSong: boolean;
+      text: string;
+      /** Ramps to the next tempo row. */
+      ramp: boolean;
+    }
   | {
       kind: "signature";
       index: number;
@@ -414,6 +455,7 @@ export function reviewRows(proposal: TempoProposal): ReviewRow[] {
       startSeconds: marker.startSeconds,
       restoresNextSong: marker.restoresNextSong,
       text: String(marker.bpm),
+      ramp: marker.ramp === true,
     })),
     ...proposal.signatureMarkers.map((marker, index) => ({
       kind: "signature" as const,
@@ -461,6 +503,7 @@ export function buildApplyPayload(
         startSeconds: row.startSeconds,
         bpm,
         restoresNextSong: row.restoresNextSong,
+        ...(row.ramp ? { ramp: true } : {}),
       });
     }
   } else {
@@ -470,6 +513,7 @@ export function buildApplyPayload(
         startSeconds: marker.startSeconds,
         bpm: marker.bpm,
         restoresNextSong: false,
+        ...(marker.ramp ? { ramp: true } : {}),
       }));
   }
 

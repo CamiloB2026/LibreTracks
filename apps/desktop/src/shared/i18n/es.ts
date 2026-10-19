@@ -785,6 +785,12 @@ const es = {
       changes: "Cambios",
       segmentCount_one: "{{count}} tramo de tempo",
       segmentCount_other: "{{count}} tramos de tempo",
+      detailLabel: "Cambios de tempo:",
+      detail: {
+        simplified: "Simplificados",
+        follow: "Seguir el click",
+        initial: "Solo el tempo inicial",
+      },
       unchanged: "La canción ya tiene este tempo y este compás.",
       applyTempo: "Aplicar tempo",
       applySignature: "Aplicar compás",
@@ -795,6 +801,7 @@ const es = {
       kindSignature: "Compás",
       nextSongStart: "Canción siguiente",
       restoresNextSong: "Mantiene el valor que tenía la canción siguiente",
+      rampToNext: "Rampa: llega poco a poco al tempo de la marca siguiente",
       missingFiles_one: "No se pudo leer {{count}} archivo de audio.",
       missingFiles_other: "No se pudieron leer {{count}} archivos de audio.",
       warning: {
@@ -803,7 +810,7 @@ const es = {
           "El click no marca el primer tiempo: el inicio del compás es una suposición y el tempo podría ser el doble o la mitad. Compruébalo y edítalo si hace falta.",
         clickGap: "El click se corta aquí y vuelve más tarde.",
         variableTempo:
-          "El tempo cambia compás a compás (ritardando o accelerando). Se ha puesto una marca por compás.",
+          "El tempo cambia compás a compás (ritardando o accelerando). «Seguir el click» pone una marca por compás; «Simplificados», un solo tempo para el tramo.",
         irregularBar: "Aquí hay un compás suelto de otra medida.",
         compoundGuess:
           "El click acentúa cada 3 corcheas y se ha leído como 6/8. Comprueba que el compás empieza en el acento correcto.",
@@ -813,7 +820,7 @@ const es = {
         unreliableClick:
           "A partir de aquí los golpes del click no encajan en ningún tempo y no se ha podido leer con fiabilidad: se ha puesto el tempo principal de la canción en vez de una marca por cada salto. Revisa la pista de click.",
         freeTempo:
-          "Aquí el click sigue a la banda (tempo libre): cambia de velocidad compás a compás y las marcas lo siguen.",
+          "Aquí el click sigue a la banda (tempo libre) y cambia de velocidad compás a compás. «Simplificados» le da un solo tempo al tramo, que acaba otra vez sobre el click; «Seguir el click» pone una marca por compás.",
         clickReadAsEighths:
           "El click no tiene acento y se ha leído en corcheas: cada dos golpes, un tiempo.",
       },
@@ -962,6 +969,8 @@ const es = {
       songKey: "Nota de la cancion",
       songKeyNone: "Sin nota",
       changeBpm: "Cambiar BPM",
+      tempoRamp: "Rampa hasta la siguiente marca ({{from}} → {{to}} BPM)",
+      tempoRampNoNext: "Rampa (necesita otra marca de BPM después)",
       changeRegionWarpSourceBpm: "Cambiar BPM original",
       songFades: "Fades de la canción",
       songFadeIn: "Fade de entrada: {{seconds}} s",
@@ -1276,6 +1285,8 @@ const es = {
       regionWarpSourceBpmUpdated:
         "BPM original actualizado a {{bpm}} para {{name}}.",
       tempoMarkerDeleted: "Marca de BPM borrada en {{time}}.",
+      tempoRampOn: "Rampa de tempo activada en {{time}}.",
+      tempoRampOff: "Rampa de tempo quitada en {{time}}.",
       tracksReordered: "{{count}} track(s) reordenado(s).",
       trackCreated: "Track creado: {{name}}",
       trackRenamed: "Track renombrado: {{name}}",

@@ -321,6 +321,7 @@ pub(super) fn apply_structure(
                 ),
                 start_seconds: next_start,
                 bpm,
+                ramp: false,
             });
             tempo_flags.push(false);
         }

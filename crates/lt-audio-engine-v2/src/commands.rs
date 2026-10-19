@@ -484,6 +484,9 @@ pub struct TempoMarkerUpdate {
     pub id: String,
     pub frame: i64,
     pub bpm: f64,
+    /// Glides to the next tempo marker's bpm (`TempoMarker::ramp`).
+    #[serde(default)]
+    pub ramp: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -19,6 +19,7 @@ import {
   parseSignature,
   reviewRows,
   startsOnEighths,
+  tempoLevel,
 } from "./songAnalysisPlan";
 
 const audioTrack = (id: string, name: string, kind = "audio") =>
@@ -294,6 +295,34 @@ describe("guide", () => {
     };
     // 60 BPM: bars of 4 s from 100 → 108.
     expect(placeGuideSections(plain(), "b", 100, analysis, markers, tempo)[0].startSeconds).toBe(108);
+  });
+
+  it("follows a ramp the review is about to write", () => {
+    // 60 → 120 over 10 s from the song start: bar 2 (4 quarters) comes at
+    // 60·t + 3·t² = 240, sooner than the 4 s a steady 60 would take.
+    const { analysis, markers } = oneAnnouncement(3.0, ["intro"]);
+    const tempo = {
+      tempoMarkers: [
+        { startSeconds: 100, bpm: 60, restoresNextSong: false, ramp: true },
+        { startSeconds: 110, bpm: 120, restoresNextSong: false },
+      ],
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+    };
+    const [placed] = placeGuideSections(plain(), "b", 100, analysis, markers, tempo);
+    expect(placed.startSeconds).toBeCloseTo(100 + (-60 + Math.sqrt(3600 + 2880)) / 6, 3);
+  });
+
+  it("follows the tempo the review writes for a song at the session start", () => {
+    // "Bienvenido Espíritu Santo": first song at 0, the session at 120 and
+    // the click at 98. A marker at 0 is the song's own tempo; the markers
+    // used to land on the 120 grid (8 s, 28 s…) instead of 98's (9.796…).
+    const { analysis, markers } = oneAnnouncement(9.5, ["intro"]);
+    const tempo = {
+      tempoMarkers: [{ startSeconds: 0, bpm: 98, restoresNextSong: false }],
+      signatureMarkers: [],
+    };
+    const [placed] = placeGuideSections(plain(), "a", 0, analysis, markers, tempo);
+    expect(placed.startSeconds).toBeCloseTo((4 * 4 * 60) / 98, 3);
   });
 });
 

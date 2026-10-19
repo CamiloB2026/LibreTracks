@@ -96,9 +96,26 @@ pub struct TempoSegment {
     pub beat_unit: u32,
     /// Bars the segment spans (the last one may be incomplete).
     pub bars: u32,
+    /// A tempo ramp: the tempo goes linearly (in time) from `bpm` at the
+    /// start to this at the end of the segment's bars. None: steady.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_bpm: Option<f64>,
 }
 
 impl TempoSegment {
+    /// Quarter notes in the segment's bars.
+    pub fn quarters(&self) -> f64 {
+        f64::from(self.bars) * f64::from(self.beats_per_bar) * 4.0 / f64::from(self.beat_unit)
+    }
+
+    /// How long its bars last: at its tempo, or at a ramp's average.
+    pub fn duration_seconds(&self) -> f64 {
+        match self.end_bpm {
+            Some(end_bpm) => 120.0 * self.quarters() / (self.bpm + end_bpm),
+            None => f64::from(self.bars) * self.bar_seconds(),
+        }
+    }
+
     pub fn signature(&self) -> String {
         format!("{}/{}", self.beats_per_bar, self.beat_unit)
     }
@@ -840,6 +857,7 @@ fn segment_bars(
             beats_per_bar,
             beat_unit,
             bars,
+            end_bpm: None,
         });
     }
     segments

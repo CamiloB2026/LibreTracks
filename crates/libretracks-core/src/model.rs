@@ -64,6 +64,12 @@ pub struct TempoMarker {
     pub id: String,
     pub start_seconds: f64,
     pub bpm: f64,
+    /// The tempo glides from `bpm` here to the next tempo marker's, which it
+    /// reaches exactly there (a ramp, as a sloped segment of Ableton's tempo
+    /// automation). Linear in time. Without a next marker it holds `bpm`.
+    /// Older sessions have no field: a step, as before.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub ramp: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

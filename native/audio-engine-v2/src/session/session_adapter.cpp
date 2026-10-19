@@ -269,6 +269,7 @@ Result<Session> session_from_project_json(const std::string& project_json,
                             engine_sample_rate);
                     }
                     marker.bpm = value_any<double>(jt, "bpm", "bpm", song.bpm);
+                    marker.ramp = jt.value("ramp", false);
                     if (marker.bpm > 0.0)
                         song.tempo_markers.push_back(std::move(marker));
                 }

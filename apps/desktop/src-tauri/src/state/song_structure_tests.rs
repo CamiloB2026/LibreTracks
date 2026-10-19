@@ -97,6 +97,7 @@ pub(crate) fn song_with_sections(a: f64, b: f64, c: f64) -> Song {
             id: "t2".into(),
             start_seconds: 8.0,
             bpm: 120.0,
+            ramp: false,
         }],
         time_signature_markers: vec![],
         regions: vec![

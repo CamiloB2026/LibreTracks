@@ -1145,6 +1145,15 @@ export const testDesktopApiMock = {
     });
     return clone(buildSnapshot());
   },
+  setSongTempoMarkerRamp: async (markerId: string, ramp: boolean) => {
+    replaceSong({
+      ...state.song,
+      tempoMarkers: state.song.tempoMarkers.map((marker) =>
+        marker.id === markerId ? { ...marker, ramp } : marker,
+      ),
+    });
+    return clone(buildSnapshot());
+  },
   deleteSongTempoMarker: async (markerId: string) => {
     replaceSong({
       ...state.song,
@@ -1303,21 +1312,23 @@ export const testDesktopApiMock = {
       renderStartSeconds: region?.startSeconds ?? 0,
       tempo:
         request.clickTrackIds.length > 0 || request.musicTempoTrackIds.length > 0
-          ? {
-              analysis: {
-                segments: [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }],
-                warnings: [],
-                beatCount: 32,
-                downbeatKnown: true,
-              },
-              proposal: {
+          ? (() => {
+              const segments = [{ startSeconds: 0, bpm: 120, beatsPerBar: 4, beatUnit: 4, bars: 8 }];
+              const proposal = {
                 tempoMarkers: [],
                 signatureMarkers: [],
                 currentBpm: state.song.bpm,
                 currentSignature: state.song.timeSignature,
                 unchanged: true,
-              },
-            }
+              };
+              return {
+                analysis: { segments, warnings: [], beatCount: 32, downbeatKnown: true },
+                proposal,
+                simplified: { segments, proposal },
+                initial: { segments, proposal },
+                asEighths: null,
+              };
+            })()
           : null,
       tempoUnavailable: null,
       guide:

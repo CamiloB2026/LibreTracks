@@ -34,11 +34,14 @@ import {
   placeGuideSections,
   type GroupMarkers,
   musicTempoTrackIds,
+  offersTempoDetail,
   reviewRows,
   rowIsValid,
   scaleTempoRows,
   startsOnEighths,
+  tempoLevel,
   type ReviewRow,
+  type TempoDetail,
 } from "./songAnalysisPlan";
 import { useSongAnalysisStore } from "./songAnalysisStore";
 
@@ -165,6 +168,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const [rows, setRows] = useState<ReviewRow[]>([]);
   /** The click (without accent) read as eighths: its ÷2 reading. */
   const [eighths, setEighths] = useState(false);
+  const [detail, setDetail] = useState<TempoDetail>("simplified");
   const [include, setInclude] = useState({
     tempo: true,
     signature: true,
@@ -234,8 +238,9 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         result.tempo?.asEighths?.analysis.segments[0]?.bpm,
       );
       setEighths(onEighths);
+      setDetail("simplified");
       const reading = tempoReading(result, onEighths);
-      const proposalRows = reading ? reviewRows(reading.proposal) : [];
+      const proposalRows = reading ? reviewRows(tempoLevel(reading, "simplified").proposal) : [];
       const detectedKey = result.key?.analysis.key ?? null;
       const estimated =
         result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
@@ -350,7 +355,22 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
     }
     const reading = tempoReading(phase.result, !eighths);
     setEighths(!eighths);
-    setRows(reading ? reviewRows(reading.proposal) : []);
+    setRows(reading ? reviewRows(tempoLevel(reading, detail).proposal) : []);
+  };
+
+  // Another level of detail: its markers replace the rows (edits included,
+  // as ÷2 / ×2 between readings does).
+  const changeDetail = (next: TempoDetail) => {
+    if (phase.kind !== "review") return;
+    const reading = tempoReading(phase.result, eighths);
+    setDetail(next);
+    const nextRows = reading ? reviewRows(tempoLevel(reading, next).proposal) : [];
+    setRows(nextRows);
+    setInclude((current) => ({
+      ...current,
+      tempo: nextRows.some((row) => row.kind === "tempo"),
+      signature: current.signature && nextRows.some((row) => row.kind === "signature"),
+    }));
   };
 
   const toggleKeyTrack = (id: string) =>
@@ -529,6 +549,8 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 onInclude={(tempo, signature) => setInclude({ ...include, tempo, signature })}
                 onEdit={editRow}
                 eighths={eighths}
+                detail={detail}
+                onDetail={changeDetail}
                 onScale={scaleTempo}
                 onSeek={(seconds) => void seekTo(seconds)}
               />
@@ -1031,9 +1053,13 @@ type TempoReviewProps = {
   onEdit: (row: ReviewRow, text: string) => void;
   /** Showing the click read as eighths (`result.tempo.asEighths`). */
   eighths: boolean;
+  detail: TempoDetail;
+  onDetail: (detail: TempoDetail) => void;
   onScale: (factor: number) => void;
   onSeek: (absoluteSeconds: number) => void;
 };
+
+const TEMPO_DETAILS: TempoDetail[] = ["simplified", "follow", "initial"];
 
 /** The tempo reading on show: the click's, or its eighths (÷2) reading. */
 function tempoReading(result: AnalyzeSongResult, eighths: boolean) {
@@ -1048,19 +1074,22 @@ function TempoReview({
   onInclude,
   onEdit,
   eighths,
+  detail,
+  onDetail,
   onScale,
   onSeek,
 }: TempoReviewProps) {
   const { t } = useTranslation();
   const reading = tempoReading(result, eighths);
   if (!reading) return null;
-  const { analysis, proposal } = reading;
+  const { analysis } = reading;
+  const { segments, proposal } = tempoLevel(reading, detail);
   const { regionStartSeconds } = result;
 
   const songRows = rows.filter((row) => !row.restoresNextSong);
   const firstTempo = songRows.find((row) => row.kind === "tempo");
   const firstSignature = songRows.find((row) => row.kind === "signature");
-  const detected = analysis.segments[0];
+  const detected = segments[0];
   const hasTempoRows = rows.some((row) => row.kind === "tempo");
   const hasSignatureRows = rows.some((row) => row.kind === "signature");
   const estimated = analysis.warnings.some((w) => w.kind === "estimatedWithoutClick");
@@ -1094,10 +1123,27 @@ function TempoReview({
           <div>
             <dt>{t("transport.songAnalysis.changes")}</dt>
             <dd>
-              {t("transport.songAnalysis.segmentCount", { count: analysis.segments.length })}
+              {t("transport.songAnalysis.segmentCount", { count: segments.length })}
             </dd>
           </div>
         </dl>
+      ) : null}
+
+      {offersTempoDetail(reading) ? (
+        <div className="lt-song-analysis-detail" role="radiogroup">
+          <span className="lt-render-hint">{t("transport.songAnalysis.detailLabel")}</span>
+          {TEMPO_DETAILS.map((option) => (
+            <label key={option}>
+              <input
+                type="radio"
+                name="lt-song-analysis-detail"
+                checked={detail === option}
+                onChange={() => onDetail(option)}
+              />{" "}
+              {t(`transport.songAnalysis.detail.${option}`)}
+            </label>
+          ))}
+        </div>
       ) : null}
 
       {proposal.unchanged && analysis.segments.length > 0 ? (
@@ -1180,6 +1226,11 @@ function TempoReview({
                       </td>
                       <td>
                         {label}
+                        {row.kind === "tempo" && row.ramp ? (
+                          <small className="lt-level-songs-note">
+                            {t("transport.songAnalysis.rampToNext")}
+                          </small>
+                        ) : null}
                         {row.restoresNextSong ? (
                           <small className="lt-level-songs-note">
                             {t("transport.songAnalysis.restoresNextSong")}

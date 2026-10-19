@@ -169,6 +169,7 @@ pub fn analyze_music_tempo(
             beats_per_bar: beats_per_bar as u32,
             beat_unit: 4,
             bars,
+            end_bpm: None,
         }],
         warnings,
         beat_count: times.len(),

@@ -15,7 +15,11 @@ pub fn effective_bpm_at(song: &Song, position_seconds: f64) -> f64 {
                 .partial_cmp(&b.start_seconds)
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
-        .map(|marker| marker.bpm)
+        .map(|marker| {
+            // Inside a ramp, the tempo it has reached there.
+            crate::tempo_ramp::tempo_span_at(song, marker.start_seconds)
+                .bpm_at(position_seconds.max(marker.start_seconds))
+        })
         .unwrap_or(song.bpm)
 }
 
@@ -363,11 +367,13 @@ mod tests {
                     id: "m1".into(),
                     start_seconds: 2.0,
                     bpm: 90.0,
+                    ramp: false,
                 },
                 TempoMarker {
                     id: "m2".into(),
                     start_seconds: 5.0,
                     bpm: 140.0,
+                    ramp: false,
                 },
             ],
         );
@@ -384,6 +390,7 @@ mod tests {
                 id: "m1".into(),
                 start_seconds: 4.0,
                 bpm: 140.0,
+                ramp: false,
             }],
         );
         // Region starting at 5.0 inherits 140 BPM from the marker.

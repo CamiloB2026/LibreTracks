@@ -1015,6 +1015,22 @@ pub fn upsert_song_tempo_marker(
 }
 
 #[tauri::command(async)]
+pub fn set_song_tempo_marker_ramp(
+    marker_id: String,
+    ramp: bool,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .set_song_tempo_marker_ramp(&marker_id, ramp, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command(async)]
 pub fn delete_song_tempo_marker(
     marker_id: String,
     state: State<'_, DesktopState>,

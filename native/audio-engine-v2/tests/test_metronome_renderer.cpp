@@ -221,6 +221,42 @@ TEST_CASE("tempo marker changes metronome beat spacing at marker frame") {
     CHECK(d.next_beat_frame == 68282);
 }
 
+TEST_CASE("a tempo ramp speeds the clicks up along the ramp") {
+    // 60 -> 120 BPM over 10 s: beat k lands where 60 t + 3 t^2 = 60 k.
+    MetronomeRenderer renderer;
+    auto session = make_session(60.0, 4, 4);
+    TempoMarker ramp{"ramp", 0, 60.0};
+    ramp.ramp = true;
+    session.songs[0].tempo_markers.push_back(ramp);
+    session.songs[0].tempo_markers.push_back(TempoMarker{"fast", 480000, 120.0});
+    renderer.set_config({true, 1.0f, "master", false});
+    const auto beat_frame = [](int k) {
+        const double t = (-60.0 + std::sqrt(3600.0 + 720.0 * k)) / 6.0;
+        return static_cast<Frame>(std::llround(t * 48000.0));
+    };
+
+    std::vector<float> left(512, 0.0f), right(512, 0.0f);
+    float* out[] = { left.data(), right.data() };
+    renderer.render(out, 2, 512, 48000.0, 0, &session);
+    CHECK(renderer.diagnostics().next_beat_frame == beat_frame(1));
+
+    // The whole ramp, block by block: 15 beats (the 16th is the 120 BPM
+    // marker's own downbeat at 10 s), the last at its ramp position.
+    MetronomeRenderer fresh;
+    fresh.set_config({true, 1.0f, "master", false});
+    std::vector<float> all;
+    for (Frame at = 0; at < 480000; at += 512) {
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        const int frames = static_cast<int>(std::min<Frame>(512, 480000 - at));
+        fresh.render(out, 2, frames, 48000.0, at, &session);
+        all.insert(all.end(), left.begin(), left.begin() + frames);
+    }
+    CHECK(count_clicks(all) == 15);
+    CHECK(fresh.diagnostics().last_beat_frame == beat_frame(14));
+    CHECK(fresh.diagnostics().rendered_clicks_count == 15);
+}
+
 TEST_CASE("time signature marker changes accent spacing at marker frame") {
     MetronomeRenderer renderer;
     auto session = make_session(120.0, 4, 4);

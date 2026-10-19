@@ -1,5 +1,6 @@
 //! Motor de audio y transporte.
 
+use libretracks_core::tempo_ramp::{tempo_spans, TempoSpan};
 use libretracks_core::{
     validate_song, Clip, DomainError, Marker, Song, SongRegion, Track, TrackKind,
 };
@@ -774,9 +775,9 @@ fn current_bar_index_for_position(
     let current_region =
         resolve_resolved_region_for_position(resolved_regions, position_seconds)
             .ok_or_else(|| AudioEngineError::InvalidTimeSignature("missing song region".into()))?;
-    let local_position = (position_seconds - current_region.start_seconds).max(0.0);
+    let position = position_seconds.max(current_region.start_seconds);
     Ok((current_region.cumulative_bars_start
-        + local_position / current_region.bar_duration_seconds
+        + current_region.bars_between(current_region.start_seconds, position)
         + f64::EPSILON)
         .floor() as usize)
 }
@@ -785,8 +786,37 @@ fn current_bar_index_for_position(
 struct ResolvedSongRegion {
     start_seconds: f64,
     end_seconds: f64,
-    bar_duration_seconds: f64,
+    quarters_per_bar: f64,
+    /// The tempo across the region: a step, or the part of a ramp in it.
+    tempo: TempoSpan,
     cumulative_bars_start: f64,
+}
+
+impl ResolvedSongRegion {
+    fn bars_between(&self, from: f64, to: f64) -> f64 {
+        self.tempo.quarters_between(from, to) / self.quarters_per_bar
+    }
+
+    /// The instant `bars` bars after the region's start.
+    fn seconds_after_bars(&self, bars: f64) -> f64 {
+        self.tempo
+            .seconds_after(self.start_seconds, bars * self.quarters_per_bar)
+    }
+}
+
+/// The region's tempo: the warp source's inside a warped song, else the
+/// map's (a ramp included) between `start` and `end`.
+fn region_tempo(song: &Song, spans: &[TempoSpan], start: f64, end: f64) -> TempoSpan {
+    if let Some(source_bpm) = warp_source_bpm_at(song, start) {
+        return TempoSpan::constant(start, source_bpm);
+    }
+    spans
+        .iter()
+        .rev()
+        .find(|span| span.start <= start + 1.0e-9)
+        .map_or(TempoSpan::constant(start, song.bpm), |span| {
+            span.between(start, end)
+        })
 }
 
 fn resolve_song_regions(song: &Song) -> Result<Vec<ResolvedSongRegion>, AudioEngineError> {
@@ -797,23 +827,23 @@ fn resolve_song_regions(song: &Song) -> Result<Vec<ResolvedSongRegion>, AudioEng
         song.tempo_markers
             .iter()
             .filter(|marker| marker.start_seconds > 0.0)
-            .map(|marker| (marker.start_seconds, Some(marker.bpm), None)),
+            .map(|marker| (marker.start_seconds, None)),
     );
     boundaries.extend(
         song.time_signature_markers
             .iter()
             .filter(|marker| marker.start_seconds > 0.0)
-            .map(|marker| (marker.start_seconds, None, Some(marker.signature.as_str()))),
+            .map(|marker| (marker.start_seconds, Some(marker.signature.as_str()))),
     );
     for region in &song.regions {
         if region.end_seconds <= region.start_seconds {
             continue;
         }
         if region.start_seconds > 0.0 {
-            boundaries.push((region.start_seconds, None, None));
+            boundaries.push((region.start_seconds, None));
         }
         if region.end_seconds > 0.0 {
-            boundaries.push((region.end_seconds, None, None));
+            boundaries.push((region.end_seconds, None));
         }
     }
     boundaries.sort_by(|left, right| {
@@ -822,49 +852,40 @@ fn resolve_song_regions(song: &Song) -> Result<Vec<ResolvedSongRegion>, AudioEng
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
+    let spans = tempo_spans(song);
     let mut resolved_regions = Vec::with_capacity(boundaries.len() + 1);
     let mut cumulative_bars_start = 0.0;
     let mut start_seconds = 0.0;
-    let mut bpm = song.bpm;
     let mut time_signature = song.time_signature.as_str();
 
-    for (boundary_seconds, boundary_bpm, boundary_time_signature) in boundaries {
+    for (boundary_seconds, boundary_time_signature) in boundaries {
         if boundary_seconds <= start_seconds {
-            if let Some(next_bpm) = boundary_bpm {
-                bpm = next_bpm;
-            }
             if let Some(next_time_signature) = boundary_time_signature {
                 time_signature = next_time_signature;
             }
             continue;
         }
 
-        let source_bpm = warp_source_bpm_at(song, start_seconds).unwrap_or(bpm);
-        let bar_duration_seconds =
-            song_bar_duration_seconds_for_region(source_bpm, time_signature)?;
-        let duration_seconds = (boundary_seconds - start_seconds).max(0.0);
-        resolved_regions.push(ResolvedSongRegion {
+        let region = ResolvedSongRegion {
             start_seconds,
             end_seconds: boundary_seconds,
-            bar_duration_seconds,
+            quarters_per_bar: quarters_per_bar(time_signature)?,
+            tempo: region_tempo(song, &spans, start_seconds, boundary_seconds),
             cumulative_bars_start,
-        });
-        cumulative_bars_start += duration_seconds / bar_duration_seconds;
+        };
+        cumulative_bars_start += region.bars_between(start_seconds, boundary_seconds);
+        resolved_regions.push(region);
         start_seconds = boundary_seconds;
-        if let Some(next_bpm) = boundary_bpm {
-            bpm = next_bpm;
-        }
         if let Some(next_time_signature) = boundary_time_signature {
             time_signature = next_time_signature;
         }
     }
 
-    let source_bpm = warp_source_bpm_at(song, start_seconds).unwrap_or(bpm);
-    let bar_duration_seconds = song_bar_duration_seconds_for_region(source_bpm, time_signature)?;
     resolved_regions.push(ResolvedSongRegion {
         start_seconds,
         end_seconds: f64::MAX,
-        bar_duration_seconds,
+        quarters_per_bar: quarters_per_bar(time_signature)?,
+        tempo: region_tempo(song, &spans, start_seconds, f64::INFINITY),
         cumulative_bars_start,
     });
 
@@ -913,12 +934,9 @@ fn cumulative_bar_start_seconds(
 ) -> f64 {
     for region in resolved_regions {
         let local_bar_index = target_bar_index as f64 - region.cumulative_bars_start;
-        let local_start_seconds = local_bar_index * region.bar_duration_seconds;
-        if local_bar_index >= -f64::EPSILON
-            && local_start_seconds <= (region.end_seconds - region.start_seconds) + f64::EPSILON
-        {
-            return (region.start_seconds + local_start_seconds)
-                .clamp(region.start_seconds, region.end_seconds);
+        let start_seconds = region.seconds_after_bars(local_bar_index);
+        if local_bar_index >= -f64::EPSILON && start_seconds <= region.end_seconds + f64::EPSILON {
+            return start_seconds.clamp(region.start_seconds, region.end_seconds);
         }
     }
 
@@ -928,14 +946,9 @@ fn cumulative_bar_start_seconds(
         .unwrap_or(0.0)
 }
 
-fn song_bar_duration_seconds_for_region(
-    bpm: f64,
-    time_signature: &str,
-) -> Result<f64, AudioEngineError> {
+fn quarters_per_bar(time_signature: &str) -> Result<f64, AudioEngineError> {
     let (numerator, denominator) = parse_time_signature(time_signature)?;
-    let beat_duration_seconds = 60.0 / bpm;
-    let quarter_notes_per_bar = f64::from(numerator) * (4.0 / f64::from(denominator));
-    Ok(beat_duration_seconds * quarter_notes_per_bar)
+    Ok(f64::from(numerator) * (4.0 / f64::from(denominator)))
 }
 
 fn parse_time_signature(time_signature: &str) -> Result<(u32, u32), AudioEngineError> {
@@ -1254,11 +1267,13 @@ mod tests {
                     id: "tempo_bridge".into(),
                     start_seconds: 8.0,
                     bpm: 120.0,
+                    ramp: false,
                 },
                 libretracks_core::TempoMarker {
                     id: "tempo_outro".into(),
                     start_seconds: 14.0,
                     bpm: 60.0,
+                    ramp: false,
                 },
             ],
             time_signature_markers: vec![],
@@ -1689,6 +1704,7 @@ mod tests {
             id: "tempo_mid_bar".into(),
             start_seconds: 1.25,
             bpm: 60.0,
+            ramp: false,
         }];
         song.section_markers = vec![Marker {
             id: "section_target".into(),
@@ -1716,6 +1732,59 @@ mod tests {
             .expect("jump should remain pending");
 
         assert!((scheduled.execute_at_seconds - 2.75).abs() < 0.0001);
+    }
+
+    #[test]
+    fn jump_after_bars_counts_bars_along_a_tempo_ramp() {
+        // 60 → 120 BPM over 10 s: bar 2 (4 quarters in) arrives sooner than
+        // at a steady 60 (4 s): 60·t + 3·t² = 240 → t ≈ 3.416 s.
+        let mut song = demo_song();
+        song.bpm = 60.0;
+        song.duration_seconds = 20.0;
+        song.tempo_markers = vec![
+            libretracks_core::TempoMarker {
+                id: "ramp".into(),
+                start_seconds: 0.0,
+                bpm: 60.0,
+                ramp: true,
+            },
+            libretracks_core::TempoMarker {
+                id: "fast".into(),
+                start_seconds: 10.0,
+                bpm: 120.0,
+                ramp: false,
+            },
+        ];
+        song.section_markers = vec![Marker {
+            id: "section_target".into(),
+            name: "Target".into(),
+            start_seconds: 15.0,
+            digit: None,
+            kind: MarkerKind::Custom,
+            variant: None,
+            color: None,
+            category_override: None,
+        }];
+
+        let mut engine = AudioEngine::new();
+        engine.load_song(song).expect("song should load");
+        engine.seek(0.5).expect("seek should work");
+        engine.play().expect("play should work");
+        let scheduled = engine
+            .schedule_marker_jump(
+                "section_target",
+                JumpTrigger::AfterBars(1),
+                TransitionType::Instant,
+            )
+            .expect("jump should schedule")
+            .expect("jump should remain pending");
+
+        let expected = (-60.0 + (3600.0_f64 + 2880.0).sqrt()) / 6.0;
+        assert!(
+            (scheduled.execute_at_seconds - expected).abs() < 0.0001,
+            "{}",
+            scheduled.execute_at_seconds
+        );
     }
 
     #[test]
@@ -1971,6 +2040,7 @@ mod tests {
             id: "tempo_far".into(),
             start_seconds: 12.0,
             bpm: 60.0,
+            ramp: false,
         }];
         song.section_markers = vec![Marker {
             id: "section_target".into(),

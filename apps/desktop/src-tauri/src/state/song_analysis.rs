@@ -78,17 +78,24 @@ pub(super) fn apply_tempo_analysis_to_song(
 
     let suffix = timestamp_suffix();
     for (index, marker) in tempo_markers.iter().enumerate() {
-        if marker.start_seconds <= SONG_ORIGIN_SECONDS {
+        // A ramp needs a marker even at the session's start: the song's own
+        // tempo has no ramp.
+        if marker.start_seconds <= SONG_ORIGIN_SECONDS && !marker.ramp {
             song.bpm = marker.bpm;
         } else if let Some(existing) = song.tempo_markers.iter_mut().find(|existing| {
             (existing.start_seconds - marker.start_seconds).abs() < SAME_POSITION_SECONDS
         }) {
             existing.bpm = marker.bpm;
+            existing.ramp = marker.ramp;
         } else {
+            if marker.start_seconds <= SONG_ORIGIN_SECONDS {
+                song.bpm = marker.bpm;
+            }
             song.tempo_markers.push(TempoMarker {
                 id: format!("tempo_marker_{suffix}_{index}"),
-                start_seconds: marker.start_seconds,
+                start_seconds: marker.start_seconds.max(0.0),
                 bpm: marker.bpm,
+                ramp: marker.ramp,
             });
         }
     }

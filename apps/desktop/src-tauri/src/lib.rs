@@ -544,6 +544,7 @@ pub fn run() {
             commands::charts::set_song_region_chart,
             commands::timeline::upsert_song_tempo_marker,
             commands::timeline::delete_song_tempo_marker,
+            commands::timeline::set_song_tempo_marker_ramp,
             commands::timeline::update_song_time_signature,
             commands::timeline::upsert_song_time_signature_marker,
             commands::timeline::delete_song_time_signature_marker,

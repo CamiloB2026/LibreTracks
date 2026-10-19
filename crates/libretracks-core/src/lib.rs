@@ -5,6 +5,7 @@ pub mod midi_wire;
 pub mod model;
 pub mod net_clock;
 pub mod song_structure;
+pub mod tempo_ramp;
 pub mod validation;
 pub mod video_schedule;
 pub mod warp;

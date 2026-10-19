@@ -1162,6 +1162,7 @@ impl AudioController {
                     id: marker.id.clone(),
                     frame: seconds_to_frame_for_engine(engine, marker.start_seconds),
                     bpm: marker.bpm,
+                    ramp: marker.ramp,
                 })
                 .collect();
             let time_signature_markers = song
@@ -1345,6 +1346,7 @@ impl AudioController {
                     id: marker.id.clone(),
                     frame: seconds_to_frame_for_engine(engine, marker.start_seconds),
                     bpm: marker.bpm,
+                    ramp: marker.ramp,
                 })
                 .collect();
             let time_signature_markers = song
@@ -1406,6 +1408,7 @@ impl AudioController {
                     id: marker.id.clone(),
                     frame: seconds_to_frame_for_engine(engine, marker.start_seconds),
                     bpm: marker.bpm,
+                    ramp: marker.ramp,
                 })
                 .collect();
             let time_signature_markers = song
@@ -3352,15 +3355,21 @@ fn add_varispeed_tempo_boundaries(source_song: &Song, runtime: &mut Song) {
         }
         let view_start = warp_timeline_seconds_at(source_song, region.start_seconds);
         let view_end = warp_timeline_seconds_at(source_song, region.end_seconds).max(view_start);
+        // Same as `timeline_math::add_varispeed_tempo_boundaries`: a
+        // boundary inside a ramp carries it on.
+        let in_ramp =
+            |at: f64| libretracks_core::tempo_ramp::tempo_span_at(source_song, at).is_ramp();
         synthetic_markers.push(TempoMarker {
             id: format!("{}_varispeed_start", region.id),
             start_seconds: view_start,
             bpm: effective_bpm_at(source_song, region.start_seconds) * scale,
+            ramp: in_ramp(region.start_seconds),
         });
         synthetic_markers.push(TempoMarker {
             id: format!("{}_varispeed_end", region.id),
             start_seconds: view_end,
             bpm: effective_bpm_at(source_song, region.end_seconds),
+            ramp: in_ramp(region.end_seconds),
         });
     }
     runtime.tempo_markers.extend(synthetic_markers);

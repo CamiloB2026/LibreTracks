@@ -294,6 +294,7 @@ fn set_song_timing_round_trip() {
             id: "tempo_a".into(),
             frame: 96000,
             bpm: 99.0,
+            ramp: false,
         }],
         time_signature_markers: vec![TimeSignatureMarkerUpdate {
             id: "sig_a".into(),
@@ -368,6 +369,7 @@ fn set_song_timeline_window_round_trip() {
             id: "tempo_a".into(),
             frame: 1024,
             bpm: 111.0,
+            ramp: false,
         }],
         time_signature_markers: vec![TimeSignatureMarkerUpdate {
             id: "sig_a".into(),
