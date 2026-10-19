@@ -1,4 +1,5 @@
 import { useTranslation } from "react-i18next";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import {
   memo,
   useCallback,
@@ -486,9 +487,11 @@ function CompactViewComponent({
             >
               {t("compactView.newSong")}
             </button>
-            <NewSongTemplateMenu
-              onCreate={(template) => void handleAddSong(template)}
-            />
+            {FEATURE_FLAGS.songTemplates ? (
+              <NewSongTemplateMenu
+                onCreate={(template) => void handleAddSong(template)}
+              />
+            ) : null}
           </div>
           <button
             type="button"

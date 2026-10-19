@@ -7,10 +7,17 @@
  */
 export const FEATURE_FLAGS = {
   /** Lyrics & chords in the live view and the remote (PDF/ChordPro import,
-   * sync with markers). Hidden in 1.14.0; planned for 1.15.0. */
-  lyrics: false,
+   * sync with markers). Hidden in 1.14.0; ships in 1.15.0. */
+  lyrics: true,
   /** Network sessions: LibreTracks apps joining a host LibreTracks over the
    * LAN with roles (viewer / control / edit). Plan in
-   * docs/plans/network-sessions. In development; no release planned yet. */
-  networkSessions: false,
+   * docs/plans/network-sessions. Ships in 1.15.0. */
+  networkSessions: true,
+  /** «Analizar canción…»: tempo, key and section markers read from a song's
+   * click, guide and audio. Planned for 1.16.0. */
+  songAnalysis: false,
+  /** Song templates: new songs from a template, stems organised on drop by
+   * match aliases, and the «one folder per song» track layout. Planned for
+   * 1.16.0. */
+  songTemplates: false,
 } as const;

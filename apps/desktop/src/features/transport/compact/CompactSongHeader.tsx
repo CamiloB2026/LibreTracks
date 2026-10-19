@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 
 import { clientToZoomedCoords } from "../../../shared/uiZoom";
 import { useDismissOnBack } from "../mobile/backNavigation";
@@ -346,16 +347,18 @@ export function CompactSongHeaderComponent({
               >
                 {t("transport.menu.renderSong")}
               </button>
-              <button
-                type="button"
-                className="lt-compact-clip-menu-item"
-                onClick={() => {
-                  setContextMenu(null);
-                  openSongAnalysis({ regionId: region.id, regionName: region.name });
-                }}
-              >
-                {t("transport.menu.analyzeSong")}
-              </button>
+              {FEATURE_FLAGS.songAnalysis ? (
+                <button
+                  type="button"
+                  className="lt-compact-clip-menu-item"
+                  onClick={() => {
+                    setContextMenu(null);
+                    openSongAnalysis({ regionId: region.id, regionName: region.name });
+                  }}
+                >
+                  {t("transport.menu.analyzeSong")}
+                </button>
+              ) : null}
               <div className="lt-compact-clip-menu-divider" aria-hidden="true" />
               <button
                 type="button"
