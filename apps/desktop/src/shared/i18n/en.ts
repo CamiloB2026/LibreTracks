@@ -814,6 +814,8 @@ const en = {
           "Here the click follows the band (free tempo) and changes speed bar by bar. “Simplified” gives the passage one tempo, which ends back on the click; “Follow the click” puts one marker per bar.",
         clickReadAsEighths:
           "The click has no accent and was read as eighths: one beat every two clicks.",
+        downbeatFromGuide:
+          "Beat 1 of the bar was taken from the guide, where its announcements end, not from the click's first hit.",
       },
     },
     levelSongs: {

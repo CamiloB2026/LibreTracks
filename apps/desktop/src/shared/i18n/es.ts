@@ -830,6 +830,8 @@ const es = {
           "Aquí el click sigue a la banda (tempo libre) y cambia de velocidad compás a compás. «Simplificados» le da un solo tempo al tramo, que acaba otra vez sobre el click; «Seguir el click» pone una marca por compás.",
         clickReadAsEighths:
           "El click no tiene acento y se ha leído en corcheas: cada dos golpes, un tiempo.",
+        downbeatFromGuide:
+          "El primer tiempo del compás se ha sacado de la guía: es donde terminan sus avisos, no el primer golpe del click.",
       },
     },
     levelSongs: {

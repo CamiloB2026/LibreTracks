@@ -14,7 +14,9 @@
 //! `metronome_renderer.cpp`), so a marker anywhere else would make the app's
 //! click disagree with the multitrack's.
 
+use crate::bar_phase::pickup_from_guide;
 use crate::fft::fft;
+use crate::guide::GuideAnalysis;
 use serde::Serialize;
 
 /// How loosely beats may follow their tempo before a segment is cut.
@@ -166,6 +168,9 @@ pub enum ClickWarningKind {
     /// The click has no accent and was read as eighths: one click in two is
     /// the beat (see `analyze_click_as_eighths`).
     ClickReadAsEighths,
+    /// The click has no accent, and where the bar starts was taken from the
+    /// guide's announcements instead of its first click (see `bar_phase`).
+    DownbeatFromGuide,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -192,8 +197,28 @@ pub fn analyze_click(
     sample_rate: u32,
     fallback_beats_per_bar: u32,
 ) -> ClickAnalysis {
-    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, false)
+    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, false, None)
         .expect("the plain reading always exists")
+}
+
+/// `analyze_click`, or with `as_eighths` `analyze_click_as_eighths`, with the
+/// song's guide analysed from the same render: a click without accent then
+/// starts its bars where the announcements say (see `bar_phase`), not on its
+/// first click.
+pub fn analyze_click_with_guide(
+    samples: &[f32],
+    sample_rate: u32,
+    fallback_beats_per_bar: u32,
+    as_eighths: bool,
+    guide: &GuideAnalysis,
+) -> Option<ClickAnalysis> {
+    analyze_click_reading(
+        samples,
+        sample_rate,
+        fallback_beats_per_bar,
+        as_eighths,
+        Some(guide),
+    )
 }
 
 /// The same click read as eighths: one click in two is the beat, at half the
@@ -209,7 +234,7 @@ pub fn analyze_click_as_eighths(
     sample_rate: u32,
     fallback_beats_per_bar: u32,
 ) -> Option<ClickAnalysis> {
-    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, true)
+    analyze_click_reading(samples, sample_rate, fallback_beats_per_bar, true, None)
 }
 
 fn analyze_click_reading(
@@ -217,6 +242,7 @@ fn analyze_click_reading(
     sample_rate: u32,
     fallback_beats_per_bar: u32,
     as_eighths: bool,
+    guide: Option<&GuideAnalysis>,
 ) -> Option<ClickAnalysis> {
     let onsets = detect_onsets(samples, sample_rate);
     let (beats, downbeat_known) = classify(&onsets);
@@ -250,15 +276,47 @@ fn analyze_click_reading(
             downbeat_known: false,
         });
     }
+    let mut pickup = 0;
     if !downbeat_known {
         warnings.push(ClickWarning {
             seconds: beats[0].seconds,
             kind: ClickWarningKind::NoAccent,
         });
+        // The first run only: after a gap the click starts counting again,
+        // and nothing says it comes back on the same beat of the bar.
+        let first_run = (1..beats.len())
+            .find(|&index| is_gap(&beats, index))
+            .unwrap_or(beats.len());
+        let times: Vec<f64> = beats[..first_run].iter().map(|b| b.seconds).collect();
+        let beats_per_bar = fallback_beats_per_bar.max(1) as usize;
+        let found = guide.and_then(|guide| {
+            let found = pickup_from_guide(&times, beats_per_bar, guide);
+            if as_eighths {
+                return found;
+            }
+            // The same clicks as eighths: a guide that says where the bar
+            // starts at that tempo is right about the plain reading too. At
+            // the plain tempo the bar is half the real one, and the speech
+            // ending on an off-beat click would pass for a downbeat.
+            let eighths: Vec<f64> = times.iter().copied().step_by(2).collect();
+            pickup_from_guide(&eighths, beats_per_bar, guide)
+                .map(|pickup| pickup * 2 % beats_per_bar)
+                .or(found)
+        });
+        if let Some(found) = found {
+            pickup = found;
+            if pickup > 0 {
+                warnings.push(ClickWarning {
+                    seconds: times[pickup],
+                    kind: ClickWarningKind::DownbeatFromGuide,
+                });
+            }
+        }
     }
     Some(tempo_map_from_beats(
         &beats,
         downbeat_known,
+        pickup,
         fallback_beats_per_bar,
         CLICK_TOLERANCES,
         warnings,
@@ -267,10 +325,12 @@ fn analyze_click_reading(
 
 /// Beats (with their downbeats) to the analysis: bars, constant-tempo
 /// segments that start on downbeats, and the warnings about them. Shared by
-/// the click and by the tempo estimated from the music.
+/// the click and by the tempo estimated from the music. Without known
+/// downbeats, the first `pickup` beats come before the first bar.
 pub(crate) fn tempo_map_from_beats(
     beats: &[Beat],
     downbeat_known: bool,
+    pickup: usize,
     fallback_beats_per_bar: u32,
     tolerances: Tolerances,
     mut warnings: Vec<ClickWarning>,
@@ -278,6 +338,7 @@ pub(crate) fn tempo_map_from_beats(
     let bars = build_bars(
         beats,
         downbeat_known,
+        pickup,
         fallback_beats_per_bar.max(1),
         &mut warnings,
     );
@@ -698,6 +759,7 @@ fn is_gap(beats: &[Beat], index: usize) -> bool {
 fn build_bars(
     beats: &[Beat],
     downbeat_known: bool,
+    pickup: usize,
     fallback_beats_per_bar: u32,
     warnings: &mut Vec<ClickWarning>,
 ) -> Vec<Bar> {
@@ -716,7 +778,10 @@ fn build_bars(
             }
         }
         let starts_bar = match &current {
-            None => !downbeat_known || beat.downbeat,
+            // Before any bar (the first run, or after a gap). The pickup
+            // only counts in the first run, before any bar was cut.
+            None if downbeat_known => beat.downbeat,
+            None => !(bars.is_empty() && index < pickup),
             Some(bar) => {
                 if downbeat_known {
                     beat.downbeat
@@ -1333,6 +1398,54 @@ mod tests {
         assert_close(eighths.segments[0].start_seconds, 0.5, 0.002);
         assert_eq!(eighths.segments[0].bars, 20);
         assert!(kinds(&eighths).contains(&ClickWarningKind::ClickReadAsEighths));
+    }
+
+    /// A guide whose announcements end half a beat before the downbeats
+    /// at `first_downbeat + k * bar`, every four bars.
+    fn guide_ending_before(
+        first_downbeat: f64,
+        bar: f64,
+        beat: f64,
+        count: usize,
+    ) -> GuideAnalysis {
+        GuideAnalysis {
+            announcements: (0..count)
+                .map(|k| {
+                    let downbeat = first_downbeat + (4 * k + 2) as f64 * bar;
+                    crate::guide::GuideAnnouncement {
+                        start_seconds: downbeat - bar,
+                        end_seconds: downbeat - beat / 2.0,
+                        group: 0,
+                        count_words: Vec::new(),
+                    }
+                })
+                .collect(),
+            groups: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn an_unaccented_click_starts_its_bars_where_the_guide_says() {
+        // "Es Él": a click in eighths at 140 for a song at 70 whose bar 1
+        // comes two beats after the first click.
+        let eighth = 60.0 / 140.0;
+        let samples = render(&unaccented(0.0, eighth, 400));
+        let beat = 2.0 * eighth;
+        let guide = guide_ending_before(2.0 * beat, 4.0 * beat, beat, 10);
+        let eighths = analyze_click_with_guide(&samples, RATE, 4, true, &guide).expect("no accent");
+        assert_eq!(eighths.segments[0].bpm, 70.0);
+        assert_close(eighths.segments[0].start_seconds, 2.0 * beat, 0.002);
+        assert!(kinds(&eighths).contains(&ClickWarningKind::DownbeatFromGuide));
+        // Read at 140 its bars are half the real one; they still start on a
+        // real downbeat, not on the off-beat click the speech ends on.
+        let plain = analyze_click_with_guide(&samples, RATE, 4, false, &guide).expect("plain");
+        assert_eq!(plain.segments[0].bpm, 140.0);
+        let bar = 4.0 * eighth;
+        let phase = (plain.segments[0].start_seconds / bar).fract();
+        assert!(phase < 0.01 || phase > 0.99, "{plain:?}");
+        // Without the guide the bars count from the first click, as before.
+        let unguided = analyze_click_as_eighths(&samples, RATE, 4).expect("no accent");
+        assert_close(unguided.segments[0].start_seconds, 0.0, 0.002);
     }
 
     #[test]

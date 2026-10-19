@@ -4,6 +4,7 @@
 //! session: the desktop crate renders the song, hands the samples here and
 //! turns the result into markers. See `docs/plans/song-analysis/`.
 
+mod bar_phase;
 pub mod click;
 mod dsp;
 mod fft;
@@ -15,8 +16,8 @@ pub mod proposal;
 pub mod simplify;
 
 pub use click::{
-    analyze_click, analyze_click_as_eighths, ClickAnalysis, ClickWarning, ClickWarningKind,
-    TempoSegment,
+    analyze_click, analyze_click_as_eighths, analyze_click_with_guide, ClickAnalysis, ClickWarning,
+    ClickWarningKind, TempoSegment,
 };
 pub use guide::{
     analyze_guide, CountWord, GuideAnalysis, GuideAnnouncement, GuideGroup, GuideTemplate,

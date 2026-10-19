@@ -8,6 +8,8 @@
 //! With `ONSETS=1` it dumps every click's time, level and pitch instead.
 //! With `EIGHTHS=1` it reads a click without accent as eighths (÷2).
 //! With `DETAIL=simplified` or `DETAIL=initial` it prints that tempo map.
+//! With `GUIDE=Guide.wav` (rendered alongside the click) a click without
+//! accent starts its bars where the guide's announcements say.
 
 fn main() {
     let mut args = std::env::args().skip(1);
@@ -42,11 +44,25 @@ fn main() {
         return;
     }
     let started = std::time::Instant::now();
-    let analysis = if std::env::var_os("EIGHTHS").is_some() {
-        libretracks_analysis::analyze_click_as_eighths(&mono, spec.sample_rate, fallback)
-            .expect("a click without accent")
-    } else {
-        libretracks_analysis::analyze_click(&mono, spec.sample_rate, fallback)
+    let eighths = std::env::var_os("EIGHTHS").is_some();
+    let guide = std::env::var_os("GUIDE").map(|path| {
+        let (guide, rate) = read_mono(std::path::Path::new(&path));
+        libretracks_analysis::analyze_guide(&guide, rate, &[], None)
+    });
+    let analysis = match &guide {
+        Some(guide) => libretracks_analysis::analyze_click_with_guide(
+            &mono,
+            spec.sample_rate,
+            fallback,
+            eighths,
+            guide,
+        )
+        .expect("a click without accent"),
+        None if eighths => {
+            libretracks_analysis::analyze_click_as_eighths(&mono, spec.sample_rate, fallback)
+                .expect("a click without accent")
+        }
+        None => libretracks_analysis::analyze_click(&mono, spec.sample_rate, fallback),
     };
     println!(
         "{} s of audio analysed in {:.0} ms: {} beats, downbeat known: {}",
@@ -76,4 +92,25 @@ fn main() {
     for warning in &analysis.warnings {
         println!("  ! {:>8.3} s  {:?}", warning.seconds, warning.kind);
     }
+}
+
+fn read_mono(path: &std::path::Path) -> (Vec<f32>, u32) {
+    let mut reader = hound::WavReader::open(path).expect("readable WAV");
+    let spec = reader.spec();
+    let channels = usize::from(spec.channels.max(1));
+    let samples: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Float => reader.samples::<f32>().map(|s| s.unwrap_or(0.0)).collect(),
+        hound::SampleFormat::Int => {
+            let scale = 1.0 / (1_i64 << (spec.bits_per_sample - 1)) as f32;
+            reader
+                .samples::<i32>()
+                .map(|s| s.unwrap_or(0) as f32 * scale)
+                .collect()
+        }
+    };
+    let mono = samples
+        .chunks(channels)
+        .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+        .collect();
+    (mono, spec.sample_rate)
 }

@@ -13,10 +13,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use libretracks_analysis::{
-    analyze_click, analyze_click_as_eighths, analyze_guide, analyze_key, analyze_music_tempo,
-    initial_tempo_only, propose_tempo_markers, simplify_segments, ClickAnalysis, ExistingTiming,
-    GuideAnalysis, GuideTemplate, KeyAnalysis, ProposedSignatureMarker, ProposedTempoMarker,
-    SongSpan, TempoProposal, TempoSegment,
+    analyze_click, analyze_click_as_eighths, analyze_click_with_guide, analyze_guide, analyze_key,
+    analyze_music_tempo, initial_tempo_only, propose_tempo_markers, simplify_segments,
+    ClickAnalysis, ExistingTiming, GuideAnalysis, GuideTemplate, KeyAnalysis,
+    ProposedSignatureMarker, ProposedTempoMarker, SongSpan, TempoProposal, TempoSegment,
 };
 use lt_audio_engine_v2::{RenderError, RenderOutput, RenderRequest, RenderSampleFormat};
 use serde::{Deserialize, Serialize};
@@ -581,6 +581,9 @@ fn run_job(
 
     let read = |path: &std::path::Path| read_mono_wav(path).map_err(JobError::Failed);
     let outcome = (|| -> Result<(), JobError> {
+        // A click without accent: read again once the guide says where its
+        // bars start.
+        let mut unaccented_click: Option<(Vec<f32>, u32)> = None;
         if let Some(tempo) = &job.tempo {
             if !on_progress(AnalysisProgress::at(RENDER_END, "tempo")) {
                 return Err(JobError::Cancelled);
@@ -596,6 +599,9 @@ fn run_job(
                 .flatten()
                 .filter(|eighths| !eighths.segments.is_empty())
                 .map(|analysis| TempoReading::new(analysis, tempo.span, &tempo.existing));
+            if !tempo.from_music && !analysis.downbeat_known && !job.guide_track_ids.is_empty() {
+                unaccented_click = Some((samples, rate));
+            }
             result.tempo = Some(TempoResult {
                 reading: TempoReading::new(analysis, tempo.span, &tempo.existing),
                 as_eighths,
@@ -637,6 +643,29 @@ fn run_job(
             };
             if ANALYSIS_CANCEL.load(Ordering::Acquire) {
                 return Err(JobError::Cancelled);
+            }
+            if let (Some(tempo), Some((click, click_rate))) = (&job.tempo, &unaccented_click) {
+                let reread = |as_eighths: bool| {
+                    analyze_click_with_guide(
+                        click,
+                        *click_rate,
+                        tempo.fallback_beats_per_bar,
+                        as_eighths,
+                        &analysis,
+                    )
+                    .filter(|reading| !reading.segments.is_empty())
+                    .map(|reading| TempoReading::new(reading, tempo.span, &tempo.existing))
+                };
+                if let Some(reading) = reread(false) {
+                    let had_eighths = result
+                        .tempo
+                        .as_ref()
+                        .is_some_and(|tempo| tempo.as_eighths.is_some());
+                    result.tempo = Some(TempoResult {
+                        reading,
+                        as_eighths: if had_eighths { reread(true) } else { None },
+                    });
+                }
             }
             result.guide = Some(GuideResult {
                 analysis,
