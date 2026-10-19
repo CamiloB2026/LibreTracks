@@ -440,6 +440,12 @@ impl DesktopSession {
         // tail (reproduced as: "drag the end handle inward → a phantom
         // duplicate region appears with the trimmed name and the cut-off
         // span").
+        super::song_templates::rename_song_folder(
+            &mut song,
+            &existing_region.id,
+            &existing_region.name,
+            &updated_region.name,
+        );
         song.regions
             .retain(|region| region.id != existing_region.id);
         replace_song_region_range(&mut song, updated_region);
@@ -1282,6 +1288,9 @@ impl DesktopSession {
         // deleted region keeps the mixer view tidy without an extra round
         // trip — same prune we already apply on clip move / delete paths.
         prune_auto_created_empty_tracks(&mut song);
+        // In the per-song layouts the song's own tracks (and its folder) go
+        // with it once they hold nothing; shared tracks are never touched.
+        super::song_templates::remove_empty_song_tracks(&mut song, region_id);
         refresh_song_duration(&mut song);
 
         audio.update_live_song_regions(&song)?;

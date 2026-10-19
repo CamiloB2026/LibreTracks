@@ -913,6 +913,70 @@ fn lane_track(
     }
 }
 
+/// Al renombrar una canción, su carpeta del modo «carpeta por canción» se
+/// renombra con ella. Solo si la carpeta sigue llamándose como la canción: si
+/// el usuario le puso otro nombre a mano, se respeta. Devuelve si cambió algo.
+pub(crate) fn rename_song_folder(
+    song: &mut Song,
+    region_id: &str,
+    old_name: &str,
+    new_name: &str,
+) -> bool {
+    if old_name == new_name {
+        return false;
+    }
+    let Some(folder_id) = song_folder_id(song, region_id) else {
+        return false;
+    };
+    match song.tracks.iter_mut().find(|track| track.id == folder_id) {
+        Some(folder) if folder.name == old_name => {
+            folder.name = new_name.to_string();
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Al borrar una canción se van con ella las pistas que se crearon para ella
+/// (las marcadas con `song_region_id`) y que se han quedado sin nada: sin clips
+/// y sin hijas. Se borran de las hojas hacia arriba, así que la carpeta de la
+/// canción cae al final si quedó vacía. Una pista suya que todavía tiene audio
+/// en otra parte, o una pista del usuario metida en la carpeta, la mantienen.
+///
+/// Las pistas compartidas no llevan marca y nunca se tocan.
+pub(crate) fn remove_empty_song_tracks(song: &mut Song, region_id: &str) -> bool {
+    let mut removed_any = false;
+    loop {
+        let used: HashSet<&str> = song
+            .clips
+            .iter()
+            .map(|clip| clip.track_id.as_str())
+            .chain(song.midi_clips.iter().map(|clip| clip.track_id.as_str()))
+            .chain(song.video_clips.iter().map(|clip| clip.track_id.as_str()))
+            .collect();
+        let parents: HashSet<&str> = song
+            .tracks
+            .iter()
+            .filter_map(|track| track.parent_track_id.as_deref())
+            .collect();
+        let empty: HashSet<String> = song
+            .tracks
+            .iter()
+            .filter(|track| {
+                track.song_region_id.as_deref() == Some(region_id)
+                    && !used.contains(track.id.as_str())
+                    && !parents.contains(track.id.as_str())
+            })
+            .map(|track| track.id.clone())
+            .collect();
+        if empty.is_empty() {
+            return removed_any;
+        }
+        song.tracks.retain(|track| !empty.contains(&track.id));
+        removed_any = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

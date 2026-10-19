@@ -268,3 +268,137 @@ fn timeline_drop_in_song_folder_mode_keeps_each_song_together() {
     assert!(!banjo_track.auto_created);
     assert_eq!(banjo_track.audio_to, "inherit");
 }
+
+fn song_folder_of(song: &Song, region_id: &str) -> Option<String> {
+    song.tracks
+        .iter()
+        .find(|t| {
+            t.kind == TrackKind::Folder
+                && t.parent_track_id.is_none()
+                && t.song_region_id.as_deref() == Some(region_id)
+        })
+        .map(|t| t.name.clone())
+}
+
+#[test]
+fn renaming_a_song_renames_its_folder() {
+    let mut session = empty_session("tpl-rename-folder");
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), Some("songFolder"));
+    session
+        .create_empty_song(Some("Way Maker"), None, &audio)
+        .expect("create song");
+    let region = loaded(&session).regions[0].clone();
+    session
+        .update_song_region(
+            &region.id,
+            "Way Maker (live)",
+            region.start_seconds,
+            region.end_seconds,
+            &audio,
+        )
+        .expect("rename");
+    assert_eq!(
+        song_folder_of(&loaded(&session), &region.id).as_deref(),
+        Some("Way Maker (live)")
+    );
+}
+
+#[test]
+fn a_folder_renamed_by_hand_keeps_its_name() {
+    let mut session = empty_session("tpl-rename-folder-by-hand");
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), Some("songFolder"));
+    session
+        .create_empty_song(Some("Way Maker"), None, &audio)
+        .expect("create song");
+    let song = loaded(&session);
+    let region = song.regions[0].clone();
+    let folder_id = song
+        .tracks
+        .iter()
+        .find(|t| t.song_region_id.as_deref() == Some(&region.id) && t.parent_track_id.is_none())
+        .expect("song folder")
+        .id
+        .clone();
+    session
+        .update_track(&folder_id, Some("Opener"), None, None, None, None, None, &audio)
+        .expect("rename folder");
+    session
+        .update_song_region(
+            &region.id,
+            "Way Maker (live)",
+            region.start_seconds,
+            region.end_seconds,
+            &audio,
+        )
+        .expect("rename song");
+    assert_eq!(
+        song_folder_of(&loaded(&session), &region.id).as_deref(),
+        Some("Opener")
+    );
+}
+
+#[test]
+fn deleting_a_song_takes_its_empty_tracks_in_one_undo_step() {
+    let mut session = empty_session("tpl-delete-song-folder");
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), Some("songFolder"));
+    session
+        .create_empty_song(Some("Way Maker"), None, &audio)
+        .expect("first song");
+    let files = write_stems(&session, &MULTITRACK);
+    let requests: Vec<_> = files
+        .iter()
+        .map(|file_path| CreateClipWithAutoTrackRequest {
+            file_path: file_path.clone(),
+            timeline_start_seconds: 0.0,
+        })
+        .collect();
+    session
+        .create_clips_with_auto_tracks(&requests, &audio)
+        .expect("drop into the first song");
+    session
+        .create_empty_song(Some("Song Two"), None, &audio)
+        .expect("second song");
+    let song = loaded(&session);
+    let first = song.regions[0].id.clone();
+    let second = song.regions[1].id.clone();
+    let before = loaded(&session);
+    let second_tracks = before
+        .tracks
+        .iter()
+        .filter(|t| t.song_region_id.as_deref() == Some(&second))
+        .count();
+
+    let undo_depth = session.undo_stack.len();
+    session.delete_song_region(&first, &audio).expect("delete");
+    let after = loaded(&session);
+    assert!(after
+        .tracks
+        .iter()
+        .all(|t| t.song_region_id.as_deref() != Some(&first)));
+    // The other song keeps everything.
+    assert_eq!(
+        after
+            .tracks
+            .iter()
+            .filter(|t| t.song_region_id.as_deref() == Some(&second))
+            .count(),
+        second_tracks
+    );
+
+    assert_eq!(session.undo_stack.len(), undo_depth + 1);
+    session.undo_action(&audio).expect("undo");
+    assert_eq!(loaded(&session).tracks.len(), before.tracks.len());
+}
+
+#[test]
+fn deleting_a_song_keeps_shared_tracks() {
+    let mut session = empty_session("tpl-delete-song-shared");
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), None);
+    session
+        .create_empty_song(None, None, &audio)
+        .expect("create song");
+    let tracks = loaded(&session).tracks.len();
+    let region = loaded(&session).regions[0].id.clone();
+    session.delete_song_region(&region, &audio).expect("delete");
+    assert_eq!(loaded(&session).tracks.len(), tracks);
+}
