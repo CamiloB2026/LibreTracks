@@ -983,15 +983,20 @@ Hemos sacado una nueva versión v<NEW> estos han sido los cambios:
 - <emoji> <bullet 4>
 - <emoji> <bullet 5 — optional, max ~5 bullets>
 
+🔧 Correcciones:
+- <fix 1 — one short line>
+- <fix 2>
+- <fix 3 — max ~5 fixes>
+
 Puedes descargar la nueva versión aqui:
 https://libretracks.com/es/download/
 ```
 
 Notes:
-- **Every bullet leads with an emoji.** Reuse the one the same item already
+- **Every change bullet leads with an emoji.** Reuse the one the same item already
   carries in the Spanish section of `docs/releases/v<NEW>.md` so the post and
-  the in-app modal stay visually consistent. This applies to the bullets only —
-  the greeting, the closing line and the URL stay plain.
+  the in-app modal stay visually consistent. This applies to the change bullets only —
+  the greeting, the fix lines, the closing line and the URL stay plain.
 - Bullets are user-facing benefits, lifted from the Spanish section of
   `docs/releases/v<NEW>.md` but rewritten for a conversational tone.
 - **Keep the "how" for new features**, shortened to fit the post: the same
@@ -1000,6 +1005,16 @@ Notes:
   a feature without saying where it is gets answered with "¿dónde está?".
 - Keep accents on key words ("rápida", "más", "directo"), but it's OK to
   leave a few off — the original channel does too. Don't over-correct.
+- **Always include the "🔧 Correcciones" block** when the release fixed
+  anything users could notice. Source: the bug fixes folded into the
+  "🔧 Y además" item of `docs/releases/v<NEW>.md` plus `fix(...)` commits
+  since the previous tag (`git log v<PREV>..v<NEW> --oneline | grep fix`).
+  One short line per fix, no emoji (the block header carries it), no "how",
+  no internals — say what the user notices now ("El botón Anterior vuelve a
+  la canción anterior"), not what was wrong in the code. Pick the ~5 most
+  noticeable; new small features from "Y además" do not go here. Call it
+  "Correcciones", never "Arreglos" — that word is a feature name since 1.14.0.
+  Omit the block only if the release has no user-visible fix.
 - Download URL is the localized Spanish page: `/es/download/`, not `/downloads`.
 - No closing line, no signature, no hashtags. The template ends at the URL.
 
