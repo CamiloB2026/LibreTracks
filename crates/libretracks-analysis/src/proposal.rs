@@ -24,8 +24,11 @@ const SAME_POSITION_SECONDS: f64 = 0.0005;
 /// A first downbeat this close to the song start goes exactly on it.
 const SNAP_TO_SONG_START_SECONDS: f64 = 0.003;
 /// A segment that starts this close to where the previous one's bars end
-/// continues its grid; its marker goes on the grid.
-const GRID_SNAP_SECONDS: f64 = 0.030;
+/// continues its grid; its marker goes on the grid. Only a few ms: moving
+/// a marker further off the click's downbeat is heard (20 ms offsets for
+/// bars on end in "Digno de adorar"); past this the previous tempo is
+/// adjusted to land on it instead.
+const GRID_SNAP_SECONDS: f64 = 0.003;
 /// Right after the previous segment, a start this far off its grid (as a
 /// share of a beat) is still the next bar: the previous tempo is adjusted to
 /// land on it. Farther is the click coming back after a gap.
@@ -624,7 +627,9 @@ mod tests {
     }
 
     #[test]
-    fn a_tempo_a_few_ms_off_the_grid_goes_on_it() {
+    fn a_tempo_a_few_ms_off_the_grid_stays_on_the_click() {
+        // 12 ms off the 120 grid: heard if the marker moved there. It stays
+        // on the click's downbeat and the 120 before it lands on it instead.
         let first = segment(0.0, 120.0, 4, 8);
         let second = segment(16.012, 90.0, 4, 8);
         let proposal = propose_tempo_markers(
@@ -632,7 +637,15 @@ mod tests {
             span(0.0, 60.0, None),
             &timing(),
         );
-        assert_eq!(proposal.tempo_markers[0].start_seconds, 16.0);
+        let markers: Vec<(f64, f64)> = proposal
+            .tempo_markers
+            .iter()
+            .map(|m| (m.start_seconds, m.bpm))
+            .collect();
+        assert_eq!(markers.len(), 2, "{proposal:?}");
+        assert!((markers[1].0 - 16.012).abs() < 0.001 && markers[1].1 == 90.0);
+        let landing = 32.0 * 60.0 / markers[0].1;
+        assert!((landing - 16.012).abs() < 0.003, "{proposal:?}");
         assert!(proposal.signature_markers.is_empty(), "{proposal:?}");
     }
 

@@ -25,6 +25,12 @@ pub(crate) struct Tolerances {
     pub fit_residual: f64,
     /// Largest drift a rounded BPM may build up across its segment.
     pub rounding_drift: f64,
+    /// A segment starts on its first beat as heard, not where the line
+    /// fitted through its beats starts. A rendered click is exact to the
+    /// sample, and on a bar whose tempo changes halfway the fitted start sits
+    /// tens of ms off the real downbeat: the markers then miss the click.
+    /// Beats estimated from the music are jittery, and the fit is better.
+    pub start_on_first_beat: bool,
 }
 
 /// A generated click sits within a millisecond of its grid; 10 ms still keeps
@@ -32,6 +38,7 @@ pub(crate) struct Tolerances {
 const CLICK_TOLERANCES: Tolerances = Tolerances {
     fit_residual: 0.010,
     rounding_drift: 0.008,
+    start_on_first_beat: true,
 };
 /// Shortest gap between two clicks: a 16th at 300 BPM is 50 ms.
 const REFRACTORY_SECONDS: f64 = 0.050;
@@ -843,8 +850,13 @@ fn segment_bars(
             3 if compound => (6, 8, draft.bars.div_ceil(2)),
             n => (n, 4, draft.bars),
         };
-        let (start_seconds, bpm) =
+        let (fitted_start, bpm) =
             round_tempo(&draft.times, period, beat_unit, tolerances.rounding_drift);
+        let start_seconds = if tolerances.start_on_first_beat {
+            draft.times[0]
+        } else {
+            fitted_start
+        };
         if draft.beats_per_bar == 3 && beat_unit == 8 {
             warnings.push(ClickWarning {
                 seconds: start_seconds,
