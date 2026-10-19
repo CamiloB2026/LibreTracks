@@ -184,6 +184,8 @@ describe("FolderLibraryPanel", () => {
 
   it("keeps the session audio folded under In this session", () => {
     renderPanel([]);
+    expect(screen.queryByText("classic library")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /In this session \(3\)/ }));
     expect(screen.getByText("classic library")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: /In this session \(3\)/ }));
     expect(screen.queryByText("classic library")).toBeNull();

@@ -1350,6 +1350,8 @@ describe("user guide screenshots", function () {
       });
       await browser.pause(800);
       await AppPage.openLibrary();
+      // «En esta sesión» is an accordion: open, it hides the disk folders.
+      await (await $(".lt-folder-library-session-toggle")).click();
       await browser.pause(1200);
       const place = await tag(".lt-folder-library-place-toggle", "place0");
       await (await $(place)).click();
@@ -1364,6 +1366,8 @@ describe("user guide screenshots", function () {
         ],
         { crop: { marks: 24 } },
       );
+      await (await $(".lt-folder-library-session-toggle")).click();
+      await browser.pause(600);
       // «Organizar por canción» only shows with unfiled audio, and the shots
       // session has every asset in a folder: take one out the way a user does
       // (this is the work copy).

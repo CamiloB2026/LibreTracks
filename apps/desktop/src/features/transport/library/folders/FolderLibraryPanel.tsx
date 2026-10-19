@@ -47,16 +47,13 @@ type FolderLibraryPanelProps = {
   sessionAssetCount: number;
 };
 
-/** Desktop has room for both, so the session's audio starts open. On a phone
- * opening it takes the whole library (see the CSS), so it starts folded and
- * the disk folders are what shows first. */
+/** Opening the session's audio takes the whole library (an accordion, see the
+ * CSS), so it starts folded and the disk folders are what shows first. */
 function readSessionOpen(): boolean {
-  const fallback = !isMobileApp;
   try {
-    const saved = window.localStorage.getItem(SESSION_OPEN_KEY);
-    return saved === null ? fallback : saved !== "0";
+    return window.localStorage.getItem(SESSION_OPEN_KEY) === "1";
   } catch {
-    return fallback;
+    return false;
   }
 }
 

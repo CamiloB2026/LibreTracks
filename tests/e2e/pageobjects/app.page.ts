@@ -278,6 +278,13 @@ class AppPage {
     const button = await this.libraryNavButton;
     await button.waitForClickable({ timeout: 20_000 });
     await button.click();
+    // The classic panel lives folded under «En esta sesión» (an accordion that
+    // starts closed, and remembers the last state): unfold it if needed.
+    const toggle = await $(".lt-folder-library-session-toggle");
+    await toggle.waitForDisplayed({ timeout: 15_000 });
+    if ((await toggle.getAttribute("aria-expanded")) !== "true") {
+      await toggle.click();
+    }
     await (await this.libraryPanel).waitForDisplayed({ timeout: 15_000 });
   }
 
