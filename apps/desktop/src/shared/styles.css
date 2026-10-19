@@ -1567,6 +1567,30 @@ html.lt-ios body {
   color: #57f1db;
 }
 
+/* Base look of `.lt-secondary-button` wherever it lives. Before this it only
+   got styled inside `.lt-inline-actions`; anywhere else (automation "add"
+   buttons, "Check for updates", diagnostics...) it fell back to the browser's
+   grey default. Plain class specificity so container rules still win. */
+.lt-secondary-button {
+  border-radius: 2px;
+  border: 1px solid rgb(255 255 255 / 0.1);
+  background: rgb(255 255 255 / 0.05);
+  color: #f3f0ef;
+  padding: 0.45rem 0.75rem;
+  font: 700 0.75rem/1 "Space Grotesk", sans-serif;
+  cursor: pointer;
+}
+
+.lt-secondary-button:hover:not(:disabled) {
+  border-color: rgb(87 241 219 / 0.28);
+  color: #57f1db;
+}
+
+.lt-secondary-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /* Log header: the file's size/state on the left, the refresh action on the
    right, instead of the default all-to-the-right action row. */
 .lt-inline-actions--split {
