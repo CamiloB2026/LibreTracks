@@ -11,6 +11,7 @@ import { useUpdateCheck } from "../features/updates/useUpdateCheck";
 import { TelemetryController } from "../features/telemetry/TelemetryController";
 import { TourOverlay } from "../features/tutorial/TourOverlay";
 import { DialogHost } from "../shared/dialog/DialogHost";
+import { installPageZoomGuard } from "../shared/pageZoomGuard";
 import { dismissBootSplash } from "./bootSplash";
 import {
   dispatchUiZoomStatus,
@@ -78,6 +79,8 @@ export function App() {
   // then swallows the next input — right after every Alt + wheel track resize.
   // See ../features/transport/keyboard/altMenuGuard.
   useEffect(() => installAltMenuGuard(), []);
+  // Ctrl + wheel outside the timeline must not zoom the whole app.
+  useEffect(() => installPageZoomGuard(), []);
   // La interfaz ya ha pintado su primer fotograma: fuera la pantalla de carga
   // estática de index.html. El rAF espera a ese pintado para no destapar un
   // hueco vacío.
