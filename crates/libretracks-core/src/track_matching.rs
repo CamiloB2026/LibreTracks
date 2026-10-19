@@ -22,7 +22,11 @@
 //!    used instead.
 //! 3. An alias matches when its words appear in the name consecutively and
 //!    whole: `ag` does not match `stage`. A plural `s`/`es` on the name's
-//!    word is tolerated for aliases of three letters or more (`Pads`, `BGVs`).
+//!    word is tolerated for aliases of three letters or more (`Pads`, `BGVs`),
+//!    and so is a singular name for a plural alias of four or more (`Key` for
+//!    `keys`). A word glued from the start of one alias and another whole
+//!    alias of the same target (`EGtr` = `e`(lectric) + `gtr`) counts as a
+//!    one-word match for that target.
 //! 4. The alias with the most words wins (`Synth Bass` beats `Synth`); on a
 //!    tie the target listed first wins, which lets the template's order set
 //!    priorities.
@@ -179,7 +183,8 @@ fn best_target(words: &[String], targets: &[Vec<Vec<String>>]) -> Option<usize> 
             .iter()
             .filter(|alias| contains_words(words, alias))
             .map(Vec::len)
-            .max();
+            .max()
+            .or_else(|| words.iter().any(|word| is_compound(word, aliases)).then_some(1));
         if let Some(score) = score {
             // Strictly greater: on a tie the earlier target keeps the stem.
             if best.is_none_or(|(_, best_score)| score > best_score) {
@@ -208,8 +213,43 @@ fn word_matches(word: &str, alias_word: &str) -> bool {
     if alias_word.chars().count() < 3 {
         return false;
     }
-    word.strip_prefix(alias_word)
+    if word
+        .strip_prefix(alias_word)
         .is_some_and(|plural| plural == "s" || plural == "es")
+    {
+        return true;
+    }
+    // The other way round: the alias is the plural and the file the singular
+    // ("keys" ↔ "Key"). Not for a double s, which is no plural ("bass").
+    alias_word.chars().count() >= 4
+        && !alias_word.ends_with("ss")
+        && alias_word.strip_suffix('s') == Some(word)
+}
+
+/// One word glued from a qualifier and a one-word alias of the same target:
+/// `EGtr` is `e` + `gtr`, `AGtr` is `a` + `gtr`. Multitracks write them that
+/// way, and the case step does not cut them. The tail must be an alias of
+/// three letters or more and the head the start of another alias of this
+/// target (`e` of `eg`/`electric`, `ac` of `acoustic`), so `stage` is still no
+/// `ag`.
+fn is_compound(word: &str, aliases: &[Vec<String>]) -> bool {
+    let singles: Vec<&str> = aliases
+        .iter()
+        .filter(|alias| alias.len() == 1)
+        .map(|alias| alias[0].as_str())
+        .collect();
+    singles
+        .iter()
+        .filter(|tail| tail.chars().count() >= 3)
+        .any(|tail| {
+            word.char_indices().skip(1).any(|(split, _)| {
+                let (head, rest) = word.split_at(split);
+                word_matches(rest, tail)
+                    && singles
+                        .iter()
+                        .any(|other| other != tail && other.starts_with(head))
+            })
+        })
 }
 
 #[cfg(test)]
@@ -393,6 +433,25 @@ mod tests {
         assert_eq!(run(&["Strings.wav"], None), [Some(SYNTH)]);
         // "eg" is two letters: "egs" is not read as its plural.
         assert_eq!(run(&["Egs.wav"], None), [None]);
+    }
+
+    #[test]
+    fn a_singular_name_matches_a_plural_alias() {
+        assert_eq!(run(&["Key.wav"], None), [Some(KEYS)]);
+        // A double s is not a plural: "bass" never reads as "bas".
+        assert_eq!(run(&["Bas.wav"], None), [None]);
+    }
+
+    #[test]
+    fn a_qualifier_glued_to_an_alias_matches_its_target() {
+        assert_eq!(
+            run(&["Egtr 6.wav", "Egtr 7.wav", "AGtr.wav"], Some("Song")),
+            [Some(GUITARS), Some(GUITARS), Some(GUITARS)]
+        );
+        assert_eq!(run(&["EGtrs.wav"], None), [Some(GUITARS)]);
+        // The head has to start an alias of the same target.
+        assert_eq!(run(&["Xgtr.wav"], None), [None]);
+        assert_eq!(run(&["Ekeys.wav"], None), [None]);
     }
 
     #[test]

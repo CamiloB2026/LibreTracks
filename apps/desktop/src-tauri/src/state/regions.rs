@@ -209,7 +209,11 @@ impl DesktopSession {
         };
 
         let region_id = region.id.clone();
+        let previous_regions = song.regions.clone();
         replace_song_region_range(&mut song, region);
+        // Before the template: the songs this one swallowed may have brought
+        // their own tracks, and those are now this song's.
+        super::song_templates::reassign_tracks_of_replaced_songs(&mut song, &previous_regions);
         let laid_out = apply_song_template(&mut song, &region_id, None, audio)?;
         // The song must envelop every region or the engine's validator refuses
         // to load the session with "Region X is outside its song". Drawing a

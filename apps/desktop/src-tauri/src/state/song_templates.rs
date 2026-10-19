@@ -24,7 +24,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use libretracks_core::track_matching::match_stems;
-use libretracks_core::{Song, Track, TrackKind};
+use libretracks_core::{Song, SongRegion, Track, TrackKind};
 use libretracks_project::{load_song_from_file, SongImportTrackMode};
 
 use super::arrangement::auto_color_enabled;
@@ -934,6 +934,44 @@ pub(crate) fn rename_song_folder(
             true
         }
         _ => false,
+    }
+}
+
+/// Cuando una canción nueva se come a otras (crear una canción sobre un rango
+/// que ya tenía una, como hace soltar una carpeta de la biblioteca: primero
+/// los audios crean su canción y luego se crea la definitiva encima), las
+/// pistas marcadas con las canciones que han desaparecido pasan a la canción
+/// que ahora contiene su principio. Sin esto se quedaban huérfanas y la
+/// plantilla, al no encontrar pistas de la canción nueva, hacía otra copia.
+///
+/// `previous` son las canciones de antes del cambio. Su carpeta, si aún se
+/// llama como la canción vieja, toma el nombre de la nueva.
+pub(crate) fn reassign_tracks_of_replaced_songs(song: &mut Song, previous: &[SongRegion]) {
+    let still_there: HashSet<&str> = song.regions.iter().map(|r| r.id.as_str()).collect();
+    let mut moves: Vec<(String, String, String, String)> = Vec::new();
+    for old in previous {
+        if still_there.contains(old.id.as_str()) {
+            continue;
+        }
+        let Some(heir) = song.regions.iter().find(|region| {
+            old.start_seconds >= region.start_seconds && old.start_seconds < region.end_seconds
+        }) else {
+            continue;
+        };
+        moves.push((
+            old.id.clone(),
+            old.name.clone(),
+            heir.id.clone(),
+            heir.name.clone(),
+        ));
+    }
+    for (old_id, old_name, heir_id, heir_name) in moves {
+        for track in &mut song.tracks {
+            if track.song_region_id.as_deref() == Some(old_id.as_str()) {
+                track.song_region_id = Some(heir_id.clone());
+            }
+        }
+        rename_song_folder(song, &heir_id, &old_name, &heir_name);
     }
 }
 

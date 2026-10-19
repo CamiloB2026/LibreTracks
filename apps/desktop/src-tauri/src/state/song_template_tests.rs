@@ -402,3 +402,65 @@ fn deleting_a_song_keeps_shared_tracks() {
     session.delete_song_region(&region, &audio).expect("delete");
     assert_eq!(loaded(&session).tracks.len(), tracks);
 }
+
+/// Soltar una carpeta de la biblioteca: los audios crean su canción al
+/// colocarse y después `libraryFolderDrop` crea la definitiva encima y le pone
+/// el nombre de la carpeta. La plantilla no debe hacer una segunda copia.
+fn drop_library_folder(layout: &str) -> Song {
+    let mut session = empty_session(&format!("tpl-folder-drop-{layout}"));
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), Some(layout));
+    let files = write_stems(&session, &MULTITRACK);
+    let requests: Vec<_> = files
+        .iter()
+        .map(|file_path| CreateAudioTrackWithClipRequest {
+            track_name: file_path
+                .trim_start_matches("audio/")
+                .trim_end_matches(".wav")
+                .into(),
+            file_path: file_path.clone(),
+            timeline_start_seconds: 0.0,
+        })
+        .collect();
+    session
+        .create_audio_tracks_with_clips(&requests, &audio)
+        .expect("place the folder's audio");
+    session
+        .create_song_region(0.0, 4.0, &audio)
+        .expect("wrap it in a song");
+    let region = loaded(&session).regions[0].clone();
+    session
+        .update_song_region(&region.id, "Way Maker", 0.0, region.end_seconds, &audio)
+        .expect("name it after the folder");
+    loaded(&session)
+}
+
+fn band_folder_copies(song: &Song) -> usize {
+    song.tracks
+        .iter()
+        .filter(|t| t.kind == TrackKind::Folder && t.name == "Batería")
+        .count()
+}
+
+#[test]
+fn a_library_folder_drop_lays_the_template_out_once() {
+    for layout in ["shared", "separate", "songFolder"] {
+        let song = drop_library_folder(layout);
+        assert_eq!(song.regions.len(), 1, "{layout}");
+        assert_eq!(band_folder_copies(&song), 1, "{layout}: one copy of the band");
+        if layout != "shared" {
+            let region_id = &song.regions[0].id;
+            assert!(
+                song.tracks
+                    .iter()
+                    .all(|t| t.song_region_id.as_ref() == Some(region_id)),
+                "{layout}: every track belongs to the song that exists"
+            );
+        }
+        if layout == "songFolder" {
+            assert_eq!(
+                song_folder_of(&song, &song.regions[0].id).as_deref(),
+                Some("Way Maker")
+            );
+        }
+    }
+}
