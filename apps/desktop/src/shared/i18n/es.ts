@@ -1969,6 +1969,29 @@ const es = {
       selectOrCreate: "Selecciona o crea una escena para editarla.",
     },
   },
+  songTemplates: {
+    defaultTemplate: "Plantilla para canciones nuevas",
+    none: "Ninguna",
+    noTemplate: "Sin plantilla",
+    builtinBand: "Banda (incluida)",
+    missing: "{{name}} (no encontrada)",
+    defaultTemplateHint:
+      "Las canciones nuevas salen con sus pistas y carpetas, y los audios que sueltes en una canción van a su sitio según su nombre (Click, EG, Keys…). Las palabras de cada pista se cambian con clic derecho › Reglas de coincidencia.",
+    defaultTemplateMissingHint:
+      "No se encuentra el archivo de la plantilla, así que no se aplica. Elige otra o vuelve a guardarla.",
+    defaultTemplateUpdated: "Plantilla para canciones nuevas actualizada.",
+    newSongFromTemplate: "Nueva canción desde plantilla",
+    matchAliases: "Reglas de coincidencia…",
+    matchAliasesPrompt:
+      "Palabras que mandan un audio a «{{name}}» al soltarlo, separadas por comas (por ejemplo: EG, Guitarra, Gtr). Déjalo vacío para que no reciba ninguno.",
+    matchAliasesUpdated: "Reglas de «{{name}}» actualizadas.",
+    dropSummary_one: "{{count}} audio organizado con la plantilla",
+    dropSummary_other: "{{count}} audios organizados con la plantilla",
+    dropUnmatched_one: "{{count}} sin regla",
+    dropUnmatched_other: "{{count}} sin regla",
+    undo: "Deshacer",
+    dismiss: "Cerrar",
+  },
   colorPicker: {
     presets: {
       red: "Rojo",

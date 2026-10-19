@@ -42,6 +42,10 @@ use crate::infra::settings::AppSettings;
 /// Referencia de la plantilla de serie en el ajuste `default_song_template`.
 pub(crate) const BUILTIN_BAND_TEMPLATE: &str = "builtin:band";
 
+/// Referencia explícita a «sin plantilla»: «Nueva canción» vacía aunque haya
+/// una plantilla por defecto en Ajustes.
+pub(crate) const NO_TEMPLATE: &str = "none";
+
 /// La plantilla de serie: una banda de directo con los nombres con los que
 /// vienen los multitracks comerciales (MultiTracks, Loop Community) y sus
 /// equivalentes en español.
@@ -253,6 +257,7 @@ pub(crate) fn apply_song_template(
     let settings = audio.current_settings().ok();
     let locale = ui_locale(audio);
     let template = match explicit.map(str::trim).filter(|r| !r.is_empty()) {
+        Some(NO_TEMPLATE) => None,
         Some(reference) => Some(load_template_tracks(reference, locale.as_deref())?),
         None => settings
             .as_ref()

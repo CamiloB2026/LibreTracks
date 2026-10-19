@@ -1240,6 +1240,23 @@ pub fn update_track_transpose_enabled(
         .map_err(|error| error.to_string())
 }
 
+/// Words a template matches dropped stems against to land on this track.
+#[tauri::command(async)]
+pub fn update_track_match_aliases(
+    track_id: String,
+    aliases: Vec<String>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .update_track_match_aliases(&track_id, &aliases, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
 #[tauri::command(async)]
 pub fn update_track_mono_downmix(
     track_id: String,

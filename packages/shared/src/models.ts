@@ -1449,6 +1449,12 @@ export type AppSettings = {
    */
   songTrackLayout: SongTrackLayout;
   /**
+   * The song template new songs are laid out from, and that organises the
+   * stems dropped into a song: {@link BUILTIN_BAND_TEMPLATE} or the path of a
+   * `.lttemplate`. `null` = none, and songs and drops behave as they always did.
+   */
+  defaultSongTemplate: string | null;
+  /**
    * When true (default) a track created without an explicit colour gets one
    * from the timeline palette, cycling through it so two tracks made in a row
    * never share a colour. Off, new tracks keep the historical single grey.
@@ -1569,6 +1575,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   timelinePlayheadFollowMode: "ahead",
   importMergeMatchingTracks: true,
   songTrackLayout: "shared",
+  defaultSongTemplate: null,
   autoColorNewTracks: true,
   sessionStorageVolume: null,
   referenceImportedAudio: true,
@@ -1588,6 +1595,12 @@ function normalizeMidiBinding(binding: MidiBinding): MidiBinding {
     isCc: Boolean(binding.isCc),
   };
 }
+
+/** The built-in song template's reference (the backend's `builtin:band`). */
+export const BUILTIN_BAND_TEMPLATE = "builtin:band";
+
+/** An explicit "no template" for one new song, even with a default set. */
+export const NO_SONG_TEMPLATE = "none";
 
 /** Where each song's tracks go; see {@link AppSettings.songTrackLayout}. */
 export type SongTrackLayout = "shared" | "songFolder" | "separate";
@@ -1852,6 +1865,7 @@ export function normalizeAppSettings(settings: AppSettings): AppSettings {
       : (settings.importMergeMatchingTracks ?? true)
         ? "shared"
         : "separate",
+    defaultSongTemplate: settings.defaultSongTemplate?.trim() || null,
     // Absent in settings files written before automatic track colours shipped:
     // default to on, matching DEFAULT_APP_SETTINGS and the Rust side.
     autoColorNewTracks: settings.autoColorNewTracks ?? true,

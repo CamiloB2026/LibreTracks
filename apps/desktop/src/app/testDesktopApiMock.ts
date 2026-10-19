@@ -463,6 +463,7 @@ function buildInitialState(): DesktopApiMockState {
       timelinePlayheadFollowMode: "ahead",
       importMergeMatchingTracks: true,
       songTrackLayout: "shared",
+      defaultSongTemplate: null,
       autoColorNewTracks: true,
       sessionStorageVolume: null,
       referenceImportedAudio: true,

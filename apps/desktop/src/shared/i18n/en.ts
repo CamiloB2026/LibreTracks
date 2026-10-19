@@ -1941,6 +1941,29 @@ const en = {
       selectOrCreate: "Select or create a scene to edit it.",
     },
   },
+  songTemplates: {
+    defaultTemplate: "Template for new songs",
+    none: "None",
+    noTemplate: "No template",
+    builtinBand: "Band (built in)",
+    missing: "{{name}} (not found)",
+    defaultTemplateHint:
+      "New songs come with their tracks and folders, and the audio you drop into a song lands where its name says (Click, EG, Keys…). Change each track's words with right click › Matching rules.",
+    defaultTemplateMissingHint:
+      "The template file cannot be found, so it is not applied. Pick another one or save it again.",
+    defaultTemplateUpdated: "Template for new songs updated.",
+    newSongFromTemplate: "New song from template",
+    matchAliases: "Matching rules…",
+    matchAliasesPrompt:
+      "Words that send a dropped audio file to \u201c{{name}}\u201d, separated by commas (for example: EG, Guitar, Gtr). Leave it empty so it receives none.",
+    matchAliasesUpdated: "Rules for \u201c{{name}}\u201d updated.",
+    dropSummary_one: "{{count}} audio file organised by the template",
+    dropSummary_other: "{{count}} audio files organised by the template",
+    dropUnmatched_one: "{{count}} without a rule",
+    dropUnmatched_other: "{{count}} without a rule",
+    undo: "Undo",
+    dismiss: "Close",
+  },
   colorPicker: {
     presets: {
       red: "Red",

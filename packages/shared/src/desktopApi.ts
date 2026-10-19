@@ -206,6 +206,23 @@ export async function listenToAppCloseRequested(
   });
 }
 
+/** What a song template organised in the last stem drop, for the toast. */
+export type TemplateDropSummary = { matched: number; unmatched: number };
+
+/**
+ * Fired after a drop of audio files that a song template organised (the
+ * default template, or a session whose tracks carry match aliases). Drops the
+ * template did not touch fire nothing.
+ */
+export async function listenToTemplateDropSummary(
+  handler: (summary: TemplateDropSummary) => void,
+): Promise<() => void> {
+  const { listen } = await import("@tauri-apps/api/event");
+  return listen<TemplateDropSummary>("song-template:drop-summary", (event) => {
+    handler(event.payload);
+  });
+}
+
 /** Quit the app. The backend still flushes the session on the way out. */
 export async function exitApp(): Promise<void> {
   return invokeCommand<void>("exit_app");
@@ -2013,9 +2030,18 @@ export async function createSongRegion(
  * existing song's end (or at the timeline start when the project has no
  * songs yet) and is itself one bar wide so it shows up in the DAW view.
  * It resizes to fit when the user drops the first clip into it.
+ *
+ * `template` lays the song out from a song template (`"builtin:band"` or a
+ * `.lttemplate` path); without it the default template in Settings applies.
  */
-export async function createEmptySong(name?: string): Promise<TransportSnapshot> {
-  return invokeCommand<TransportSnapshot>("create_empty_song", { name: name ?? null });
+export async function createEmptySong(
+  name?: string,
+  template?: string | null,
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("create_empty_song", {
+    name: name ?? null,
+    template: template ?? null,
+  });
 }
 
 export async function updateSongRegion(
@@ -2670,6 +2696,18 @@ export async function updateTrackTransposeEnabled(args: {
  * sola, y una señal correlacionada —lo normal en un estéreo que alguien quiere
  * en mono— queda exactamente igual de alta.
  */
+/**
+ * Words a song template matches dropped stems against so they land on this
+ * track (or, on a folder, inside it). The backend trims them and drops empty
+ * and repeated ones; an empty list turns matching off for the track.
+ */
+export async function updateTrackMatchAliases(args: {
+  trackId: string;
+  aliases: string[];
+}): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("update_track_match_aliases", args);
+}
+
 export async function updateTrackMonoDownmix(args: {
   trackId: string;
   monoDownmix: boolean;

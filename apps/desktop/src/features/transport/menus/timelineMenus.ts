@@ -99,6 +99,7 @@ import { openStructureEditor } from "../structure/structureEditor";
 import { tempoRampAction } from "../tempo/tempoRampAction";
 import type { ShortcutActionId } from "../keyboard/actions";
 import { createVideoMenus } from "./videoMenus";
+import { matchAliasesAction } from "../templates/matchAliases";
 
 type Translate = (key: string, options?: Record<string, unknown>) => string;
 
@@ -1136,6 +1137,8 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
             d.handleSetTrackColor(track, color).then(() => undefined),
           ),
       },
+      // Las palabras con las que una plantilla manda stems aquí al soltarlos.
+      matchAliasesAction(track, d),
       // Sumar a mono: solo pistas de audio (una carpeta no tiene canales
       // propios que sumar). No toca el fichero, asi que es reversible.
       ...(isFolder

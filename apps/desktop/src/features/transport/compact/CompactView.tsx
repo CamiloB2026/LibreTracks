@@ -36,6 +36,7 @@ import { isMobileApp } from "../desktopApi";
 import { LIBRARY_ASSET_DRAG_MIME } from "../library/dragDrop";
 import { clientToZoomedCoords } from "../../../shared/uiZoom";
 import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
+import { NewSongTemplateMenu } from "../templates/NewSongTemplateMenu";
 import {
   COMPACT_COLUMN_MAX_WIDTH_REM,
   COMPACT_COLUMN_MIN_WIDTH_REM,
@@ -326,15 +327,20 @@ function CompactViewComponent({
   });
   const canRenderSongReorder = Boolean(onReorderSong) && regionIds.length > 1;
 
-  const handleAddSong = useCallback(async () => {
-    try {
-      const snapshot = await createEmptySong();
-      onSnapshotApplied(snapshot);
-    } catch {
-      // Surface failures via the parent's runAction wrapper if needed;
-      // for now we swallow so the button doesn't crash the view.
-    }
-  }, [onSnapshotApplied]);
+  // `template` comes from the arrow next to the button; without it the
+  // backend applies the default template in Settings, if any.
+  const handleAddSong = useCallback(
+    async (template?: string) => {
+      try {
+        const snapshot = await createEmptySong(undefined, template);
+        onSnapshotApplied(snapshot);
+      } catch {
+        // Surface failures via the parent's runAction wrapper if needed;
+        // for now we swallow so the button doesn't crash the view.
+      }
+    },
+    [onSnapshotApplied],
+  );
 
   // Build a "move to track" submenu list once per snapshot — every clip's
   // context menu uses the same set, sorted by the project's track order.
@@ -472,13 +478,18 @@ function CompactViewComponent({
           </div>
         ) : null}
         <div className="lt-compact-view-song-actions">
-          <button
-            type="button"
-            className="lt-compact-view-add-song"
-            onClick={handleAddSong}
-          >
-            {t("compactView.newSong")}
-          </button>
+          <div className="lt-compact-view-add-song-group">
+            <button
+              type="button"
+              className="lt-compact-view-add-song"
+              onClick={() => void handleAddSong()}
+            >
+              {t("compactView.newSong")}
+            </button>
+            <NewSongTemplateMenu
+              onCreate={(template) => void handleAddSong(template)}
+            />
+          </div>
           <button
             type="button"
             className="lt-compact-view-import-song"

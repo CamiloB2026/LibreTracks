@@ -783,6 +783,36 @@ impl DesktopSession {
         Ok(self.snapshot())
     }
 
+    /// Cambia las palabras con las que una plantilla manda stems a esta pista
+    /// (o, en una carpeta, dentro de ella). Se limpian: sin espacios de más, sin
+    /// vacías y sin repetidas (sin distinguir mayúsculas), en el orden en que
+    /// llegan. No toca el audio, así que no reconstruye el motor.
+    pub fn update_track_match_aliases(
+        &mut self,
+        track_id: &str,
+        aliases: &[String],
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        let aliases = clean_match_aliases(aliases);
+        let track = song
+            .tracks
+            .iter_mut()
+            .find(|track| track.id == track_id)
+            .ok_or_else(|| DesktopError::TrackNotFound(track_id.to_string()))?;
+        if track.match_aliases == aliases {
+            return Ok(self.snapshot());
+        }
+        track.match_aliases = aliases;
+
+        self.persist_song_update(song, audio, AudioChangeImpact::TransportOnly, true)?;
+        Ok(self.snapshot())
+    }
+
     pub fn move_track(
         &mut self,
         track_id: &str,
@@ -1205,6 +1235,22 @@ impl DesktopSession {
         self.persist_song_update(song, audio, AudioChangeImpact::StructureRebuild, true)?;
         Ok(self.snapshot())
     }
+}
+
+/// Most aliases a track may carry, and the longest one. Only a sanity bound on
+/// what the frontend sends: real lists are a handful of short words.
+const MAX_MATCH_ALIASES: usize = 64;
+const MAX_MATCH_ALIAS_CHARS: usize = 64;
+
+/// Trimmed, non-empty, without case-insensitive repeats, in the given order.
+pub(super) fn clean_match_aliases(aliases: &[String]) -> Vec<String> {
+    let mut seen = HashSet::new();
+    aliases
+        .iter()
+        .map(|alias| alias.trim().chars().take(MAX_MATCH_ALIAS_CHARS).collect::<String>())
+        .filter(|alias| !alias.is_empty() && seen.insert(alias.to_lowercase()))
+        .take(MAX_MATCH_ALIASES)
+        .collect()
 }
 
 /// A new track as "create track" makes it: default mix, the next auto colour,

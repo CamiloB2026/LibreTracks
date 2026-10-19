@@ -7,7 +7,7 @@
 use libretracks_core::{Song, TrackKind};
 
 use super::build_empty_song;
-use super::song_templates::{TemplateDropSummary, BUILTIN_BAND_TEMPLATE};
+use super::song_templates::{TemplateDropSummary, BUILTIN_BAND_TEMPLATE, NO_TEMPLATE};
 use super::tests::{session_with_song_dir, write_silent_test_wav};
 use super::{CreateAudioTrackWithClipRequest, CreateClipWithAutoTrackRequest, DesktopSession};
 use crate::audio::engine::AudioController;
@@ -118,6 +118,16 @@ fn an_explicit_template_wins_over_having_none_by_default() {
     assert_eq!(folder.kind, TrackKind::Folder);
     assert_eq!(folder.name, "Way Maker");
     assert_eq!(folder.song_region_id.as_ref(), Some(&song.regions[0].id));
+}
+
+#[test]
+fn an_explicit_none_skips_the_default_template() {
+    let mut session = empty_session("tpl-explicit-none");
+    let audio = audio_with(Some(BUILTIN_BAND_TEMPLATE), None);
+    session
+        .create_empty_song(None, Some(NO_TEMPLATE), &audio)
+        .expect("create song");
+    assert!(loaded(&session).tracks.is_empty());
 }
 
 #[test]
