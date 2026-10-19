@@ -19,7 +19,8 @@ pub use click::{
     TempoSegment,
 };
 pub use guide::{
-    analyze_guide, GuideAnalysis, GuideAnnouncement, GuideGroup, GuideTemplate, Transcriber,
+    analyze_guide, CountWord, GuideAnalysis, GuideAnnouncement, GuideGroup, GuideTemplate,
+    Transcriber,
 };
 pub use guide_text::{is_count, parse_announcement, AnnouncedMarker};
 pub use key::{analyze_key, transpose_key_name, KeyAnalysis, KeyCandidate, KeySection};

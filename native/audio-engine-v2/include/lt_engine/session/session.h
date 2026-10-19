@@ -159,7 +159,11 @@ enum class MarkerKind : int {
     // Tempo cues (one-shot warnings; the tempo does not change).
     TempoUp = 45,
     TempoDown = 46,
-    Custom = 47,
+    // Spoken count ("one", "two", ...): a cue whose variant is the number. It
+    // plays the counts/<n> clip on its own frame, so a guide's bare count-in
+    // ("1 . 2 . | 1 2 3 4") is one marker per number, each on its beat.
+    Count = 47,
+    Custom = 48,
 };
 
 // Map a serialized snake_case kind token (as sent by Rust/TS) to the enum.

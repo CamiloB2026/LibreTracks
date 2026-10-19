@@ -589,6 +589,59 @@ TEST_CASE("a loose dynamic cue fires once as a one-shot with no count-in") {
     CHECK(diag.announcements_fired == 1);
 }
 
+// A guide's bare count-in ("1 . 2 . | 1 2 3 4") arrives as one Count marker per
+// number, each on its beat: every one speaks its own number, on its frame.
+TEST_CASE("count markers speak their number on their own beat") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_marked_bank());
+    r.set_config({true, 1.0f, "monitor", 1, true});
+    Session session = make_song_no_markers();
+    // 120 BPM: beats every 0.5 s. Counts 2, 3, 4 at 1.0, 1.5 and 2.0 s.
+    for (int n = 2; n <= 4; ++n) {
+        Marker count;
+        count.id = "count" + std::to_string(n);
+        count.kind = MarkerKind::Count;
+        count.variant = n;
+        count.frame = static_cast<Frame>(kSampleRate) * n / 2;
+        session.songs[0].markers.push_back(count);
+    }
+    auto ch = render_all(r, session, kSampleRate * 4);
+    CHECK(onsets(ch[2]) == 3);
+    CHECK(r.diagnostics().announcements_fired == 3);
+    for (int n = 2; n <= 4; ++n) {
+        CAPTURE(n);
+        const auto at = static_cast<std::size_t>(kSampleRate * n / 2 + 10);
+        // count[n] is a pulse of 0.10 * n, played at 0.9.
+        CHECK(std::abs(ch[2][at]) == doctest::Approx(0.09f * static_cast<float>(n)).epsilon(0.05));
+        CHECK(std::abs(ch[2][at - 20]) == doctest::Approx(0.0f));
+    }
+}
+
+TEST_CASE("a count inside a section's counted lead-in is not said twice") {
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_marked_bank());
+    r.set_config({true, 1.0f, "monitor", 1, true});
+    // Chorus at 4 s counts in over [2 s, 4 s); a Count 3 sits on its beat 3.
+    auto session = make_session(MarkerKind::Chorus, 4.0);
+    Marker count;
+    count.id = "count3";
+    count.kind = MarkerKind::Count;
+    count.variant = 3;
+    count.frame = static_cast<Frame>(kSampleRate) * 3;
+    session.songs[0].markers.push_back(count);
+    render_all(r, session, kSampleRate * 6);
+    auto diag = r.diagnostics();
+    CHECK(diag.counts_fired == 4);              // the section's own count, intact
+    CHECK(diag.announcements_fired == 1);       // the name only: no extra "3"
+
+    // Without the section's count-in, the count marker is what says it.
+    VoiceGuideRenderer quiet;
+    quiet.set_clip_bank(make_marked_bank());
+    quiet.set_config({true, 1.0f, "monitor", 1, false});
+    render_all(quiet, session, kSampleRate * 6);
+    CHECK(quiet.diagnostics().announcements_fired == 2);
+}
+
 TEST_CASE("a cue kind with no recording in this bank stays silent") {
     // No cue clips loaded (English-only cue absent in this language, say).
     VoiceGuideRenderer r;
@@ -836,6 +889,13 @@ TEST_CASE("shipped voice pack covers every announced kind") {
             REQUIRE(static_cast<bool>(clip));
             CHECK(!clip->samples.empty());
         }
+        // A count marker speaks the counts/<n> clip its variant names.
+        for (int n = 1; n <= 7; ++n) {
+            CAPTURE(n);
+            const VoiceGuideClip* clip = bank->cue_for(MarkerKind::Count, n);
+            REQUIRE(static_cast<bool>(clip));
+            CHECK(!clip->samples.empty());
+        }
     }
 }
 
@@ -865,6 +925,10 @@ TEST_CASE("new marker kinds report the right category") {
     CHECK(marker_kind_is_cue(MarkerKind::TempoDown));
     CHECK(marker_kind_from_string("tempo_up") == MarkerKind::TempoUp);
     CHECK(marker_kind_from_string("tempo_down") == MarkerKind::TempoDown);
+
+    // A count is a one-shot on its own beat.
+    CHECK(marker_kind_is_cue(MarkerKind::Count));
+    CHECK(marker_kind_from_string("count") == MarkerKind::Count);
 }
 
 // Dragging a marker between the two ruler rows stores a category override. The

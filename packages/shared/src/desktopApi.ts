@@ -1522,13 +1522,21 @@ export type AnalyzeSongRequest = {
 };
 
 /** A section announcement on the guide track (seconds from `renderStartSeconds`). */
-export type GuideAnnouncement = { startSeconds: number; endSeconds: number; group: number };
+export type GuideAnnouncement = {
+  startSeconds: number;
+  endSeconds: number;
+  group: number;
+  /** A count said on its own: each number and where it starts. */
+  countWords?: { number: number; startSeconds: number }[];
+};
 
 /**
  * The announcements that are the same recording said again. `labels` are the
- * markers it names, as voice-clip names (`verse_3`, `drums_in`), or
- * `["count"]` for a count-in; empty when nothing was recognised and the user
- * names the group in the review.
+ * markers it names, as voice-clip names (`verse_3`, `drums_in`);
+ * `["count"]` for the count-in of the announcement before it (places
+ * nothing) or `["spoken_count"]` for a count said on its own (a count marker
+ * per number); empty when nothing was recognised and the user names the
+ * group in the review.
  */
 export type GuideGroup = {
   labels: string[];

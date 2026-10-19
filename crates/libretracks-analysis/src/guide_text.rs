@@ -14,7 +14,8 @@
 //!   unless the numbers go on counting: in "Verso, dos, tres, cuatro" the
 //!   section word stands for beat 1 of the count-in, and the section has no
 //!   number.
-//! - Counts alone ("uno, dos, tres, cuatro") and unknown words name nothing.
+//! - Counts alone ("uno, dos, tres, cuatro") and unknown words name nothing;
+//!   a count's numbers are read apart (`count_numbers`).
 
 /// A marker the announcement names: `kind` is the `MarkerKind` serde name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,6 +165,8 @@ const SECTION_KINDS: &[&str] = &[
 
 /// Variants beyond this are a misheard count, not "Verse 12".
 const MAX_VARIANT: u32 = 9;
+/// The voice guide's counts go up to seven (counts/1..7.wav).
+const MAX_COUNT: u32 = 7;
 
 fn number_word(token: &str) -> Option<u32> {
     if let Ok(value) = token.parse::<u32>() {
@@ -256,6 +259,17 @@ fn match_phrase(words: &[String], start: usize, phrase: &[&str]) -> Option<usize
 pub fn is_count(text: &str) -> bool {
     let words = tokens(text);
     !words.is_empty() && words.iter().all(|word| number_word(word).is_some())
+}
+
+/// The numbers a count says, in order: "Uno, dos, uno, dos, tres, cuatro" is
+/// 1, 2, 1, 2, 3, 4. Numbers past the recorded counts (1..7) are left out.
+pub fn count_numbers(text: &str) -> Vec<u8> {
+    tokens(text)
+        .iter()
+        .filter_map(|word| number_word(word))
+        .filter(|number| (1..=MAX_COUNT).contains(number))
+        .map(|number| number as u8)
+        .collect()
 }
 
 /// Whether `kind` is a section (the rest are cues).
@@ -454,6 +468,18 @@ mod tests {
         assert!(is_count("Uno."));
         assert!(!is_count("Coro, dos, tres, cuatro."));
         assert!(!is_count(""));
+    }
+
+    #[test]
+    fn a_count_reads_as_its_numbers() {
+        // Real: the start of a Spanish and an English guide.
+        assert_eq!(
+            count_numbers("Uno, dos, uno, dos, tres, cuatro."),
+            vec![1, 2, 1, 2, 3, 4]
+        );
+        assert_eq!(count_numbers("1, 2, 1, 2, 3, 4."), vec![1, 2, 1, 2, 3, 4]);
+        assert_eq!(count_numbers("One, two, three, four."), vec![1, 2, 3, 4]);
+        assert_eq!(count_numbers("Siete, ocho."), vec![7]);
     }
 
     #[test]

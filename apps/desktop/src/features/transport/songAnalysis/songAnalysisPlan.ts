@@ -1,5 +1,9 @@
 import { buildSongTempoRegions } from "@libretracks/shared/models";
-import { getBeatDurationSeconds, nextDownbeatAfter } from "@libretracks/shared/timelineMath";
+import {
+  getBeatDurationSeconds,
+  nextDownbeatAfter,
+  parseTimeSignature,
+} from "@libretracks/shared/timelineMath";
 
 import type {
   GuideAnalysis,
@@ -221,7 +225,8 @@ export function guideTrackOptions(
 /**
  * What a guide group puts on the timeline: a section (`chorus`,
  * `verse:3`, or "" for none), a cue (`drums_in`, or ""), or nothing because
- * it is ignored (a count-in). "Verso 3, entra batería" is both a section and
+ * it is ignored (the count-in of the announcement before it). A count said
+ * on its own has the cue `count`: one count marker per number, on its beat. "Verso 3, entra batería" is both a section and
  * a cue. The cue may be a section kind: "Verso a capella" is the section
  * verse plus a capella in the cue lane, since two sections cannot share a
  * spot. The section may be a cue kind: "Toda la banda" said with a count-in
@@ -248,6 +253,7 @@ function labelValue(label: string): { value: string; cue: boolean } | null {
  * with a count-in and no section named, the cue is the section. */
 export function markersForLabels(labels: string[], countedIn = false): GroupMarkers {
   if (labels.includes("count")) return { section: "", cue: "", ignored: true };
+  if (labels.includes("spoken_count")) return { section: "", cue: "count", ignored: false };
   let section = "";
   let cue = "";
   let extraSection = "";
@@ -285,9 +291,12 @@ const ANNOUNCEMENT_TAIL_BEATS = 0.3;
 /**
  * Where each announcement's markers go: on the first downbeat after the
  * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`), or `leadBars - 1` bars
- * later for a guide that speaks two bars ahead. The grid is the song's, or
- * the one the tempo review is about to write when `tempo` is given. Returns
- * rendered-timeline seconds.
+ * later for a guide that speaks two bars ahead. A cue said on its own
+ * ("Bajar intensidad") goes a bar before that downbeat: the voice guide
+ * speaks a cue on its marker, and it is a warning of what comes. A count
+ * said on its own puts each number on the beat it is said on. The grid is
+ * the song's, or the one the tempo review is about to write when `tempo` is
+ * given. Returns rendered-timeline seconds.
  */
 export function placeGuideSections(
   song: SongView,
@@ -342,13 +351,29 @@ export function placeGuideSections(
     };
   }
   const regions = buildSongTempoRegions(grid);
+  const regionAt = (seconds: number) =>
+    regions.find((r) => seconds >= r.startSeconds && seconds < r.endSeconds) ??
+    regions[regions.length - 1];
   const beatAt = (seconds: number) => {
-    const current =
-      regions.find((r) => seconds >= r.startSeconds && seconds < r.endSeconds) ??
-      regions[regions.length - 1];
+    const current = regionAt(seconds);
     return current
       ? getBeatDurationSeconds(current.bpm, current.timeSignature)
       : getBeatDurationSeconds(grid.bpm, grid.timeSignature);
+  };
+  const barAt = (seconds: number) =>
+    beatAt(seconds) *
+    parseTimeSignature(regionAt(seconds)?.timeSignature ?? grid.timeSignature).beatsPerBar;
+  const downbeatFrom = (seconds: number) =>
+    nextDownbeatAfter(seconds, grid.bpm, grid.timeSignature, regions);
+  // The downbeat a bar before one.
+  const barBefore = (downbeat: number) => {
+    const probe = downbeat - beatAt(downbeat) / 4;
+    return downbeatFrom(downbeat - barAt(probe) - beatAt(probe) / 2);
+  };
+  const nearestBeat = (seconds: number) => {
+    const beat = beatAt(seconds);
+    const barStart = downbeatFrom(seconds - barAt(seconds) - beat / 2);
+    return barStart + Math.round((seconds - barStart) / beat) * beat;
   };
   const placed: {
     startSeconds: number;
@@ -361,6 +386,14 @@ export function placeGuideSections(
   for (const announcement of analysis.announcements) {
     const group = markers[announcement.group];
     if (!group || group.ignored) continue;
+    if (!group.section && group.cue === "count" && announcement.countWords?.length) {
+      for (const word of announcement.countWords) {
+        const startSeconds = nearestBeat(renderStartSeconds + word.startSeconds);
+        if (onSpot(startSeconds).some((other) => other.kind === "count")) continue;
+        placed.push({ startSeconds, kind: "count", variant: word.number, categoryOverride: null });
+      }
+      continue;
+    }
     const end = renderStartSeconds + announcement.endSeconds;
     let startSeconds = nextDownbeatAfter(
       end - ANNOUNCEMENT_TAIL_BEATS * beatAt(end),
@@ -380,9 +413,14 @@ export function placeGuideSections(
       { marker: parseMarkerValue(group.section), sectionSlot: true },
       { marker: parseMarkerValue(group.cue), sectionSlot: false },
     ];
+    // A cue alongside a section is chained into the section's lead-in by the
+    // voice guide; on its own it is spoken on its marker, so it warns a bar
+    // ahead, where the guide said it.
+    const cueSpot = group.section ? startSeconds : barBefore(startSeconds);
     for (const { marker, sectionSlot } of slots) {
       if (!marker) continue;
-      const here = onSpot(startSeconds);
+      const spot = sectionSlot ? startSeconds : cueSpot;
+      const here = onSpot(spot);
       // The same marker twice on one downbeat ("Coro 1." … "Coro 1.") is one.
       if (here.some((other) => other.kind === marker.kind && other.variant === marker.variant)) {
         continue;
@@ -396,7 +434,7 @@ export function placeGuideSections(
         : sectionSlot && !sectionHere
           ? "section"
           : null;
-      placed.push({ startSeconds, ...marker, categoryOverride });
+      placed.push({ startSeconds: spot, ...marker, categoryOverride });
     }
   }
   return placed;

@@ -73,6 +73,8 @@ export type MarkerKind =
   | "guitar_solo"
   | "tempo_up"
   | "tempo_down"
+  // Spoken count: a cue whose variant is the number ("one", "two"...).
+  | "count"
   | "custom";
 
 /** Whether a marker behaves as a song section (Verse, Chorus — name + count-in)
@@ -108,6 +110,7 @@ export const CUE_KINDS: readonly MarkerKind[] = [
   "keys",
   "ad_lib",
   "worship_freely",
+  "count",
 ] as const;
 
 const CUE_KIND_SET: ReadonlySet<MarkerKind> = new Set(CUE_KINDS);
@@ -193,6 +196,8 @@ const MARKER_KIND_COLORS: Record<MarkerKind, string> = {
   // "something about the song changes here".
   tempo_up: "#5cc6c0",
   tempo_down: "#4f9fb8",
+  // Counts are timing, not dynamics: the neutral grey of the click family.
+  count: "#a7b4bd",
 };
 
 /** Resting-state colour for a kind. Falls back to the custom grey for unknown

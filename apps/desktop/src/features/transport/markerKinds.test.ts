@@ -8,6 +8,7 @@ import {
   MARKER_KINDS,
   availableCueKinds,
   availableSectionKinds,
+  markerKindVariants,
 } from "./markerKinds";
 
 /** The bundled voice pack, relative to this file. */
@@ -20,6 +21,16 @@ const LANGS = ["es", "en"] as const;
 
 function clipPath(lang: string, folder: "sections" | "cues", kind: string) {
   return join(VOICES, lang, folder, `${kind}.wav`);
+}
+
+/** A cue's recording: its own clip, or for a count every number offered. */
+function cueRecorded(lang: string, kind: string) {
+  if (kind === "count") {
+    return markerKindVariants(kind).every((n) =>
+      existsSync(join(VOICES, lang, "counts", `${n}.wav`)),
+    );
+  }
+  return existsSync(clipPath(lang, "cues", kind));
 }
 
 // The menus are the only thing standing between a user and a silent marker:
@@ -37,7 +48,7 @@ describe("marker kinds offered vs recordings on disk", () => {
 
     it(`every cue offered in ${lang} has a recording`, () => {
       const missing = availableCueKinds(lang).filter(
-        (kind) => !existsSync(clipPath(lang, "cues", kind)),
+        (kind) => !cueRecorded(lang, kind),
       );
       expect(missing).toEqual([]);
     });
@@ -60,7 +71,7 @@ describe("marker kinds offered vs recordings on disk", () => {
     it(`no recorded cue is hidden from the ${lang} menu`, () => {
       const offered = new Set(availableCueKinds(lang));
       const hiddenButRecorded = CUE_KINDS.filter(
-        (kind) => !offered.has(kind) && existsSync(clipPath(lang, "cues", kind)),
+        (kind) => !offered.has(kind) && cueRecorded(lang, kind),
       );
       expect(hiddenButRecorded).toEqual([]);
     });

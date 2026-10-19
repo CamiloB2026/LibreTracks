@@ -20,7 +20,7 @@ use serde::Serialize;
 
 use crate::dsp::{decimate_to, resample_to};
 use crate::fft::fft;
-use crate::guide_text::{is_count, is_section_kind, read_announcement};
+use crate::guide_text::{count_numbers, is_count, is_section_kind, read_announcement};
 
 /// Speech analysis rate: a voice's identity lives below 8 kHz.
 const SPEECH_RATE: f64 = 16_000.0;
@@ -70,6 +70,23 @@ const SURE_MATCH_COVERAGE: f64 = 0.6;
 const SAME_RECORDING_COST: f64 = 1.0;
 /// Fragments whose lengths differ more than this ratio are different words.
 const MAX_LENGTH_RATIO: f64 = 1.5;
+/// A word starts where the level climbs this much within `ONSET_RISE_SECONDS`
+/// ("dos" after "uno" dips only ~20 dB in a quick count)...
+const ONSET_RISE_DB: f64 = 12.0;
+const ONSET_RISE_SECONDS: f64 = 0.06;
+/// ...to within this of the loudest word (quieter rises are breath and
+/// consonants).
+const ONSET_FLOOR_DB: f64 = 25.0;
+/// A jump whose word stays this far under the loudest is a breath or a
+/// consonant tail, not a number.
+const WORD_LOUDNESS_DB: f64 = 15.0;
+/// Two jumps closer than this are one word starting (the level wobbles as
+/// it climbs).
+const MIN_WORD_SECONDS: f64 = 0.12;
+/// How far after an onset a word's loudness is measured. The second syllable
+/// of "cua-tro" also rises, ~7 dB under the words (measured on a real guide);
+/// longer, a bump at the tail of "dos" reached into "tres" and won.
+const WORD_BODY_SECONDS: f64 = 0.08;
 
 /// A clip of the app's voice guide, named like the file it came from
 /// (`chorus_2`, `drums_in`, `count`).
@@ -87,13 +104,26 @@ pub struct GuideAnnouncement {
     pub end_seconds: f64,
     /// Index into `GuideAnalysis::groups`.
     pub group: usize,
+    /// For a count said on its own ("Uno, dos, uno, dos, tres, cuatro"), each
+    /// number and where it starts, to put one count marker on each beat.
+    pub count_words: Vec<CountWord>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CountWord {
+    pub number: u8,
+    pub start_seconds: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuideGroup {
-    /// The markers it names, as voice-clip labels (`verse_3`, `drums_in`), or
-    /// `["count"]` for a count-in. Empty: not recognised, the user says.
+    /// The markers it names, as voice-clip labels (`verse_3`, `drums_in`);
+    /// `["count"]` for the count-in of the announcement before it, which
+    /// places nothing, or `["spoken_count"]` for a count said on its own,
+    /// which places its numbers (`GuideAnnouncement::count_words`). Empty: not
+    /// recognised, the user says.
     pub labels: Vec<String>,
     /// What speech recognition heard, when it ran.
     pub transcript: Option<String>,
@@ -233,7 +263,7 @@ pub fn analyze_guide(
                 first_end_seconds: fragments[group.members[0]].1,
             })
             .collect();
-        return guide_analysis(&fragments, &groups_of, groups);
+        return guide_analysis(&fragments, &groups_of, groups, Vec::new());
     };
 
     // Every announcement is transcribed, one at a time (about a second each,
@@ -267,7 +297,16 @@ pub fn analyze_guide(
                 return (clip_label(), false);
             };
             if is_count(text) {
-                return (vec!["count".to_string()], false);
+                // The count-in of the announcement just before it, or a count
+                // on its own (a song's opening "uno, dos, uno, dos, tres,
+                // cuatro"), whose numbers become markers.
+                let attached = index > 0
+                    && fragments[index].0 - fragments[index - 1].1 <= COUNT_FOLLOWS_SECONDS
+                    && heard[index - 1]
+                        .as_deref()
+                        .is_some_and(|before| !is_count(before));
+                let label = if attached { "count" } else { "spoken_count" };
+                return (vec![label.to_string()], false);
             }
             let following_count = heard
                 .get(index + 1)
@@ -294,18 +333,25 @@ pub fn analyze_guide(
 
     // A row per announcement, so each can be set on its own (the review
     // said "11 markers" and offered 6 rows when equal ones were merged);
-    // bare counts, which place nothing, share one row.
+    // counts share one row of each kind.
     #[derive(PartialEq)]
     enum Key {
         Count,
+        SpokenCount,
         Announcement(usize),
     }
+    let mut count_words: Vec<Vec<CountWord>> = vec![Vec::new(); fragments.len()];
     let mut keys: Vec<Key> = Vec::new();
     let mut regrouped: Vec<usize> = Vec::with_capacity(fragments.len());
     let mut groups: Vec<GuideGroup> = Vec::new();
     for (index, (labels, counted_in)) in readings.into_iter().enumerate() {
         let key = if labels == ["count"] {
             Key::Count
+        } else if labels == ["spoken_count"] {
+            let text = heard[index].as_deref().unwrap_or_default();
+            count_words[index] =
+                count_word_times(&signal, rate, fragments[index], &count_numbers(text));
+            Key::SpokenCount
         } else {
             Key::Announcement(index)
         };
@@ -330,28 +376,107 @@ pub fn analyze_guide(
         };
         regrouped.push(group);
     }
-    guide_analysis(&fragments, &regrouped, groups)
+    guide_analysis(&fragments, &regrouped, groups, count_words)
 }
 
 fn guide_analysis(
     fragments: &[(f64, f64)],
     groups_of: &[usize],
     groups: Vec<GuideGroup>,
+    mut count_words: Vec<Vec<CountWord>>,
 ) -> GuideAnalysis {
+    count_words.resize(fragments.len(), Vec::new());
     GuideAnalysis {
         announcements: fragments
             .iter()
             .zip(groups_of)
+            .zip(count_words)
             .map(
-                |(&(start_seconds, end_seconds), &group)| GuideAnnouncement {
+                |((&(start_seconds, end_seconds), &group), count_words)| GuideAnnouncement {
                     start_seconds,
                     end_seconds,
                     group,
+                    count_words,
                 },
             )
             .collect(),
         groups,
     }
+}
+
+/// Where each number of a count starts. Speech recognition hears the numbers
+/// but places them loosely (measured: "tres" 0.4 s off), so the words are
+/// found in the audio: each starts where the level jumps. A word with two
+/// syllables ("cua-tro") jumps twice, so of all the jumps the loudest words
+/// are kept, one per number heard.
+fn count_word_times(
+    signal: &[f32],
+    rate: f64,
+    (start, end): (f64, f64),
+    numbers: &[u8],
+) -> Vec<CountWord> {
+    let hop = ((HOP_SECONDS * rate) as usize).max(1);
+    let hop_seconds = hop as f64 / rate;
+    let from = ((start - 0.1).max(0.0) * rate) as usize;
+    let to = (((end + 0.05) * rate) as usize).min(signal.len());
+    if numbers.is_empty() || from >= to {
+        return Vec::new();
+    }
+    let levels: Vec<f64> = signal[from..to]
+        .chunks(hop)
+        .map(|chunk| {
+            let power =
+                chunk.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>() / chunk.len() as f64;
+            10.0 * (power + 1e-12).log10()
+        })
+        .collect();
+    let peak = levels.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let lookback = ((ONSET_RISE_SECONDS / hop_seconds).round() as usize).max(1);
+    let body = ((WORD_BODY_SECONDS / hop_seconds).round() as usize).max(1);
+    let min_gap = (MIN_WORD_SECONDS / hop_seconds).round() as usize;
+    // (frame, loudness) of each jump.
+    let mut onsets: Vec<(usize, f64)> = Vec::new();
+    let mut rising = false;
+    for (index, &level) in levels.iter().enumerate() {
+        // Silence before the first frame.
+        let before = levels[index.saturating_sub(lookback)..index]
+            .iter()
+            .copied()
+            .reduce(f64::min)
+            .unwrap_or(-120.0);
+        let jump = level - before >= ONSET_RISE_DB && level >= peak - ONSET_FLOOR_DB;
+        if jump && !rising {
+            let loudness = levels[index..(index + body).min(levels.len())]
+                .iter()
+                .copied()
+                .fold(f64::NEG_INFINITY, f64::max);
+            let spaced = onsets
+                .last()
+                .is_none_or(|&(last, _)| index - last >= min_gap);
+            if loudness >= peak - WORD_LOUDNESS_DB {
+                match onsets.last_mut() {
+                    Some(last) if !spaced => last.1 = last.1.max(loudness),
+                    _ => onsets.push((index, loudness)),
+                }
+            }
+        }
+        rising = jump;
+    }
+    if onsets.len() > numbers.len() {
+        let mut loudest = onsets.clone();
+        loudest.sort_by(|a, b| b.1.total_cmp(&a.1));
+        loudest.truncate(numbers.len());
+        onsets.retain(|onset| loudest.contains(onset));
+    }
+    let origin = from as f64 / rate;
+    onsets
+        .iter()
+        .zip(numbers)
+        .map(|(&(frame, _), &number)| CountWord {
+            number,
+            start_seconds: origin + frame as f64 * hop_seconds,
+        })
+        .collect()
 }
 
 /// (start, end) seconds of each stretch of speech.
@@ -794,6 +919,81 @@ mod tests {
     }
 
     #[test]
+    fn a_count_on_its_own_places_each_number_where_it_is_said() {
+        // A song's opening "1 . 2 . | 1 2 3 4" at 120 BPM (a beat every
+        // 0.5 s): "dos" barely dips from the word before, as in real guides.
+        let beats = [0, 2, 4, 5, 6, 7];
+        let mut audio = vec![0.0_f32; 6 * RATE as usize];
+        for (index, &beat) in beats.iter().enumerate() {
+            let at = 1.0 + beat as f64 * 0.5;
+            let start = (at * f64::from(RATE)) as usize;
+            for (i, sample) in word(index % 3, 0.42).iter().enumerate() {
+                audio[start + i] += sample;
+            }
+        }
+        // The half-note "uno" and "dos" stand apart, as the real ones do.
+        let analysis = scripted(&audio, &["Uno.", "Dos.", "Uno, dos, tres, cuatro."]);
+        assert_eq!(analysis.announcements.len(), 3, "{analysis:?}");
+        // One row for all of them, as for any count.
+        assert_eq!(analysis.groups.len(), 1, "{analysis:?}");
+        assert_eq!(analysis.groups[0].labels, vec!["spoken_count".to_string()]);
+        let words: Vec<CountWord> = analysis
+            .announcements
+            .iter()
+            .flat_map(|a| a.count_words.clone())
+            .collect();
+        let numbers: Vec<u8> = words.iter().map(|w| w.number).collect();
+        assert_eq!(numbers, vec![1, 2, 1, 2, 3, 4], "{words:?}");
+        for (found, &beat) in words.iter().zip(&beats) {
+            let expected = 1.0 + beat as f64 * 0.5;
+            assert!(
+                (found.start_seconds - expected).abs() < 0.08,
+                "{words:?} vs beat {beat}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_number_that_rises_out_of_a_murmur_still_starts_on_its_beat() {
+        // Real (Rey de Reyes rendered at 48 kHz): "dos" trails off into a
+        // murmur ~22 dB down that runs into "tres". Without the climb
+        // measured against the frames before, the murmur's start took the
+        // onset and "tres" was lost: 3 and 4 landed a beat late.
+        let mut audio = vec![0.0_f32; 4 * RATE as usize];
+        let mut put = |at: f64, samples: &[f32]| {
+            let start = (at * f64::from(RATE)) as usize;
+            for (i, sample) in samples.iter().enumerate() {
+                audio[start + i] += sample;
+            }
+        };
+        put(1.0, &word(0, 0.4));
+        let murmur: Vec<f32> = (0..(0.1 * f64::from(RATE)) as usize)
+            .map(|i| {
+                0.04 * (std::f64::consts::TAU * 300.0 * i as f64 / f64::from(RATE)).sin() as f32
+            })
+            .collect();
+        put(1.35, &murmur);
+        put(1.45, &murmur);
+        // "tres" starts on a consonant: loud at once, not faded in.
+        let tres = word(1, 0.8);
+        put(1.5, &tres[(0.2 * f64::from(RATE)) as usize..]);
+        let analysis = scripted(&audio, &["Dos, tres."]);
+        let words = &analysis.announcements[0].count_words;
+        assert_eq!(words.len(), 2, "{words:?}");
+        assert!((words[0].start_seconds - 1.0).abs() < 0.08, "{words:?}");
+        assert!((words[1].start_seconds - 1.5).abs() < 0.08, "{words:?}");
+    }
+
+    #[test]
+    fn a_count_after_an_announcement_places_nothing() {
+        // Real: "Coro, Uno." and, 0.4 s later, "¡Dos, tres, cuatro!".
+        let audio = track(&[(2.0, 0, 0.6), (3.1, 1, 1.2)], 10.0);
+        let analysis = scripted(&audio, &["Coro, Uno.", "¡Dos, tres, cuatro!"]);
+        assert_eq!(analysis.groups[1].labels, vec!["count".to_string()]);
+        assert!(analysis.announcements[1].count_words.is_empty());
+    }
+
+    #[test]
     fn a_cue_with_a_count_in_starts_a_section() {
         // Real: "Toda la banda." and, 0.7 s later, "Tres, cuatro.".
         let audio = track(&[(2.0, 0, 0.6), (3.3, 1, 1.0), (20.0, 2, 0.6)], 25.0);
@@ -842,7 +1042,7 @@ mod tests {
                 vec!["chorus".to_string()],
                 vec!["verse_3".to_string(), "drums_in".to_string()],
                 vec!["chorus".to_string()],
-                vec!["count".to_string()],
+                vec!["spoken_count".to_string()],
             ],
             "{analysis:?}"
         );

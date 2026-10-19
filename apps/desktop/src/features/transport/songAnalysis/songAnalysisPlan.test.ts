@@ -232,6 +232,48 @@ describe("guide", () => {
     ]);
   });
 
+  it("a cue said on its own warns a bar before the downbeat", () => {
+    // Real: "Bajar intensidad" landed on the drop itself, where the voice
+    // guide speaks it too late. 105.3 → downbeat 106 → a bar before, 104.
+    const { analysis, markers } = oneAnnouncement(5.3, ["ease_down"]);
+    expect(placeGuideSections(plain(), "b", 100, analysis, markers, null)).toEqual([
+      { startSeconds: 104, kind: "ease_down", variant: null, categoryOverride: null },
+    ]);
+  });
+
+  it("a count said on its own puts each number on its beat", () => {
+    expect(markersForLabels(["spoken_count"])).toEqual({ section: "", cue: "count", ignored: false });
+    // "1 . 2 . | 1 2 3 4" at 120 BPM from the song start (100 s), the words
+    // a little off the beats as the voice says them.
+    const { analysis, markers } = oneAnnouncement(3.6, ["spoken_count"]);
+    const countWords = [
+      { number: 1, startSeconds: 0.02 },
+      { number: 2, startSeconds: 1.03 },
+      { number: 1, startSeconds: 1.98 },
+      { number: 2, startSeconds: 2.49 },
+      { number: 3, startSeconds: 2.93 },
+      { number: 4, startSeconds: 3.47 },
+    ];
+    const withWords = {
+      ...analysis,
+      announcements: [{ ...analysis.announcements[0], countWords }],
+    };
+    expect(
+      placeGuideSections(plain(), "b", 100, withWords, markers, null).map((m) => [
+        m.startSeconds,
+        m.kind,
+        m.variant,
+      ]),
+    ).toEqual([
+      [100, "count", 1],
+      [101, "count", 2],
+      [102, "count", 1],
+      [102.5, "count", 2],
+      [103, "count", 3],
+      [103.5, "count", 4],
+    ]);
+  });
+
   it("a second section of one announcement goes in the cue lane", () => {
     // "Verso a capella": two sections cannot share a spot.
     expect(markersForLabels(["verse", "acapella"])).toEqual({

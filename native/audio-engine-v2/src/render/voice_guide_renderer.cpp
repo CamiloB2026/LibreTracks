@@ -144,6 +144,7 @@ std::string kind_token(MarkerKind kind) noexcept {
         case MarkerKind::Softly: return "softly";
         case MarkerKind::Swell: return "swell";
         case MarkerKind::WorshipFreely: return "worship_freely";
+        case MarkerKind::Count: return "count";
         case MarkerKind::Custom: default: return "custom";
     }
 }
@@ -155,6 +156,8 @@ std::string kind_token(MarkerKind kind) noexcept {
 const VoiceGuideClip* VoiceGuideClipBank::section_for(MarkerKind kind, int variant) const noexcept {
     const int idx = static_cast<int>(kind);
     if (idx < 0 || idx >= kKindCount) return nullptr;
+    // A count dragged into the section row says its number, then counts in.
+    if (kind == MarkerKind::Count) return count_for(variant);
     const VoiceGuideSection& section = sections[static_cast<std::size_t>(idx)];
     if (variant >= 1 && variant < VoiceGuideSection::kMaxVariant) {
         const VoiceGuideClip& v = section.variants[static_cast<std::size_t>(variant)];
@@ -179,9 +182,11 @@ const VoiceGuideClip* VoiceGuideClipBank::count_for(int beat_number) const noexc
     return clip.samples.empty() ? nullptr : &clip;
 }
 
-const VoiceGuideClip* VoiceGuideClipBank::cue_for(MarkerKind kind) const noexcept {
+const VoiceGuideClip* VoiceGuideClipBank::cue_for(MarkerKind kind, int variant) const noexcept {
     const int idx = static_cast<int>(kind);
     if (idx < 0 || idx >= kKindCount) return nullptr;
+    // A count has no recording of its own: it speaks its number.
+    if (kind == MarkerKind::Count) return count_for(variant);
     const VoiceGuideClip& clip = cues[static_cast<std::size_t>(idx)];
     if (!clip.samples.empty()) return &clip;
     // A *section* kind reaching this lookup can only be one dragged into the
@@ -756,9 +761,12 @@ void VoiceGuideRenderer::render(float** output_channels,
                         int chained_count = 0;
                         for (const auto& cue : song->markers) {
                             if (!cue.is_cue()) continue;
+                            // A count sits on its own beat: it is never moved
+                            // into a lead-in (see the loose-cue pass).
+                            if (cue.kind == MarkerKind::Count) continue;
                             if (cue.frame < cue_window_start || cue.frame > cue_anchor_frame)
                                 continue;
-                            const VoiceGuideClip* clip = bank->cue_for(cue.kind);
+                            const VoiceGuideClip* clip = bank->cue_for(cue.kind, cue.variant);
                             if (!clip) continue;            // no recording in this lang
                             if (chained_count >= kMaxChainedCues) break;
                             // Insertion sort by marker frame (small N).
@@ -915,14 +923,20 @@ void VoiceGuideRenderer::render(float** output_channels,
                     const Frame jump_anchor = jump_target.destination_frame > 0
                         ? jump_target.destination_frame
                         : jump_frame;
-                    const bool chained =
+                    const bool in_lead =
                         (marker_frame > abs_frame && in_lead_window(marker_frame, marker_frame))
                         || (jump_frame > abs_frame && in_lead_window(jump_frame, jump_anchor));
+                    // A count is never chained, it plays on its own beat; but
+                    // inside a lead-in that already counts it would be said
+                    // twice, so the section's count-in wins there.
+                    const bool chained = cue->kind == MarkerKind::Count
+                        ? (in_lead && count_in)
+                        : in_lead;
                     if (!chained) {
                         // Only count an announcement when there is actually a clip
                         // for this cue in the loaded language (an absent recording
                         // is a silent slot, not a fired announcement).
-                        if (const VoiceGuideClip* clip = bank->cue_for(cue->kind)) {
+                        if (const VoiceGuideClip* clip = bank->cue_for(cue->kind, cue->variant)) {
                             trigger_clip(clip, 0.9f, sample_rate, bank);
                             announcements_fired_.fetch_add(1, std::memory_order_relaxed);
                         }

@@ -827,6 +827,9 @@ pub enum MarkerKind {
     // tempo itself does not change. Appended per the ABI rule.
     TempoUp,
     TempoDown,
+    // Spoken count: a cue whose `variant` is the number ("one", "two"...). A
+    // guide's bare count-in is one of these per number, each on its beat.
+    Count,
     /// User-defined section with no pre-recorded voice clip; the announcement
     /// falls back to silence (or TTS, if added later).
     #[default]
@@ -897,6 +900,7 @@ impl MarkerKind {
             MarkerKind::GuitarSolo => "guitar_solo",
             MarkerKind::TempoUp => "tempo_up",
             MarkerKind::TempoDown => "tempo_down",
+            MarkerKind::Count => "count",
             MarkerKind::Custom => "custom",
         }
     }
@@ -928,7 +932,8 @@ impl MarkerKind {
             | MarkerKind::EaseDown
             | MarkerKind::GetReady
             | MarkerKind::TempoUp
-            | MarkerKind::TempoDown => MarkerCategory::Cue,
+            | MarkerKind::TempoDown
+            | MarkerKind::Count => MarkerCategory::Cue,
             // NextSong falls through: it is announced with a count-in like a
             // section, not fired as a one-shot.
             _ => MarkerCategory::Section,
@@ -1393,6 +1398,12 @@ mod tests {
 
         marker.kind = MarkerKind::Build;
         assert_eq!(marker.category(), MarkerCategory::Cue);
+
+        // A spoken count is a one-shot on its beat, and its token is what the
+        // engine's marker_kind_from_string expects.
+        marker.kind = MarkerKind::Count;
+        assert_eq!(marker.category(), MarkerCategory::Cue);
+        assert_eq!(MarkerKind::Count.as_token(), "count");
     }
 
     #[test]

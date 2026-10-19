@@ -38,7 +38,7 @@ struct VoiceGuideSection {
 };
 
 struct VoiceGuideClipBank {
-    static constexpr int kKindCount = 48;   // MarkerKind values incl. cues + Custom
+    static constexpr int kKindCount = 49;   // MarkerKind values incl. cues + Custom
     static constexpr int kMaxCount  = 17;   // supports up to 16-beat bars + slack
 
     double sample_rate = 0.0;               // sample rate the clips were decoded at
@@ -55,7 +55,8 @@ struct VoiceGuideClipBank {
     const VoiceGuideClip* count_for(int beat_number) const noexcept;
     // Resolve a dynamic cue's clip, or nullptr when the kind is not a cue or has
     // no recording in this bank (e.g. an English-only or Spanish-only cue).
-    const VoiceGuideClip* cue_for(MarkerKind kind) const noexcept;
+    // `variant` matters only for Count, whose clip is counts[variant].
+    const VoiceGuideClip* cue_for(MarkerKind kind, int variant = 0) const noexcept;
 };
 
 // Decode a language's voice bank from disk into memory. Expects the asset tree

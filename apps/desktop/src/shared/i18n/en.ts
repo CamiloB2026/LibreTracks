@@ -1055,6 +1055,7 @@ const en = {
       guitar_solo: "Guitar Solo",
       tempo_up: "Speed Up",
       tempo_down: "Slow Down",
+      count: "Count",
     },
     prompt: {
       timelineBpm: "New timeline BPM",

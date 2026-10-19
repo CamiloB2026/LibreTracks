@@ -7,6 +7,7 @@ import {
   markerKindCategory,
   markerKindColor,
   markerKindLabel,
+  markerKindNeedsVariant,
   markerKindVariants,
 } from "../markerKinds";
 import { formatClock } from "../helpers";
@@ -116,11 +117,15 @@ export function createMarkerKindMenus(
       y: next.y,
       title: markerKindLabel(kind, d.t),
       actions: [
-        {
-          label: markerKindLabel(kind, d.t),
-          swatch: markerKindColor(kind),
-          onSelect: () => createTypedMarker(positionSeconds, kind, null),
-        },
+        ...(markerKindNeedsVariant(kind)
+          ? []
+          : [
+              {
+                label: markerKindLabel(kind, d.t),
+                swatch: markerKindColor(kind),
+                onSelect: () => createTypedMarker(positionSeconds, kind, null),
+              },
+            ]),
         ...variants.map((n) => ({
           label: `${markerKindLabel(kind, d.t)} ${n}`,
           swatch: markerKindColor(kind),
@@ -228,11 +233,15 @@ export function createMarkerKindMenus(
       y: next.y,
       title: markerKindLabel(kind, d.t),
       actions: [
-        {
-          label: `${markerKindLabel(kind, d.t)}${current == null ? " ✓" : ""}`,
-          swatch: markerKindColor(kind),
-          onSelect: () => applyMarkerKind(section, kind, null),
-        },
+        ...(markerKindNeedsVariant(kind)
+          ? []
+          : [
+              {
+                label: `${markerKindLabel(kind, d.t)}${current == null ? " ✓" : ""}`,
+                swatch: markerKindColor(kind),
+                onSelect: () => applyMarkerKind(section, kind, null),
+              },
+            ]),
         ...variants.map((n) => ({
           label: `${markerKindLabel(kind, d.t)} ${n}${current === n ? " ✓" : ""}`,
           swatch: markerKindColor(kind),

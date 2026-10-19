@@ -55,6 +55,7 @@ MarkerKind marker_kind_from_string(const std::string& token) noexcept {
     if (token == "guitar_solo") return MarkerKind::GuitarSolo;
     if (token == "tempo_up") return MarkerKind::TempoUp;
     if (token == "tempo_down") return MarkerKind::TempoDown;
+    if (token == "count") return MarkerKind::Count;
     return MarkerKind::Custom;
 }
 
@@ -66,7 +67,8 @@ bool marker_kind_is_cue(MarkerKind kind) noexcept {
         && static_cast<int>(kind) <= static_cast<int>(MarkerKind::WorshipFreely))
         return true;
     return kind == MarkerKind::EaseDown || kind == MarkerKind::GetReady
-        || kind == MarkerKind::TempoUp || kind == MarkerKind::TempoDown;
+        || kind == MarkerKind::TempoUp || kind == MarkerKind::TempoDown
+        || kind == MarkerKind::Count;
 }
 
 MarkerCategoryOverride marker_category_override_from_string(const std::string& token) noexcept {
