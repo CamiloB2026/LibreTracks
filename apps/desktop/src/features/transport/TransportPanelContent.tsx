@@ -272,6 +272,7 @@ import { LevelSongsModal } from "./levelSongs/LevelSongsModal";
 import { SongAnalysisModal } from "./songAnalysis/SongAnalysisModal";
 import { LevelSongsMenuItem } from "./levelSongs/LevelSongsMenuItem";
 import { ExportSessionModal } from "./panels/ExportSessionModal";
+import { TemplateDropToast } from "./templates/TemplateDropToast";
 import { beginExportWithChoice, cancelExportChoice, CloudLandingButton, CloudMenuItem, CloudSurfaces, confirmSessionExport, confirmSongExport, importSessionWithChoice, importSongWithChoice, useCloudStore } from "./cloud";
 import {
   AutomationCueModal,
@@ -2097,6 +2098,7 @@ export function TransportPanelContent() {
     handleFadeOutStopSecondsChange,
     handleMidiPlatformSettingsChange,
     handleSongTrackLayoutChange,
+    handleDefaultSongTemplateChange,
     handleAutoColorNewTracksChange,
     handleReferenceImportedAudioChange,
     handleAutoSaveEnabledChange,
@@ -8138,6 +8140,7 @@ export function TransportPanelContent() {
               onSongTrackLayoutChange={
                 handleSongTrackLayoutChange
               }
+              onDefaultSongTemplateChange={handleDefaultSongTemplateChange}
               onAutoColorNewTracksChange={handleAutoColorNewTracksChange}
               onReferenceImportedAudioChange={handleReferenceImportedAudioChange}
               onAutoSaveEnabledChange={handleAutoSaveEnabledChange}
@@ -8254,6 +8257,7 @@ export function TransportPanelContent() {
             />
 
             <CloudSurfaces />
+            <TemplateDropToast onUndone={applyPlaybackSnapshot} />
 
             {automationCueDraft ? (
               <AutomationCueModal

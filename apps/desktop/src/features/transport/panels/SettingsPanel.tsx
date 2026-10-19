@@ -5,6 +5,7 @@ import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppSettings, AudioDeviceDescriptor } from "@libretracks/shared/models";
 import { AUTO_SAVE_INTERVAL_PRESETS, isSongTrackLayout } from "@libretracks/shared/models";
+import { DefaultSongTemplateField } from "../templates/DefaultSongTemplateField";
 import type { DecodingCacheInfo } from "@libretracks/shared/desktopApi";
 import {
   getDecodingCacheInfo,
@@ -103,6 +104,7 @@ type SettingsPanelProps = {
   onVampBetweenSongsChange: (value: boolean) => void;
   onFadeOutStopSecondsChange: (value: number) => void;
   onSongTrackLayoutChange: (value: AppSettings["songTrackLayout"]) => void;
+  onDefaultSongTemplateChange: (value: string | null) => void;
   onReferenceImportedAudioChange: (value: boolean) => void;
   onAutoColorNewTracksChange: (value: boolean) => void;
   onAutoSaveEnabledChange: (value: boolean) => void;
@@ -174,6 +176,7 @@ export function SettingsPanel({
   onVampBetweenSongsChange,
   onFadeOutStopSecondsChange,
   onSongTrackLayoutChange,
+  onDefaultSongTemplateChange,
   onReferenceImportedAudioChange,
   onAutoColorNewTracksChange,
   onAutoSaveEnabledChange,
@@ -839,6 +842,12 @@ export function SettingsPanel({
                         )}
                       </small>
                     </label>
+
+                    <DefaultSongTemplateField
+                      value={appSettings.defaultSongTemplate}
+                      disabled={isLoading || isSaving}
+                      onChange={onDefaultSongTemplateChange}
+                    />
 
                     {/* Solo móvil: escritorio referencia desde siempre y
                         no tiene nada que elegir aqui. */}

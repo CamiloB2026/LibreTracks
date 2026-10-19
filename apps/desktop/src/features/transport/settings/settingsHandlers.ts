@@ -338,6 +338,13 @@ export function createSettingsHandlers(deps: SettingsHandlerDeps) {
       );
     },
 
+    handleDefaultSongTemplateChange(nextValue: string | null) {
+      persistAudioPatch(
+        { defaultSongTemplate: nextValue },
+        t("songTemplates.defaultTemplateUpdated"),
+      );
+    },
+
     handleAutoColorNewTracksChange(nextValue: boolean) {
       persistAudioPatch(
         { autoColorNewTracks: nextValue },

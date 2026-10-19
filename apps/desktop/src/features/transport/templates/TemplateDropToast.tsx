@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { listenToTemplateDropSummary, type TemplateDropSummary } from "../desktopApi";
+import {
+  listenToTemplateDropSummary,
+  undoAction,
+  type TemplateDropSummary,
+  type TransportSnapshot,
+} from "../desktopApi";
 
 /** How long the toast stays up; long enough to read it and reach «Deshacer». */
 const TOAST_MS = 8000;
@@ -15,7 +20,11 @@ const TOAST_MS = 8000;
  *
  * Mounted always; renders nothing until a summary arrives.
  */
-export function TemplateDropToast({ onUndo }: { onUndo: () => void }) {
+export function TemplateDropToast({
+  onUndone,
+}: {
+  onUndone: (snapshot: TransportSnapshot) => void;
+}) {
   const { t } = useTranslation();
   const [summary, setSummary] = useState<TemplateDropSummary | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -63,7 +72,9 @@ export function TemplateDropToast({ onUndo }: { onUndo: () => void }) {
         className="lt-link-button"
         onClick={() => {
           close();
-          onUndo();
+          // A failed undo leaves the session as it was; the toast is already
+          // gone and Ctrl+Z is still there, so nothing to report here.
+          void undoAction().then(onUndone, () => {});
         }}
       >
         {t("songTemplates.undo")}

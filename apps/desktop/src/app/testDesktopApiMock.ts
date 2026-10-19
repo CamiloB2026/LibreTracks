@@ -2377,6 +2377,15 @@ export const testDesktopApiMock = {
     });
     return clone(buildSnapshot());
   },
+  updateTrackMatchAliases: async (args: { trackId: string; aliases: string[] }) => {
+    replaceSong({
+      ...state.song,
+      tracks: state.song.tracks.map((track) =>
+        track.id === args.trackId ? { ...track, matchAliases: [...args.aliases] } : track,
+      ),
+    });
+    return clone(buildSnapshot());
+  },
   updateTrackMixRealtime: async (_args: {
     trackId: string;
     muted?: boolean;

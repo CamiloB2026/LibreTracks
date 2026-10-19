@@ -18,7 +18,9 @@ export function useSongTemplateList(enabled: boolean): {
   loading: boolean;
 } {
   const [templates, setTemplates] = useState<SongTemplateSummary[]>([]);
-  const [loading, setLoading] = useState(false);
+  // Starts loading when enabled from the first render, so nobody reads the
+  // empty list before the first scan as "there are no templates".
+  const [loading, setLoading] = useState(enabled);
 
   useEffect(() => {
     if (!enabled) {

@@ -2690,13 +2690,6 @@ export async function updateTrackTransposeEnabled(args: {
 }
 
 /**
- * Sumar (o dejar de sumar) los dos canales de una pista a uno solo.
- *
- * Suma con ley (L+R)/2: no sube el nivel, así que no puede saturar por sí
- * sola, y una señal correlacionada —lo normal en un estéreo que alguien quiere
- * en mono— queda exactamente igual de alta.
- */
-/**
  * Words a song template matches dropped stems against so they land on this
  * track (or, on a folder, inside it). The backend trims them and drops empty
  * and repeated ones; an empty list turns matching off for the track.
@@ -2708,6 +2701,13 @@ export async function updateTrackMatchAliases(args: {
   return invokeCommand<TransportSnapshot>("update_track_match_aliases", args);
 }
 
+/**
+ * Sumar (o dejar de sumar) los dos canales de una pista a uno solo.
+ *
+ * Suma con ley (L+R)/2: no sube el nivel, así que no puede saturar por sí
+ * sola, y una señal correlacionada —lo normal en un estéreo que alguien quiere
+ * en mono— queda exactamente igual de alta.
+ */
 export async function updateTrackMonoDownmix(args: {
   trackId: string;
   monoDownmix: boolean;
