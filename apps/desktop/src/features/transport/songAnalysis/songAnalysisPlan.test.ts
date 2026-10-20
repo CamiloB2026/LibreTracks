@@ -254,6 +254,46 @@ describe("guide", () => {
     expect(spoken(2.0, 3.6)).toBe(104);
   });
 
+  it("a section said a bar before its count-in comes after the count", () => {
+    // Real (Es Él): "Intro." on the pickup, then "uno", "dos", "tres,
+    // cuatro" over the whole next bar; the intro landed on the count's
+    // first beat. 120 BPM: bars of 2 s; song at 100 s.
+    const fragment = (startSeconds: number, endSeconds: number, group: number) => ({
+      startSeconds,
+      endSeconds,
+      group,
+    });
+    const group = (labels: string[]) => ({
+      labels,
+      transcript: null,
+      matchCost: null,
+      occurrences: 1,
+      firstStartSeconds: 0,
+      firstEndSeconds: 0,
+    });
+    const analysis = {
+      announcements: [
+        fragment(0.6, 1.1, 0),
+        fragment(2.0, 2.3, 1),
+        fragment(2.5, 2.8, 1),
+        fragment(3.0, 3.8, 1),
+        // A cue said well after the count is not part of it.
+        fragment(9.3, 9.8, 2),
+      ],
+      groups: [group(["intro"]), group(["count"]), group(["ease_down"])],
+    };
+    const markers = analysis.groups.map((g) => markersForLabels(g.labels));
+    expect(
+      placeGuideSections(plain(), "b", 100, analysis, markers, null).map((m) => [
+        m.startSeconds,
+        m.kind,
+      ]),
+    ).toEqual([
+      [104, "intro"],
+      [108, "ease_down"],
+    ]);
+  });
+
   it("a cue said on its own warns a bar before the downbeat", () => {
     // Real: "Bajar intensidad" landed on the drop itself, where the voice
     // guide speaks it too late. 105.3 → downbeat 106 → a bar before, 104.

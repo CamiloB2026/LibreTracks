@@ -297,6 +297,10 @@ const ANNOUNCEMENT_TAIL_BEATS = 0.3;
  * next one still belongs to it.
  */
 const ON_DOWNBEAT_BEATS = 0.25;
+
+/** A count-in follows its announcement within this (the analysis's
+ * `COUNT_FOLLOWS_SECONDS`). */
+const COUNT_IN_GAP_SECONDS = 1.2;
 const LONG_TAIL_BEATS = 0.5;
 
 /**
@@ -394,7 +398,7 @@ export function placeGuideSections(
   }[] = [];
   const onSpot = (seconds: number) =>
     placed.filter((other) => Math.abs(other.startSeconds - seconds) < SAME_POSITION_SECONDS);
-  for (const announcement of analysis.announcements) {
+  for (const [index, announcement] of analysis.announcements.entries()) {
     const group = markers[announcement.group];
     if (!group || group.ignored) continue;
     if (!group.section && group.cue === "count" && announcement.countWords?.length) {
@@ -405,7 +409,17 @@ export function placeGuideSections(
       }
       continue;
     }
-    const end = renderStartSeconds + announcement.endSeconds;
+    // The section comes after its count-in, which may be said well after
+    // the words: "Intro." on the pickup, then a whole bar "uno, dos, tres,
+    // cuatro" before the intro starts.
+    let endSeconds = announcement.endSeconds;
+    for (const next of analysis.announcements.slice(index + 1)) {
+      if (!markers[next.group]?.ignored || next.startSeconds - endSeconds > COUNT_IN_GAP_SECONDS) {
+        break;
+      }
+      endSeconds = next.endSeconds;
+    }
+    const end = renderStartSeconds + endSeconds;
     let startSeconds = nextDownbeatAfter(
       end - ANNOUNCEMENT_TAIL_BEATS * beatAt(end),
       grid.bpm,

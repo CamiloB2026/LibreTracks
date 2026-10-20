@@ -283,6 +283,23 @@ pub fn analyze_guide(
         recogniser.progress(wanted.len(), wanted.len());
     }
 
+    // A count is the count-in of the announcement just before it when it
+    // follows that announcement, or another piece of its count-in, within a
+    // breath ("Intro." … "Uno." … "Dos." … "Tres, cuatro."). The
+    // announcement may not have been transcribed: a sure clip match. Any
+    // other count is said on its own (a song's opening "uno, dos, uno, dos,
+    // tres, cuatro"), and its numbers become markers.
+    let says_count = |index: usize| match heard[index].as_deref() {
+        Some(text) => is_count(text),
+        None => pending[groups_of[index]].clip_label.as_deref() == Some("count"),
+    };
+    let mut count_in = vec![false; fragments.len()];
+    for index in 1..fragments.len() {
+        count_in[index] = says_count(index)
+            && fragments[index].0 - fragments[index - 1].1 <= COUNT_FOLLOWS_SECONDS
+            && (!says_count(index - 1) || count_in[index - 1]);
+    }
+
     // What each announcement names, with the count that follows it.
     let readings: Vec<(Vec<String>, bool)> = (0..fragments.len())
         .map(|index| {
@@ -297,25 +314,23 @@ pub fn analyze_guide(
                 return (clip_label(), false);
             };
             if is_count(text) {
-                // The count-in of the announcement just before it, or a count
-                // on its own (a song's opening "uno, dos, uno, dos, tres,
-                // cuatro"), whose numbers become markers.
-                let attached = index > 0
-                    && fragments[index].0 - fragments[index - 1].1 <= COUNT_FOLLOWS_SECONDS
-                    && heard[index - 1]
-                        .as_deref()
-                        .is_some_and(|before| !is_count(before));
-                let label = if attached { "count" } else { "spoken_count" };
+                let label = if count_in[index] {
+                    "count"
+                } else {
+                    "spoken_count"
+                };
                 return (vec![label.to_string()], false);
             }
-            let following_count = heard
-                .get(index + 1)
-                .and_then(Option::as_deref)
-                .filter(|next| {
-                    is_count(next)
-                        && fragments[index + 1].0 - fragments[index].1 <= COUNT_FOLLOWS_SECONDS
-                });
-            let (markers, counted_in) = read_announcement(text, following_count);
+            // All of it: "Intro." + "Uno." alone reads as intro 1.
+            let following_count: Vec<&str> = (index + 1..fragments.len())
+                .take_while(|&next| count_in[next])
+                .filter_map(|next| heard[next].as_deref())
+                .collect();
+            let following_count = following_count.join(" ");
+            let (markers, counted_in) = read_announcement(
+                text,
+                (!following_count.is_empty()).then_some(following_count.as_str()),
+            );
             let names_a_section = markers.iter().any(|marker| is_section_kind(marker.kind));
             let labels: Vec<String> = markers
                 .into_iter()
@@ -991,6 +1006,71 @@ mod tests {
         let analysis = scripted(&audio, &["Coro, Uno.", "¡Dos, tres, cuatro!"]);
         assert_eq!(analysis.groups[1].labels, vec!["count".to_string()]);
         assert!(analysis.announcements[1].count_words.is_empty());
+    }
+
+    #[test]
+    fn a_count_in_split_by_pauses_places_nothing() {
+        // Real (Es Él, 70 BPM): "Intro." on the pickup, then "Uno." "Dos."
+        // "Tres, cuatro." a beat apart, with more than a pause between them.
+        // Only "uno" was taken for the count-in; the rest put count markers
+        // in the bar before the intro.
+        let audio = track(
+            &[(0.1, 0, 0.5), (1.7, 1, 0.4), (2.6, 1, 0.4), (3.4, 2, 1.3)],
+            8.0,
+        );
+        let analysis = scripted(&audio, &["Intro.", "Uno.", "Dos.", "Tres, cuatro."]);
+        assert_eq!(analysis.announcements.len(), 4, "{analysis:?}");
+        let labels: Vec<&[String]> = analysis
+            .announcements
+            .iter()
+            .map(|a| analysis.groups[a.group].labels.as_slice())
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                &["intro".to_string()][..],
+                &["count".to_string()],
+                &["count".to_string()],
+                &["count".to_string()],
+            ],
+            "{analysis:?}"
+        );
+        assert!(analysis
+            .announcements
+            .iter()
+            .all(|a| a.count_words.is_empty()));
+    }
+
+    #[test]
+    fn a_count_after_a_clip_match_is_its_count_in() {
+        // Real (Es Él): "Coro" in the app's own voice is a sure clip match
+        // and not transcribed; the "dos, tres" after it was taken for a
+        // count on its own and put count markers before the chorus.
+        let audio = track(&[(2.0, 0, 0.5), (2.9, 1, 1.2), (4.5, 2, 0.4)], 8.0);
+        let templates = vec![GuideTemplate {
+            label: "chorus".into(),
+            samples: word(0, 0.5),
+            sample_rate: RATE,
+        }];
+        let mut recogniser = ScriptedTranscriber {
+            lines: vec!["Dos, tres.", "Cuatro."],
+            next: 0,
+        };
+        let analysis = analyze_guide(&audio, RATE, &templates, Some(&mut recogniser));
+        let labels: Vec<&[String]> = analysis
+            .announcements
+            .iter()
+            .map(|a| analysis.groups[a.group].labels.as_slice())
+            .collect();
+        assert_eq!(
+            labels,
+            vec![
+                &["chorus".to_string()][..],
+                &["count".to_string()],
+                &["count".to_string()],
+            ],
+            "{analysis:?}"
+        );
     }
 
     #[test]
