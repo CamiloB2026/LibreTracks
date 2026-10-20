@@ -6,9 +6,12 @@
 //! Both are bounced in one pass of the engine's offline renderer (one output
 //! file each), so clip offsets, trims and fades are already resolved, and with
 //! `apply_mixer: false`, so a track's own volume or mute (the click is often
-//! silenced to the room) does not matter. Like "Nivelar canciones", the
-//! session lock is held only to copy the song out, and the analysis runs on a
-//! blocking thread.
+//! silenced to the room) does not matter. The song is bounced as recorded,
+//! without warp or transpose: time-stretching every track (Bungee) made a
+//! warped song take minutes, for nothing the analysis needs. The key and the
+//! guide's times are then brought to the song as it plays. Like "Nivelar
+//! canciones", the session lock is held only to copy the song out, and the
+//! analysis runs on a blocking thread.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -141,7 +144,7 @@ pub struct KeyResult {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GuideResult {
-    /// Times from `render_start_seconds` (the rendered timeline).
+    /// Times from `render_start_seconds` (the timeline as it plays).
     pub analysis: GuideAnalysis,
     /// Speech recognition read the announcements (otherwise only the app's
     /// voice clips labelled them).
@@ -261,8 +264,6 @@ struct TempoJob {
 
 struct KeyJob {
     track_ids: Vec<String>,
-    /// Semitones to take out of the detected key (the song's transpose).
-    untranspose: i32,
     current_key: Option<String>,
     transpose_semitones: i32,
 }
@@ -272,9 +273,14 @@ struct AnalysisJob {
     project_json: String,
     region_id: String,
     region_start_seconds: f64,
-    /// The song's span on the rendered (runtime) timeline.
+    /// The song's span as recorded (stored seconds): what is bounced.
+    region_end_seconds: f64,
+    /// Where the song starts as it plays (warp and varispeed applied, here
+    /// and in the songs before).
     render_start_seconds: f64,
-    render_end_seconds: f64,
+    /// Seconds as it plays per second as recorded: warp and varispeed play
+    /// the whole song at one speed, so its times only scale.
+    view_scale: f64,
     tempo: Option<TempoJob>,
     tempo_unavailable: Option<String>,
     key: Option<KeyJob>,
@@ -292,20 +298,29 @@ fn prepare_job(
         .iter()
         .find(|region| region.id == request.region_id)
         .ok_or_else(|| format!("Region not found: {}", request.region_id))?;
-    let (project_json, runtime_song) = crate::audio::engine::runtime_session_json(song_dir, song)
+    let mut as_recorded = song.clone();
+    for other in &mut as_recorded.regions {
+        other.warp_enabled = false;
+        other.transpose_semitones = 0;
+    }
+    let (project_json, _) = crate::audio::engine::runtime_session_json(song_dir, &as_recorded)
         .map_err(|error| error.to_string())?;
-    let runtime_region = runtime_song
-        .regions
-        .iter()
-        .find(|candidate| candidate.id == region.id)
-        .ok_or_else(|| format!("Region not found: {}", request.region_id))?;
+    // The song as it plays, as the engine lays it out.
+    let view_start = libretracks_core::warp_timeline_seconds_at(song, region.start_seconds);
+    let view_end = libretracks_core::warp_timeline_seconds_at(song, region.end_seconds)
+        .max(view_start + 0.001);
+    let recorded_length = region.end_seconds - region.start_seconds;
+    let view_scale = if recorded_length > 0.0 {
+        (view_end - view_start) / recorded_length
+    } else {
+        1.0
+    };
 
-    // The tempo is read off the rendered timeline and stored in source time:
-    // warp or a varispeed transpose (here or in an earlier song) make the two
-    // differ. The key does not care: neither changes which notes play.
-    let timeline_matches = (runtime_region.start_seconds - region.start_seconds).abs()
-        <= SAME_BOUND_SECONDS
-        && (runtime_region.end_seconds - region.end_seconds).abs() <= SAME_BOUND_SECONDS;
+    // The tempo is stored in source time and its markers rule the song as it
+    // plays: warp or a varispeed transpose (here or in an earlier song) make
+    // the two differ. The key does not care: neither changes which notes play.
+    let timeline_matches = (view_start - region.start_seconds).abs() <= SAME_BOUND_SECONDS
+        && (view_end - region.end_seconds).abs() <= SAME_BOUND_SECONDS;
     let tempo_track_ids = if request.click_track_ids.is_empty() {
         &request.music_tempo_track_ids
     } else {
@@ -368,29 +383,12 @@ fn prepare_job(
         }
     });
 
-    let key = (!request.key_track_ids.is_empty()).then(|| {
-        // Tracks with transpose off (drums, usually) are not shifted. If most
-        // chosen tracks are, the render sounds transposed.
-        let chosen: Vec<&libretracks_core::Track> = song
-            .tracks
-            .iter()
-            .filter(|track| request.key_track_ids.contains(&track.id))
-            .collect();
-        let transposed = chosen
-            .iter()
-            .filter(|track| track.transpose_enabled)
-            .count();
-        let sounds_transposed = transposed * 2 >= chosen.len().max(1);
-        KeyJob {
-            track_ids: request.key_track_ids.clone(),
-            untranspose: if sounds_transposed {
-                -region.transpose_semitones
-            } else {
-                0
-            },
-            current_key: region.key.clone(),
-            transpose_semitones: region.transpose_semitones,
-        }
+    // Bounced untransposed: the key found is the original one, which is what
+    // the song stores (the review adds the transpose to show how it sounds).
+    let key = (!request.key_track_ids.is_empty()).then(|| KeyJob {
+        track_ids: request.key_track_ids.clone(),
+        current_key: region.key.clone(),
+        transpose_semitones: region.transpose_semitones,
     });
 
     if tempo.is_none()
@@ -404,8 +402,9 @@ fn prepare_job(
         project_json,
         region_id: region.id.clone(),
         region_start_seconds: region.start_seconds,
-        render_start_seconds: runtime_region.start_seconds,
-        render_end_seconds: runtime_region.end_seconds,
+        region_end_seconds: region.end_seconds,
+        render_start_seconds: view_start,
+        view_scale,
         tempo,
         tempo_unavailable,
         key,
@@ -550,8 +549,8 @@ fn run_job(
     let engine_request = RenderRequest {
         project_json: job.project_json.clone(),
         sample_rate,
-        start_seconds: job.render_start_seconds,
-        end_seconds: job.render_end_seconds,
+        start_seconds: job.region_start_seconds,
+        end_seconds: job.region_end_seconds,
         outputs,
         format: RenderSampleFormat::Float32,
         channels: 1,
@@ -613,7 +612,7 @@ fn run_job(
             }
             let (samples, rate) = read(&key_path)?;
             result.key = Some(KeyResult {
-                analysis: analyze_key(&samples, rate).transposed(key.untranspose),
+                analysis: as_played_key(analyze_key(&samples, rate), job.view_scale),
                 current_key: key.current_key.clone(),
                 transpose_semitones: key.transpose_semitones,
             });
@@ -668,7 +667,7 @@ fn run_job(
                 }
             }
             result.guide = Some(GuideResult {
-                analysis,
+                analysis: as_played_guide(analysis, job.view_scale),
                 speech_recognition,
             });
         }
@@ -678,6 +677,31 @@ fn run_job(
     outcome?;
     on_progress(AnalysisProgress::at(1.0, "done"));
     Ok(result)
+}
+
+/// The key sections at the times the song plays them.
+fn as_played_key(mut analysis: KeyAnalysis, view_scale: f64) -> KeyAnalysis {
+    for section in &mut analysis.sections {
+        section.start_seconds *= view_scale;
+    }
+    analysis
+}
+
+/// The announcements at the times the song plays them. The click reads the
+/// guide before this, in its own (recorded) time.
+fn as_played_guide(mut analysis: GuideAnalysis, view_scale: f64) -> GuideAnalysis {
+    for announcement in &mut analysis.announcements {
+        announcement.start_seconds *= view_scale;
+        announcement.end_seconds *= view_scale;
+        for word in &mut announcement.count_words {
+            word.start_seconds *= view_scale;
+        }
+    }
+    for group in &mut analysis.groups {
+        group.first_start_seconds *= view_scale;
+        group.first_end_seconds *= view_scale;
+    }
+    analysis
 }
 
 #[tauri::command]
@@ -940,20 +964,81 @@ mod tests {
     }
 
     #[test]
+    fn the_song_is_bounced_as_recorded() {
+        // Bungee on every track took minutes for a warped song ("Es Él",
+        // warp 70 → 70, transpose -1): the bounce has no warp or transpose,
+        // here or in any other song.
+        let dir = tempfile::tempdir().expect("dir");
+        let mut song = song();
+        song.regions[1].transpose_semitones = 3;
+        song.regions[2].transpose_semitones = -1;
+        song.regions[2].warp_enabled = true;
+        song.regions[2].warp_source_bpm = Some(120.0);
+        let job = prepare_job(dir.path(), &song, &request("b")).expect("job");
+        let bounced: Song = serde_json::from_str(&job.project_json).expect("session");
+        assert!(bounced
+            .regions
+            .iter()
+            .all(|region| !region.warp_enabled && region.transpose_semitones == 0));
+        assert_eq!(
+            (job.region_start_seconds, job.region_end_seconds),
+            (64.0, 140.0)
+        );
+    }
+
+    #[test]
     fn the_key_is_read_back_in_the_song_s_original_key() {
+        // Bounced untransposed, the key found is the original one; the
+        // transpose only goes to the review.
         let dir = tempfile::tempdir().expect("dir");
         let mut transposed = song();
         transposed.regions[2].transpose_semitones = 2;
         let job = prepare_job(dir.path(), &transposed, &request("b")).expect("job");
-        assert_eq!(job.key.expect("key job").untranspose, -2);
+        let bounced: Song = serde_json::from_str(&job.project_json).expect("session");
+        assert_eq!(bounced.regions[2].transpose_semitones, 0);
+        assert_eq!(job.key.expect("key job").transpose_semitones, 2);
+    }
 
-        // Only untransposed tracks chosen: the render is in the original key.
-        let only_drums = AnalyzeSongRequest {
-            key_track_ids: vec!["drums".into()],
-            ..request("b")
+    #[test]
+    fn the_guide_is_read_at_the_times_the_song_plays_them() {
+        // Warped 120 → 100 BPM: the song plays 1.2 times as long, and the
+        // varispeed of the song before (+12, twice as fast) moves its start.
+        let dir = tempfile::tempdir().expect("dir");
+        let mut song = song();
+        song.regions[1].transpose_semitones = 12;
+        song.bpm = 100.0;
+        song.regions[2].warp_enabled = true;
+        song.regions[2].warp_source_bpm = Some(120.0);
+        let job = prepare_job(dir.path(), &song, &request("b")).expect("job");
+        assert!((job.render_start_seconds - 34.0).abs() < 1e-9);
+        assert!((job.view_scale - 1.2).abs() < 1e-9);
+
+        let analysis = GuideAnalysis {
+            announcements: vec![libretracks_analysis::GuideAnnouncement {
+                start_seconds: 10.0,
+                end_seconds: 11.0,
+                group: 0,
+                count_words: vec![libretracks_analysis::CountWord {
+                    number: 1,
+                    start_seconds: 10.5,
+                }],
+            }],
+            groups: vec![libretracks_analysis::GuideGroup {
+                labels: vec!["chorus".into()],
+                transcript: None,
+                match_cost: None,
+                counted_in: false,
+                occurrences: 1,
+                first_start_seconds: 10.0,
+                first_end_seconds: 11.0,
+            }],
         };
-        let job = prepare_job(dir.path(), &transposed, &only_drums).expect("job");
-        assert_eq!(job.key.expect("key job").untranspose, 0);
+        let played = as_played_guide(analysis, job.view_scale);
+        let announcement = &played.announcements[0];
+        assert!((announcement.start_seconds - 12.0).abs() < 1e-9);
+        assert!((announcement.end_seconds - 13.2).abs() < 1e-9);
+        assert!((announcement.count_words[0].start_seconds - 12.6).abs() < 1e-9);
+        assert!((played.groups[0].first_start_seconds - 12.0).abs() < 1e-9);
     }
 
     #[test]
