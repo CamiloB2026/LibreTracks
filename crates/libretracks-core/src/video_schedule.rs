@@ -87,10 +87,12 @@ impl VideoTimeline {
                     end,
                     media_start: clip.source_start_seconds,
                     rate,
-                    // Fades are stored in source seconds; the picture fades
-                    // over the same audible stretch.
-                    fade_in: clip.fade_in_seconds.unwrap_or(0.0) / rate,
-                    fade_out: clip.fade_out_seconds.unwrap_or(0.0) / rate,
+                    // Fades are in VIEW seconds, as the timeline draws and
+                    // edits them (clamped to the clip's view duration there):
+                    // with warp the picture must fade exactly over the
+                    // stretch the user sees, not over a rescaled one.
+                    fade_in: clip.fade_in_seconds.unwrap_or(0.0).min(view_duration),
+                    fade_out: clip.fade_out_seconds.unwrap_or(0.0).min(view_duration),
                     fit: clip.fit,
                 })
             })
@@ -755,6 +757,35 @@ mod tests {
         let t = VideoTimeline::from_song(&song, str::to_string);
         let active = active_clip_at(&t, 1.0).unwrap();
         assert!((active.rate - 1.2).abs() < 1e-9, "rate {}", active.rate);
+    }
+
+    /// The timeline draws a clip's fades in view seconds and edits them in
+    /// view seconds: with warp the picture must fade over exactly that
+    /// stretch, ending at the clip's (view) end.
+    #[test]
+    fn under_warp_the_fades_span_what_the_timeline_draws() {
+        let mut song = song_with_tracks(false, false);
+        song.regions[0].warp_enabled = true;
+        song.regions[0].warp_source_bpm = Some(100.0);
+        song.bpm = 120.0;
+        song.video_clips[0].fade_in_seconds = Some(1.0);
+        song.video_clips[0].fade_out_seconds = Some(2.0);
+        let t = VideoTimeline::from_song(&song, str::to_string);
+        let clip = t.clips.iter().find(|clip| clip.clip_id == "a").unwrap();
+        assert!((clip.rate - 1.2).abs() < 1e-9, "warped: rate {}", clip.rate);
+        assert_eq!(clip.fade_in, 1.0);
+        assert_eq!(clip.fade_out, 2.0);
+        // Black at the drawn start of the fade-out's end, full before it.
+        let gain = |at: f64| active_clip_at(&t, at).map(|active| active.fade_gain);
+        assert_eq!(gain(clip.end - 2.0 - 0.01), Some(1.0));
+        assert!((gain(clip.end - 1.0).unwrap() - 0.5).abs() < 1e-9);
+        assert!(gain(clip.end - 1e-6).unwrap() < 1e-5);
+        assert_eq!(gain(clip.end), None);
+        // A fade longer than the clip (an old document) cannot outlast it.
+        song.video_clips[0].fade_out_seconds = Some(1000.0);
+        let t = VideoTimeline::from_song(&song, str::to_string);
+        let clip = t.clips.iter().find(|clip| clip.clip_id == "a").unwrap();
+        assert!(clip.fade_out <= clip.end - clip.start);
     }
 
     // ---- C2: step ------------------------------------------------------------

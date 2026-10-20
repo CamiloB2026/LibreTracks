@@ -136,6 +136,10 @@ pub struct RuntimeCore {
     /// it is showing must show the new one, not wait for the next idle.
     idle_screen: Option<IdleScreen>,
     idle_sent: bool,
+    /// The idle screen was asked for on this slot, with the player's
+    /// restarts then, and when: until it is on screen, the slot still shows
+    /// the clip's last frame.
+    idle_shown_at: Option<(Slot, u64, Instant)>,
     errors: VecDeque<f64>,
     last_log: Option<Instant>,
     preload: PreloadState,
@@ -170,6 +174,7 @@ impl Default for RuntimeCore {
             stopped_idle_shown: false,
             idle_screen: None,
             idle_sent: false,
+            idle_shown_at: None,
             errors: VecDeque::with_capacity(ERROR_WINDOW),
             last_log: None,
             preload: PreloadState::default(),
@@ -212,6 +217,33 @@ impl RuntimeCore {
                 self.timeline = timeline;
                 self.revision = Some(revision);
             }
+        }
+    }
+
+    /// Show the idle screen on the visible slot, remembering when.
+    fn show_idle(&mut self, output: &dyn RuntimeOutput, status: &OutputStatus, now: Instant) {
+        output.send(OutputCommand::ShowIdle);
+        let slot = status.visible_slot;
+        self.idle_shown_at = Some((slot, status.player(slot).restarts, now));
+    }
+
+    /// The level while nothing plays. Black idle: black — never back up to
+    /// full, which would light the clip's last frame for as long as `stop`
+    /// takes (a white flash after a white clip had faded out). An idle image:
+    /// lit once the player reports it on screen in place of that frame.
+    fn idle_level(&self, idle: &IdleScreen, status: &OutputStatus, now: Instant) -> f64 {
+        match idle {
+            IdleScreen::Black => -100.0,
+            IdleScreen::Image { .. } => match self.idle_shown_at {
+                Some((slot, restarts, at)) => {
+                    if status.player(slot).restarts > restarts || now.duration_since(at) >= SETTLE_TIMEOUT {
+                        0.0
+                    } else {
+                        -100.0
+                    }
+                }
+                None => 0.0,
+            },
         }
     }
 
@@ -328,8 +360,10 @@ impl RuntimeCore {
         let picture_brightness = if !running && settings.when_stopped == StoppedScreen::Black {
             -100.0
         } else {
-            let fade = active_clip_at(&self.timeline, position)
-                .map_or(0.0, |active| brightness_for_gain(active.fade_gain));
+            let fade = active_clip_at(&self.timeline, position).map_or_else(
+                || self.idle_level(&settings.idle, &status, now),
+                |active| brightness_for_gain(active.fade_gain),
+            );
             apply_forced_black(fade, black)
         };
 
@@ -487,12 +521,13 @@ impl RuntimeCore {
         let forced_idle = output.forced_idle();
         if forced_idle || (!running && settings.when_stopped == StoppedScreen::Idle) {
             if !self.stopped_idle_shown {
-                output.send(OutputCommand::ShowIdle);
+                self.show_idle(output, &status, now);
                 self.stopped_idle_shown = true;
                 self.state = SyncState::default();
                 self.preload = PreloadState::default();
             }
-            self.send_brightness(output, apply_forced_black(0.0, black));
+            let level = self.idle_level(&settings.idle, &status, now);
+            self.send_brightness(output, apply_forced_black(level, black));
             return if fading || (forced_idle && running) {
                 TickRate::Fast
             } else {
@@ -545,7 +580,7 @@ impl RuntimeCore {
                 }
                 PlayerAction::Resume => PlayerCommand::SetPause(false),
                 PlayerAction::Idle => {
-                    output.send(OutputCommand::ShowIdle);
+                    self.show_idle(output, &status, now);
                     continue;
                 }
             };
@@ -555,8 +590,13 @@ impl RuntimeCore {
         let stopped_black = !running && settings.when_stopped == StoppedScreen::Black;
         // Forced black only touches the brightness: everything above kept
         // the players in sync, so lifting it shows a picture already in place.
+        if !self.state.idle {
+            self.idle_shown_at = None;
+        }
         let brightness = if stopped_black {
             -100.0
+        } else if self.state.idle {
+            apply_forced_black(self.idle_level(&settings.idle, &status, now), black)
         } else {
             apply_forced_black(out.brightness, black)
         };
@@ -1229,6 +1269,87 @@ mod tests {
             )),
             "and kept black until shown"
         );
+    }
+
+    /// Play through the end of a clip that fades out into nothing; returns
+    /// what was sent from the moment the clip ended, with the position.
+    fn play_past_a_fade_out_end(output: &FakeOutput, restart_after_idle: bool) -> Vec<(f64, OutputCommand)> {
+        let mut core = RuntimeCore::default();
+        let mut timeline = one_clip_timeline();
+        timeline.clips[0].end = 10.0;
+        timeline.clips[0].fade_out = 2.0;
+        let base = Instant::now();
+        let mut inputs = FakeInputs {
+            clock: running_clock(7.0),
+            timeline,
+            fetches: 0,
+        };
+        let mut sent = Vec::new();
+        for tick in 0..400u64 {
+            let position = 7.0 + tick as f64 * 0.01;
+            let now = base + Duration::from_millis(10 * tick);
+            inputs.clock.anchor_position_seconds = position;
+            inputs.clock.anchor_started_at = Some(now);
+            let before = output.sent.borrow().len();
+            {
+                let mut status = output.status.borrow_mut();
+                let index = if status.visible_slot == Slot::A { 0 } else { 1 };
+                if position < 10.0 && status.players[index].file.is_some() {
+                    status.players[index].time_pos = Some(position);
+                    status.players[index].time_pos_at = Some(now);
+                }
+                // The idle image shows a while after it was asked for.
+                if restart_after_idle && position >= 10.5 {
+                    status.players[index].restarts = 99;
+                }
+            }
+            core.tick(&mut inputs, output, now);
+            if position >= 10.0 {
+                sent.extend(output.sent.borrow()[before..].iter().map(|command| (position, command.clone())));
+            }
+        }
+        sent
+    }
+
+    /// The clip fades out into nothing (the end of the last song). Going
+    /// idle must not bring the level back up: `stop` takes a while and the
+    /// window shows the clip's last frame until then — at full picture, a
+    /// white flash after a white clip had faded out.
+    #[test]
+    fn a_fade_out_into_black_idle_stays_black() {
+        let output = ready_output();
+        let sent = play_past_a_fade_out_end(&output, false);
+        assert!(sent.iter().any(|(_, command)| *command == OutputCommand::ShowIdle), "went idle: {sent:?}");
+        let raised: Vec<f64> = sent
+            .iter()
+            .filter_map(|(_, command)| match command {
+                OutputCommand::SetBrightness(value) if *value > -99.0 => Some(*value),
+                _ => None,
+            })
+            .collect();
+        assert!(raised.is_empty(), "level raised after the fade-out: {raised:?}");
+    }
+
+    /// An idle IMAGE does need the level back up, but only once it is on
+    /// screen in place of the last frame.
+    #[test]
+    fn an_idle_image_is_lit_only_once_it_is_shown() {
+        let mut output = ready_output();
+        output.settings.idle = IdleScreen::Image {
+            path: "D:/logo.png".into(),
+        };
+        let sent = play_past_a_fade_out_end(&output, true);
+        let (idle_at, _) = sent
+            .iter()
+            .find(|(_, command)| *command == OutputCommand::ShowIdle)
+            .expect("went idle");
+        let (lit_at, _) = sent
+            .iter()
+            .find(|(_, command)| matches!(command, OutputCommand::SetBrightness(value) if *value > -99.0))
+            .expect("the image is lit in the end");
+        assert!(*idle_at < 10.1, "idle right at the end, at {idle_at}");
+        // The player reports the image at 10.5.
+        assert!(*lit_at >= 10.5, "lit at {lit_at}, before the image was on screen");
     }
 
     #[test]
