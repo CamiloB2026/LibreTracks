@@ -29,6 +29,13 @@ pub fn update_latest(state: String) {
     }
 }
 
+/// The latest breadcrumb without waiting for the lock: for the Windows crash
+/// handler, which must not block on a lock the crashed thread may hold.
+#[cfg(windows)]
+pub fn try_latest() -> Result<std::sync::MutexGuard<'static, String>, ()> {
+    LATEST_UI_STATE.get().ok_or(())?.try_lock().map_err(|_| ())
+}
+
 #[cfg(target_os = "ios")]
 fn latest() -> String {
     let Some(slot) = LATEST_UI_STATE.get() else {

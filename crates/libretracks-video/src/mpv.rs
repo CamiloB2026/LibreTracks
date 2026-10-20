@@ -39,6 +39,15 @@ struct RawEventClientMessage {
 }
 
 #[repr(C)]
+struct RawEventLogMessage {
+    prefix: *const c_char,
+    level: *const c_char,
+    text: *const c_char,
+    #[allow(dead_code)]
+    log_level: c_int,
+}
+
+#[repr(C)]
 struct RawEventEndFile {
     reason: c_int,
     error: c_int,
@@ -59,6 +68,7 @@ const FORMAT_DOUBLE: c_int = 5;
 
 const EVENT_NONE: c_int = 0;
 const EVENT_SHUTDOWN: c_int = 1;
+const EVENT_LOG_MESSAGE: c_int = 2;
 const EVENT_COMMAND_REPLY: c_int = 5;
 const EVENT_START_FILE: c_int = 6;
 const EVENT_END_FILE: c_int = 7;
@@ -88,6 +98,7 @@ pub struct MpvLibrary {
     get_property: unsafe extern "C" fn(*mut MpvHandle, *const c_char, c_int, *mut c_void) -> c_int,
     get_property_string: unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> *mut c_char,
     observe_property: unsafe extern "C" fn(*mut MpvHandle, u64, *const c_char, c_int) -> c_int,
+    request_log_messages: unsafe extern "C" fn(*mut MpvHandle, *const c_char) -> c_int,
     wait_event: unsafe extern "C" fn(*mut MpvHandle, f64) -> *mut RawEvent,
     wakeup: unsafe extern "C" fn(*mut MpvHandle),
     free: unsafe extern "C" fn(*mut c_void),
@@ -137,6 +148,7 @@ impl MpvLibrary {
             get_property: symbol!(library, b"mpv_get_property\0"),
             get_property_string: symbol!(library, b"mpv_get_property_string\0"),
             observe_property: symbol!(library, b"mpv_observe_property\0"),
+            request_log_messages: symbol!(library, b"mpv_request_log_messages\0"),
             wait_event: symbol!(library, b"mpv_wait_event\0"),
             wakeup: symbol!(library, b"mpv_wakeup\0"),
             free: symbol!(library, b"mpv_free\0"),
@@ -233,6 +245,13 @@ pub enum MpvEvent {
     },
     /// `script-message` arguments, e.g. from a `keybind`.
     ClientMessage(Vec<String>),
+    /// One line of mpv's own log, at or above the level asked for with
+    /// [`Mpv::request_log_messages`].
+    LogMessage {
+        prefix: String,
+        level: String,
+        text: String,
+    },
     Other(i32),
 }
 
@@ -481,6 +500,27 @@ impl Mpv {
         match raw.event_id {
             EVENT_NONE => None,
             EVENT_SHUTDOWN => Some(MpvEvent::Shutdown),
+            EVENT_LOG_MESSAGE => {
+                let data = raw.data as *const RawEventLogMessage;
+                if data.is_null() {
+                    return Some(MpvEvent::Other(EVENT_LOG_MESSAGE));
+                }
+                // SAFETY: LOG_MESSAGE carries an mpv_event_log_message whose
+                // strings are NUL-terminated.
+                let message = unsafe { &*data };
+                let text = |pointer: *const c_char| {
+                    if pointer.is_null() {
+                        String::new()
+                    } else {
+                        unsafe { CStr::from_ptr(pointer) }.to_string_lossy().into_owned()
+                    }
+                };
+                Some(MpvEvent::LogMessage {
+                    prefix: text(message.prefix),
+                    level: text(message.level),
+                    text: text(message.text).trim_end().to_string(),
+                })
+            }
             EVENT_START_FILE => Some(MpvEvent::StartFile),
             EVENT_FILE_LOADED => Some(MpvEvent::FileLoaded),
             EVENT_VIDEO_RECONFIG => Some(MpvEvent::VideoReconfig),
@@ -541,6 +581,15 @@ impl Mpv {
             }
             other => Some(MpvEvent::Other(other)),
         }
+    }
+
+    /// Receive mpv's log lines at `min_level` and above ("error", "warn",
+    /// "info"…) as [`MpvEvent::LogMessage`].
+    pub fn request_log_messages(&self, min_level: &str) -> Result<(), VideoError> {
+        let level = c_string(min_level)?;
+        // SAFETY: valid handle and a NUL-terminated string.
+        let code = unsafe { (self.api.request_log_messages)(self.handle, level.as_ptr()) };
+        self.check(code, "mpv_request_log_messages")
     }
 
     /// Interrupt a `wait_event` blocked on another thread.

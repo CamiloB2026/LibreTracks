@@ -770,6 +770,17 @@ jobs:
           fi
           echo "AppImage uses the host GTK/WebKit stack and does not force X11."
 
+      # The PDB of exactly this build: a crash report (logs/crashes/*.dmp,
+      # infra/crash_report.rs) only turns into function names with it.
+      - name: Keep Windows debug symbols
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-symbols-${{ github.ref_name }}
+          path: target-desktop-native/release/*.pdb
+          retention-days: 90
+          if-no-files-found: warn
+
       - name: Validate Windows runtime linkage
         if: matrix.platform == 'windows'
         shell: pwsh

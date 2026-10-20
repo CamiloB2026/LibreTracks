@@ -404,6 +404,9 @@ impl RuntimeCore {
                         self.prepared = None;
                         self.expected_visible = Some((hidden, now));
                         self.stats.swaps += 1;
+                        crate::infra::crash_report::breadcrumb(&format!(
+                            "video: swap a {hidden:?} en {position:.3}s (nivel {picture_brightness:.0})"
+                        ));
                         return TickRate::Fast;
                     }
                 }

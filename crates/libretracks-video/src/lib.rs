@@ -14,6 +14,7 @@
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod audio;
+pub mod diagnostics;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub mod extract;
 pub mod mac_geometry;

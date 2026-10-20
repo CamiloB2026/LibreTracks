@@ -192,8 +192,13 @@ pub fn run() {
             // available; degrade gracefully (no logging) if it can't resolve
             // rather than aborting startup.
             if let Ok(app_data_dir) = app.handle().path().app_data_dir() {
-                infra::error_log::init(app_data_dir);
+                infra::error_log::init(app_data_dir.clone());
+                // Desktop only: a phone's OS kills backgrounded apps as a
+                // matter of course, which would read as a crash every time.
+                #[cfg(not(any(target_os = "android", target_os = "ios")))]
+                infra::crash_report::install(&app_data_dir);
             }
+            libretracks_video::diagnostics::set_trace_sink(infra::crash_report::breadcrumb_sink);
 
             // Point the C++ engine's debug/diagnostic log at a KNOWN, writable
             // path before the engine is first used. Without this, a packaged
@@ -599,6 +604,11 @@ pub fn run() {
             // case is handled in load_song_from_path instead.
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
                 save_session_on_exit(app);
+            }
+            // Exit (not ExitRequested, which can still be cancelled): from
+            // here on the process ends on purpose.
+            if matches!(event, tauri::RunEvent::Exit) {
+                infra::crash_report::mark_clean_exit();
             }
         });
 }

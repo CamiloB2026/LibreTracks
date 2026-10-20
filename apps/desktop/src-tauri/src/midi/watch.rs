@@ -196,6 +196,15 @@ fn check_once(app: &AppHandle) {
         output_waiting: state.midi_output.is_waiting(),
     };
     if last.as_ref() != Some(&status) {
+        crate::infra::crash_report::breadcrumb(&format!(
+            "midi: entradas {:?} salidas {:?} (entrada conectada {}, esperando {}; salida conectada {}, esperando {})",
+            status.inputs,
+            status.outputs,
+            status.input_connected,
+            status.input_waiting,
+            status.output_connected,
+            status.output_waiting
+        ));
         let _ = app.emit(DEVICES_CHANGED_EVENT, status.clone());
         *last = Some(status);
     }
