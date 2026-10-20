@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppSettings, AudioDeviceDescriptor } from "@libretracks/shared/models";
@@ -829,9 +830,12 @@ export function SettingsPanel({
                         <option value="shared">
                           {t("transport.settingsModal.songTrackLayoutShared")}
                         </option>
-                        <option value="songFolder">
-                          {t("transport.settingsModal.songTrackLayoutSongFolder")}
-                        </option>
+                        {FEATURE_FLAGS.songTemplates ||
+                        appSettings.songTrackLayout === "songFolder" ? (
+                          <option value="songFolder">
+                            {t("transport.settingsModal.songTrackLayoutSongFolder")}
+                          </option>
+                        ) : null}
                         <option value="separate">
                           {t("transport.settingsModal.songTrackLayoutSeparate")}
                         </option>
@@ -843,11 +847,13 @@ export function SettingsPanel({
                       </small>
                     </label>
 
-                    <DefaultSongTemplateField
-                      value={appSettings.defaultSongTemplate}
-                      disabled={isLoading || isSaving}
-                      onChange={onDefaultSongTemplateChange}
-                    />
+                    {FEATURE_FLAGS.songTemplates ? (
+                      <DefaultSongTemplateField
+                        value={appSettings.defaultSongTemplate}
+                        disabled={isLoading || isSaving}
+                        onChange={onDefaultSongTemplateChange}
+                      />
+                    ) : null}
 
                     {/* Solo móvil: escritorio referencia desde siempre y
                         no tiene nada que elegir aqui. */}

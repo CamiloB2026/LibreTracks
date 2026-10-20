@@ -1,4 +1,5 @@
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import {
   getEffectiveBpmAt,
   type AppSettings,
@@ -712,12 +713,16 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
           openRenderSong({ regionId: region.id, regionName: region.name });
         },
       },
-      {
-        label: t("transport.menu.analyzeSong"),
-        onSelect: () => {
-          openSongAnalysis({ regionId: region.id, regionName: region.name });
-        },
-      },
+      ...(FEATURE_FLAGS.songAnalysis
+        ? [
+            {
+              label: t("transport.menu.analyzeSong"),
+              onSelect: () => {
+                openSongAnalysis({ regionId: region.id, regionName: region.name });
+              },
+            },
+          ]
+        : []),
       {
         label: t("transport.menu.deleteSong"),
         shortcut: d.shortcutHint("edit.delete"),
@@ -1138,7 +1143,7 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
           ),
       },
       // Las palabras con las que una plantilla manda stems aquí al soltarlos.
-      matchAliasesAction(track, d),
+      ...(FEATURE_FLAGS.songTemplates ? [matchAliasesAction(track, d)] : []),
       // Sumar a mono: solo pistas de audio (una carpeta no tiene canales
       // propios que sumar). No toca el fichero, asi que es reversible.
       ...(isFolder

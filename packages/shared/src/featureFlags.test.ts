@@ -2,17 +2,22 @@ import { describe, expect, it } from "vitest";
 
 import { FEATURE_FLAGS } from "./featureFlags";
 
+// Turning a flag on or off is a release decision: update its expectation in
+// the same commit that does it.
 describe("feature flags", () => {
-  // 1.14.0 ships without lyrics. Turning the flag on is a release decision:
-  // update this expectation in the same commit that does it.
-  it("lyrics stay hidden until the release that brings them", () => {
-    expect(FEATURE_FLAGS.lyrics).toBe(false);
+  it("lyrics ship in 1.15.0", () => {
+    expect(FEATURE_FLAGS.lyrics).toBe(true);
   });
 
-  // Network sessions are in development (docs/plans/network-sessions).
-  // Turning the flag on is a release decision: update this expectation in
-  // the same commit that does it.
-  it("network sessions stay hidden until the release that brings them", () => {
-    expect(FEATURE_FLAGS.networkSessions).toBe(false);
+  it("network sessions ship in 1.15.0", () => {
+    expect(FEATURE_FLAGS.networkSessions).toBe(true);
+  });
+
+  it("song analysis stays hidden until 1.16.0", () => {
+    expect(FEATURE_FLAGS.songAnalysis).toBe(false);
+  });
+
+  it("song templates stay hidden until 1.16.0", () => {
+    expect(FEATURE_FLAGS.songTemplates).toBe(false);
   });
 });

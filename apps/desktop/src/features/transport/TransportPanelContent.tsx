@@ -11,6 +11,7 @@ import {
 import { flushSync } from "react-dom";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { useTranslation } from "react-i18next";
+import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import { open } from "@tauri-apps/plugin-dialog";
 import { confirmDialog, promptDialog } from "../../shared/dialog/dialogService";
 import {
@@ -8258,7 +8259,9 @@ export function TransportPanelContent() {
 
             <RenderSongModal />
             <LevelSongsModal onApplied={applyPlaybackSnapshot} />
-            <SongAnalysisModal onApplied={applyPlaybackSnapshot} />
+            {FEATURE_FLAGS.songAnalysis ? (
+              <SongAnalysisModal onApplied={applyPlaybackSnapshot} />
+            ) : null}
 
             <ExportSessionModal
               isOpen={isExportSessionModalOpen}
@@ -8268,7 +8271,9 @@ export function TransportPanelContent() {
             />
 
             <CloudSurfaces />
-            <TemplateDropToast onUndone={applyPlaybackSnapshot} />
+            {FEATURE_FLAGS.songTemplates ? (
+              <TemplateDropToast onUndone={applyPlaybackSnapshot} />
+            ) : null}
 
             {automationCueDraft ? (
               <AutomationCueModal
