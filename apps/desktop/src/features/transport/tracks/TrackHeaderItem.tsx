@@ -210,10 +210,10 @@ function TrackHeaderItemComponent({
       return;
     }
 
-    // Sumando: el toque anade o quita esta pista de la seleccion y no despliega
-    // nada. Es la unica forma de juntar varias con un dedo —no hay Ctrl que
-    // mantener— y es lo que hace falta para borrarlas de un tiron.
-    if (isMobileApp && useTimelineUIStore.getState().trackMultiSelect) {
+    // Seleccion por area: el toque suelto anade o quita esta pista y no
+    // despliega nada. Es como se afina lo que ha cogido un recuadro —sacar el
+    // bajo de entre las guitarras— sin Ctrl que mantener.
+    if (isMobileApp && useTimelineUIStore.getState().areaSelectMode) {
       useTimelineUIStore.getState().toggleTrackSelection(trackId);
       return;
     }

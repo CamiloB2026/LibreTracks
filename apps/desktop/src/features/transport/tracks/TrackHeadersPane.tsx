@@ -20,6 +20,7 @@ import { VideoTrackHeader } from "../video/VideoTrackHeader";
 import { useVideoStore } from "../video/videoStore";
 import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
 import { useTimelineUIStore } from "../uiStore";
+import { useHeaderAreaSelection } from "../mobile/useAreaSelection";
 
 const TRACK_HEADER_CONTROL_SELECTOR =
   "button, input, label, textarea, select, .lt-track-toggle-group, .lt-track-volume, .lt-track-pan";
@@ -118,14 +119,17 @@ export function TrackHeadersPane({
   // so it no longer re-renders on every unrelated mutation of `song`.
   const hasSong = useSongStore((state) => state.song !== null);
   const headersListRef = useRef<HTMLDivElement | null>(null);
+  const paneRef = useRef<HTMLDivElement | null>(null);
   const trackReorderMode = useTimelineUIStore(
     (state) => state.trackReorderMode,
   );
+  const areaSelectMode = useTimelineUIStore((state) => state.areaSelectMode);
   const touchContextMenu = useTouchContextMenu({
     ignoreTarget: (target) =>
       target instanceof Element &&
       target.closest(TRACK_HEADER_CONTROL_SELECTOR) !== null,
   });
+  useHeaderAreaSelection(paneRef, touchContextMenu.cancel);
 
   useEffect(() => {
     const headersList = headersListRef.current;
@@ -141,7 +145,8 @@ export function TrackHeadersPane({
 
   return (
     <div
-      className={`lt-track-headers-pane ${trackReorderMode ? "is-track-reorder-mode" : ""}`}
+      ref={paneRef}
+      className={`lt-track-headers-pane ${trackReorderMode ? "is-track-reorder-mode" : ""} ${areaSelectMode ? "is-area-select" : ""}`}
       data-lt-tour={TOUR_TARGETS.trackHeaders}
       onPointerDownCapture={touchContextMenu.begin}
       onPointerMoveCapture={touchContextMenu.move}
@@ -209,6 +214,7 @@ export function TrackHeadersPane({
                 key={track.id}
                 className="lt-track-header-row"
                 data-track-id={track.id}
+                data-area-skip
                 style={{ height: rowHeight }}
               >
                 <div
@@ -276,6 +282,7 @@ export function TrackHeadersPane({
                 key={track.id}
                 className="lt-track-header-row"
                 data-track-id={track.id}
+                data-area-skip
                 style={{ height: rowHeight }}
               >
                 <div

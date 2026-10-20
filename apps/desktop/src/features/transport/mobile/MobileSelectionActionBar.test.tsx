@@ -100,7 +100,7 @@ beforeEach(async () => {
   useTimelineUIStore.setState({
     selectionMixOpen: false,
     expandedTrackId: null,
-    clipMultiSelect: false,
+    areaSelectMode: false,
   });
 });
 afterEach(cleanup);
@@ -207,33 +207,11 @@ describe("la barra de la seleccion, generalizada", () => {
     expect(screen.getByRole("toolbar")).toBeTruthy();
   });
 
-  it("con una pista ofrece sumar mas, para borrarlas de un tiron", () => {
-    useTimelineUIStore.getState().selectTrack(["t1"]);
-    renderBar();
-    // Con un dedo no hay Ctrl que mantener.
-    useTimelineUIStore.getState().setExpandedTrackId("t1");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Seleccionar varias pistas" }),
-    );
-    expect(useTimelineUIStore.getState().trackMultiSelect).toBe(true);
-    // La pista sigue seleccionada; lo que se va es su panel de faders, que
-    // estorba justo cuando vas a ir tocando otras cabeceras.
-    expect(useTimelineUIStore.getState().selectedTrackIds).toEqual(["t1"]);
-    expect(useTimelineUIStore.getState().expandedTrackId).toBeNull();
-  });
-
   it("con varias pistas las acciones son las del menu de varias", () => {
     useTimelineUIStore.getState().selectTrack(["t1", "t2"]);
     renderBar();
     expect(screen.getByRole("button", { name: "Eliminar" })).toBeTruthy();
     expect(screen.getByRole("toolbar").textContent).toContain("2");
-  });
-
-  it("sin pista seleccionada no ofrece sumar pistas", () => {
-    renderBar();
-    expect(
-      screen.queryByRole("button", { name: "Seleccionar varias pistas" }),
-    ).toBeNull();
   });
 
   it("permite soltar la seleccion sin tocar el audio", () => {
@@ -291,30 +269,60 @@ describe("la mezcla de la seleccion", () => {
   });
 });
 
-describe("sumar clips desde la barra", () => {
-  // Con un dedo no hay Ctrl que mantener: sin el boton no hay forma de juntar
-  // varios clips para moverlos o borrarlos de un tiron. El de pistas ya
-  // existia; este es el mismo boton para la otra mitad.
-  it("ofrece el modo de sumar cuando lo seleccionado son clips", () => {
-    useTimelineUIStore.setState({ selectedClipIds: ["c1"] });
+describe("seleccion por area desde la barra", () => {
+  // Con un dedo no hay Ctrl ni Shift: el recuadro es la forma de coger varias
+  // pistas o clips de una vez. Sustituye a los dos botones de "sumar de uno en
+  // uno" (pistas y clips), que obligaban a tocarlos todos.
+  it("se ofrece tambien sin nada seleccionado: es por donde se empieza", () => {
     renderBar();
-
-    const button = screen.getByRole("button", {
-      name: "Seleccionar varios clips",
-    });
+    const button = screen.getByRole("button", { name: "Seleccionar por área" });
     expect(button.getAttribute("aria-pressed")).toBe("false");
 
     fireEvent.click(button);
 
-    expect(useTimelineUIStore.getState().clipMultiSelect).toBe(true);
+    expect(useTimelineUIStore.getState().areaSelectMode).toBe(true);
     // Un modo sin rastro en pantalla es un modo que nadie encuentra.
-    expect(screen.getByText("Toca más clips")).toBeTruthy();
+    expect(screen.getByText("Dibuja un recuadro o toca para sumar")).toBeTruthy();
   });
 
-  it("no lo ofrece sin nada seleccionado", () => {
+  it("con pistas cogidas manda la cuenta, que confirma lo que se suma", () => {
+    useTimelineUIStore.getState().selectTrack(["t1", "t2"]);
+    useTimelineUIStore.setState({ areaSelectMode: true });
     renderBar();
-    expect(
-      screen.queryByRole("button", { name: "Seleccionar varios clips" }),
-    ).toBeNull();
+    expect(screen.getByRole("toolbar").textContent).toContain("2");
+    expect(screen.queryByText("Dibuja un recuadro o toca para sumar")).toBeNull();
+  });
+
+  it("al entrar cierra la fila desplegada, que estorba para dibujar", () => {
+    useTimelineUIStore.getState().selectTrack(["t1"]);
+    useTimelineUIStore.getState().setExpandedTrackId("t1");
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar por área" }));
+    expect(useTimelineUIStore.getState().expandedTrackId).toBeNull();
+    // Lo cogido se queda.
+    expect(useTimelineUIStore.getState().selectedTrackIds).toEqual(["t1"]);
+  });
+
+  it("salir del modo conserva la seleccion; quitarla sale del modo", () => {
+    useTimelineUIStore.getState().selectClip("c1");
+    useTimelineUIStore.setState({ areaSelectMode: true });
+    renderBar();
+    fireEvent.click(screen.getByRole("button", { name: "Seleccionar por área" }));
+    expect(useTimelineUIStore.getState().areaSelectMode).toBe(false);
+    expect(useTimelineUIStore.getState().selectedClipIds).toEqual(["c1"]);
+
+    act(() => {
+      useTimelineUIStore.setState({ areaSelectMode: true });
+      useTimelineUIStore.getState().clearSelection();
+    });
+    expect(useTimelineUIStore.getState().areaSelectMode).toBe(false);
+  });
+
+  it("es excluyente con reordenar pistas: los dos quieren el mismo arrastre", () => {
+    useTimelineUIStore.getState().setTrackReorderMode(true);
+    useTimelineUIStore.getState().setAreaSelectMode(true);
+    expect(useTimelineUIStore.getState().trackReorderMode).toBe(false);
+    useTimelineUIStore.getState().setTrackReorderMode(true);
+    expect(useTimelineUIStore.getState().areaSelectMode).toBe(false);
   });
 });

@@ -60,6 +60,7 @@ import {
   timelineVisibleTrackHeight,
 } from "../Renderer/canvasPixelRatio";
 import { intersectVisibleBounds } from "../Renderer/gestureBounds";
+import type { AreaSelectGesture } from "../mobile/MobileTimelineNavigation";
 import { createTimelineVerticalScroller } from "./timelineVerticalScroll";
 import { isMobileApp } from "../desktopApi";
 import { consumeVideoRepaint } from "../video/videoCanvasState";
@@ -143,6 +144,8 @@ type TrackCanvasProps = {
   onTouchShouldEdit?: (clientX: number, clientY: number, target: EventTarget | null) => boolean;
   /** Tactil: toque sin arrastre; selecciona el clip bajo el dedo o limpia. */
   onTouchTap?: (clientX: number, clientY: number, target: EventTarget | null) => void;
+  /** Tactil: recuadro de seleccion por area (ver mobile/areaSelection). */
+  touchAreaSelect?: AreaSelectGesture;
   clipPreviewSecondsRef: MutableRefObject<Record<string, number>>;
   clipPreviewTrackIdRef: MutableRefObject<Record<string, string>>;
   trackHeightForInput: number;
@@ -797,6 +800,7 @@ export function TimelineTrackCanvas({
   selectedClipIds,
   onTouchShouldEdit,
   onTouchTap,
+  touchAreaSelect,
   clipPreviewSecondsRef,
   clipPreviewTrackIdRef,
   trackHeightForInput,
@@ -851,6 +855,8 @@ export function TimelineTrackCanvas({
   const onTouchTapRef = useRef(onTouchTap);
   onTouchShouldEditRef.current = onTouchShouldEdit;
   onTouchTapRef.current = onTouchTap;
+  const touchAreaSelectRef = useRef(touchAreaSelect);
+  touchAreaSelectRef.current = touchAreaSelect;
   // Espejo en refs de TODO lo que el gesto llama.
   //
   // Estas props llegan como funciones nuevas en cada render del panel de
@@ -943,6 +949,15 @@ export function TimelineTrackCanvas({
           onTouchShouldEditRef.current?.(clientX, clientY, target) ?? false,
         onTap: (clientX, clientY, target) =>
           onTouchTapRef.current?.(clientX, clientY, target),
+        areaSelect: {
+          active: () => touchAreaSelectRef.current?.active() ?? false,
+          begin: (clientX, clientY) =>
+            touchAreaSelectRef.current?.begin(clientX, clientY),
+          update: (clientX, clientY) =>
+            touchAreaSelectRef.current?.update(clientX, clientY),
+          end: () => touchAreaSelectRef.current?.end(),
+          cancel: () => touchAreaSelectRef.current?.cancel(),
+        },
         // El dedo no puede pagar un reflujo por muestra: el gesto lleva su
         // propio objetivo de desplazamiento y solo ESCRIBE (ver
         // timelineVerticalScroll). La rueda se queda con el `+=` de arriba.

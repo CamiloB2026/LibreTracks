@@ -287,7 +287,7 @@ const steps: Record<string, () => Promise<void>> = {
       { selector: `${bar} .lt-mobile-selection-action`, nth: 0, n: 3, badge: "above" },
       { selector: `${bar} button[aria-label="${L("Más acciones")}"]`, n: 4, badge: "above" },
       { selector: `${bar} button[aria-label="${L("Mezcla")}"]`, n: 5, badge: "above" },
-      { selector: `${bar} button[aria-label="${L("Seleccionar varias pistas")}"]`, n: 6, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Seleccionar por área")}"]`, n: 6, badge: "above" },
       { selector: `${bar} button[aria-label="${L("Quitar selección")}"]`, n: 7, badge: "above" },
       { selector: `${bar} button[aria-label="${L("Ocultar acciones")}"]`, n: 8, badge: "above" },
     ]);

@@ -88,10 +88,7 @@ export function MobileSelectionActionBar({
   // En el store, no aqui: es EXCLUYENTE con la fila desplegada de una cabecera
   // (son el mismo panel), y con una sola pista seleccionada salian los dos.
   const mixOpen = useTimelineUIStore((state) => state.selectionMixOpen);
-  const trackMultiSelect = useTimelineUIStore(
-    (state) => state.trackMultiSelect,
-  );
-  const clipMultiSelect = useTimelineUIStore((state) => state.clipMultiSelect);
+  const areaSelectMode = useTimelineUIStore((state) => state.areaSelectMode);
 
   if (!isMobileApp || !menus) {
     return null;
@@ -142,7 +139,11 @@ export function MobileSelectionActionBar({
   }
 
   const hasSelection = target.kind !== "none";
-  const isTrackTarget = target.kind === "track" || target.kind === "tracks";
+  // Un modo sin rastro en pantalla es un modo que nadie encuentra: activarlo
+  // tiene que cambiar algo visible y decir que toca hacer despues.
+  const areaHint = t("mobileSelectionActions.areaSelectHint", {
+    defaultValue: "Dibuja un recuadro o toca para sumar",
+  });
   const mixTracks =
     target.kind === "tracks"
       ? target.tracks
@@ -150,41 +151,16 @@ export function MobileSelectionActionBar({
         ? [target.track]
         : [];
   const showMix = mixOpen && mixTracks.length > 0;
-  // Sumar de uno en uno vale para pistas Y para clips: con un dedo no hay Ctrl
-  // que mantener, asi que sin esto no hay forma de juntar varios para moverlos
-  // o borrarlos de un tiron.
-  const multiSelect =
-    target.kind === "clips"
-      ? {
-          active: clipMultiSelect,
-          label: t("mobileSelectionActions.multiSelectClips", {
-            defaultValue: "Seleccionar varios clips",
-          }),
-          hint: t("mobileSelectionActions.multiSelectClipsHint", {
-            defaultValue: "Toca más clips",
-          }),
-          toggle: () =>
-            useTimelineUIStore.getState().setClipMultiSelect(!clipMultiSelect),
-        }
-      : isTrackTarget
-        ? {
-            active: trackMultiSelect,
-            label: t("mobileSelectionActions.multiSelect", {
-              defaultValue: "Seleccionar varias pistas",
-            }),
-            hint: t("mobileSelectionActions.multiSelectHint", {
-              defaultValue: "Toca más pistas",
-            }),
-            toggle: () => {
-              const store = useTimelineUIStore.getState();
-              store.setTrackMultiSelect(!trackMultiSelect);
-              // La pista sigue seleccionada, pero su panel de faders se cierra:
-              // estorba justo cuando vas a ir tocando otras cabeceras, y su
-              // desaparicion es la senal de que el modo ha entrado.
-              store.setExpandedTrackId(null);
-            },
-          }
-        : null;
+  // Seleccion por area: un recuadro con el dedo coge varias pistas o clips de
+  // una vez, y los toques sueltos suman o quitan. Se ofrece SIEMPRE, tambien
+  // sin nada seleccionado: es justo por donde se empieza a juntar un grupo.
+  const toggleAreaSelect = () => {
+    const store = useTimelineUIStore.getState();
+    store.setAreaSelectMode(!areaSelectMode);
+    // El panel de faders de una cabecera estorba justo cuando vas a dibujar
+    // sobre ellas, y su desaparicion es la senal de que el modo ha entrado.
+    if (!areaSelectMode) store.setExpandedTrackId(null);
+  };
   const inline = model.actions.slice(0, MAX_INLINE_ACTIONS);
   const hasMore = model.actions.length > inline.length;
 
@@ -214,7 +190,9 @@ export function MobileSelectionActionBar({
         {/* Un modo sin rastro en pantalla es un modo que nadie encuentra:
             activarlo no cambiaba NADA visible, asi que no habia forma de saber
             que tocaba hacer despues. */}
-        {multiSelect?.active ? multiSelect.hint : model.title}
+        {/* Con algo ya cogido manda la cuenta ("3 pistas"): es lo que
+            confirma, recuadro a recuadro, que se esta sumando. */}
+        {areaSelectMode && !hasSelection ? areaHint : model.title}
       </span>
       {inline.map((action) => (
         <button
@@ -274,19 +252,22 @@ export function MobileSelectionActionBar({
           </span>
         </button>
       ) : null}
-      {multiSelect ? (
-        <button
-          type="button"
-          className={`lt-icon-button ${multiSelect.active ? "is-active" : ""}`}
-          aria-label={multiSelect.label}
-          aria-pressed={multiSelect.active}
-          onClick={multiSelect.toggle}
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">
-            checklist
-          </span>
-        </button>
-      ) : null}
+      <button
+        type="button"
+        className={`lt-icon-button ${areaSelectMode ? "is-active" : ""}`}
+        aria-label={t("mobileSelectionActions.areaSelect", {
+          defaultValue: "Seleccionar por área",
+        })}
+        title={t("mobileSelectionActions.areaSelect", {
+          defaultValue: "Seleccionar por área",
+        })}
+        aria-pressed={areaSelectMode}
+        onClick={toggleAreaSelect}
+      >
+        <span className="material-symbols-outlined" aria-hidden="true">
+          select
+        </span>
+      </button>
       {hasSelection ? (
         <button
           type="button"

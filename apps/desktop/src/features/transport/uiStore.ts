@@ -100,12 +100,13 @@ type TimelineUIState = {
    * los dos, uno debajo del otro.
    */
   selectionMixOpen: boolean;
-  /** Móvil: los toques en las cabeceras SUMAN a la selección en vez de
-   * reemplazarla. Sin esto no hay forma de borrar varias pistas de un tirón
-   * con un dedo: no hay Ctrl que mantener. */
-  trackMultiSelect: boolean;
-  /** Lo mismo para los clips: cada toque suma o quita el clip que hay debajo. */
-  clipMultiSelect: boolean;
+  /**
+   * Móvil: selección por área. Un dedo dibuja un recuadro (en las cabeceras
+   * coge pistas; en los carriles, clips) y los toques sueltos SUMAN o quitan en
+   * vez de reemplazar. Con un dedo no hay Ctrl ni Shift que mantener: sin esto
+   * juntar varias pistas era tocarlas una a una. Ver mobile/areaSelection.ts.
+   */
+  areaSelectMode: boolean;
   viewMode: ViewMode;
   setViewMode: (mode: ViewMode) => void;
   toggleViewMode: () => void;
@@ -136,8 +137,7 @@ type TimelineUIState = {
   toggleTrackReorderMode: () => void;
   setMarkerPositionEditorId: (markerId: string | null) => void;
   toggleExpandedTrackId: (trackId: string) => void;
-  setTrackMultiSelect: (enabled: boolean) => void;
-  setClipMultiSelect: (enabled: boolean) => void;
+  setAreaSelectMode: (enabled: boolean) => void;
   toggleTrackSelection: (trackId: string) => void;
   setExpandedTrackId: (trackId: string | null) => void;
   setSelectionMixOpen: (open: boolean) => void;
@@ -174,8 +174,7 @@ export const useTimelineUIStore = create<TimelineUIState>()(
     expandedTrackId: null,
     selectionMixOpen: false,
     missingMediaOpen: false,
-    trackMultiSelect: false,
-    clipMultiSelect: false,
+    areaSelectMode: false,
     viewMode: DEFAULT_VIEW_MODE,
     setViewMode: (viewMode) => {
       recordViewMode(viewMode);
@@ -281,7 +280,7 @@ export const useTimelineUIStore = create<TimelineUIState>()(
     clearSelection: () => {
       // Soltar la seleccion sale tambien de los modos de sumar: si no, el
       // siguiente toque volveria a sumar sin que nadie lo haya pedido.
-      set({ ...EMPTY_SELECTION, trackMultiSelect: false, clipMultiSelect: false });
+      set({ ...EMPTY_SELECTION, areaSelectMode: false });
     },
     /** Como `clearSelection`, pero no toca el estado si no había nada
      * seleccionado. El fondo del timeline llama a esto en CADA clic de salto y
@@ -346,10 +345,16 @@ export const useTimelineUIStore = create<TimelineUIState>()(
       set({ midiLearnMode });
     },
     setTrackReorderMode: (trackReorderMode) => {
-      set({ trackReorderMode });
+      set((state) => ({
+        trackReorderMode,
+        areaSelectMode: trackReorderMode ? false : state.areaSelectMode,
+      }));
     },
     toggleTrackReorderMode: () => {
-      set((state) => ({ trackReorderMode: !state.trackReorderMode }));
+      set((state) => ({
+        trackReorderMode: !state.trackReorderMode,
+        areaSelectMode: state.trackReorderMode ? state.areaSelectMode : false,
+      }));
     },
     setMarkerPositionEditorId: (markerPositionEditorId) => {
       set({ markerPositionEditorId });
@@ -380,11 +385,13 @@ export const useTimelineUIStore = create<TimelineUIState>()(
         expandedTrackId: selectionMixOpen ? null : state.expandedTrackId,
       }));
     },
-    setTrackMultiSelect: (trackMultiSelect) => {
-      set({ trackMultiSelect });
-    },
-    setClipMultiSelect: (clipMultiSelect) => {
-      set({ clipMultiSelect });
+    // Excluyente con reordenar: los dos se quedan el arrastre de un dedo
+    // sobre las cabeceras.
+    setAreaSelectMode: (areaSelectMode) => {
+      set((state) => ({
+        areaSelectMode,
+        trackReorderMode: areaSelectMode ? false : state.trackReorderMode,
+      }));
     },
     toggleTrackSelection: (trackId) => {
       set((state) => ({

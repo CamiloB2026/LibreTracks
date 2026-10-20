@@ -139,7 +139,14 @@ export function createTrackHeaderHandlers(deps: TrackHeaderHandlerDeps) {
     const currentSelection = getSelectedTrackIds();
     let nextSelection = [trackId];
 
-    if (event.ctrlKey || event.metaKey) {
+    // La seleccion por area del movil hace de Ctrl: el toque suma o quita.
+    // Asi vale para todas las cabeceras (MIDI y video tambien), no solo la de
+    // audio, que ademas lo decide antes para no desplegar sus controles.
+    if (
+      event.ctrlKey ||
+      event.metaKey ||
+      useTimelineUIStore.getState().areaSelectMode
+    ) {
       nextSelection = currentSelection.includes(trackId)
         ? currentSelection.filter((id) => id !== trackId)
         : [...currentSelection, trackId];

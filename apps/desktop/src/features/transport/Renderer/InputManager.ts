@@ -131,6 +131,7 @@ type InputManagerOptions = {
     // arriba (ver el spread del constructor).
     | "onScrollVertical"
     | "onScrollVerticalSeed"
+    | "areaSelect"
   >;
   container: HTMLElement;
   getState: () => InputManagerState;

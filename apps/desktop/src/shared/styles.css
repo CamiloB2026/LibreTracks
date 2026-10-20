@@ -266,6 +266,25 @@ html.lt-mobile .lt-app-shell {
   -webkit-touch-callout: none;
 }
 
+/* Seleccion por area (mobile/areaSelection.ts): el arrastre de un dedo sobre
+   las cabeceras dibuja el recuadro en vez de desplazar. Para moverse con el
+   modo puesto estan los dos dedos sobre los carriles. */
+.lt-mobile .lt-track-headers-pane.is-area-select .lt-track-header {
+  touch-action: none;
+}
+
+.lt-area-select-box {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1.5px dashed rgb(87 241 219 / 0.9);
+  background: rgb(87 241 219 / 0.12);
+  border-radius: 3px;
+}
+
 /* WKWebView can rubber-band the document even when body says overflow:hidden.
    Pinning the document viewport keeps all scrolling inside the explicit DAW
    scrollers and prevents an unbounded blank page below the app shell. */

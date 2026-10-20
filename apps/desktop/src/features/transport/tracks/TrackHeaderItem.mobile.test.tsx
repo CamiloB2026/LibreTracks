@@ -75,7 +75,7 @@ beforeEach(async () => {
   useTimelineUIStore.setState({
     expandedTrackId: null,
     trackReorderMode: false,
-    trackMultiSelect: false,
+    areaSelectMode: false,
     selectedTrackIds: [],
   });
 });
@@ -155,9 +155,9 @@ describe("cabeceras finas y expansion en fila", () => {
     expect(mute()!.closest(".lt-track-title-row")).not.toBeNull();
   });
 
-  it("sumando pistas, el toque anade a la seleccion y no despliega", () => {
+  it("en seleccion por area, el toque anade a la seleccion y no despliega", () => {
     useTimelineUIStore.setState({
-      trackMultiSelect: true,
+      areaSelectMode: true,
       selectedTrackIds: ["otra"],
     });
     const props = renderHeader();
@@ -172,9 +172,9 @@ describe("cabeceras finas y expansion en fila", () => {
     expect(props.onSelectTrack).not.toHaveBeenCalled();
   });
 
-  it("sumando pistas, volver a tocarla la quita", () => {
+  it("en seleccion por area, volver a tocarla la quita", () => {
     useTimelineUIStore.setState({
-      trackMultiSelect: true,
+      areaSelectMode: true,
       selectedTrackIds: ["otra", "t1"],
     });
     renderHeader();

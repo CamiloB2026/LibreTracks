@@ -363,7 +363,7 @@ await scene("08-carpeta", async () => {
   await run(() => document.querySelector('[data-tut="Click"]')?.scrollIntoView({ block: "center" }));
   await sleep(600);
   await tap(`${click} .lt-track-title-row strong`, { settle: 1000 });
-  await tap(`${bar} button[aria-label="${L("Seleccionar varias pistas")}"]`, { settle: 800 });
+  await tap(`${bar} button[aria-label="${L("Seleccionar por área")}"]`, { settle: 800 });
   const guia = await headerOf("Guia");
   await tap(`${guia} .lt-track-title-row strong`, { settle: 1000 });
   await tap(`${bar} button`, { text: L("Mover a carpeta"), settle: 1200 });

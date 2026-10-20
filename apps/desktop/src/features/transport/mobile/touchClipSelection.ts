@@ -88,8 +88,15 @@ export function createTouchClipSelection(deps: TouchClipSelectionDeps) {
   }
 
   return {
-    /** Cede el gesto a la edicion solo sobre un clip ya seleccionado. */
+    /**
+     * Cede el gesto a la edicion solo sobre un clip ya seleccionado.
+     *
+     * Nunca en seleccion por area: ahi un dedo dibuja el recuadro, y empezarlo
+     * encima de un clip ya cogido no puede convertirse en moverlo. Para mover
+     * el grupo se sale del modo, que conserva la seleccion.
+     */
     shouldEdit(clientX: number, _clientY: number, target: EventTarget | null) {
+      if (deps.isMultiSelect()) return false;
       const videoClipId = deps.video ? videoClipIdAt(target) : null;
       if (videoClipId) {
         return deps.video!.getSelectedVideoClipIds().includes(videoClipId);
@@ -153,7 +160,7 @@ export function useTouchClipSelection(
         getPixelsPerSecond: () => pixelsPerSecondRef.current,
         selectClips: (clipIds) =>
           useTimelineUIStore.getState().setSelectedClipIds(clipIds),
-        isMultiSelect: () => useTimelineUIStore.getState().clipMultiSelect,
+        isMultiSelect: () => useTimelineUIStore.getState().areaSelectMode,
         toggleClip: (clipId) =>
           useTimelineUIStore.getState().toggleClipSelection(clipId),
         clearRegionSelection: () => clearRegionRef.current(),

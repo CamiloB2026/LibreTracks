@@ -14,10 +14,13 @@ type Point = { x: number; y: number };
  *
  * Con dos dedos no se bloquea nada ("both"): ahi manda la pinza.
  */
-type GestureAxis = "x" | "y" | "both";
+type GestureAxis = "x" | "y" | "both" | "area" | "pan";
 
 /** Cuanto tiene que recorrer el dedo para que el gesto arranque y elija eje. */
 const MOVE_THRESHOLD_PX = 5;
+/** En seleccion por area, lo que recorren dos dedos antes de elegir entre
+ * desplazar y hacer zoom. */
+const TWO_FINGER_DECIDE_PX = 16;
 
 /** Medidas del contenedor. Se toman al anclar y NO por muestra: un
  * `getBoundingClientRect` despues de haber escrito `scrollTop` fuerza un
@@ -67,6 +70,23 @@ export type MobileNavigationOptions = {
   shouldEdit?: (clientX: number, clientY: number, target: EventTarget | null) => boolean;
   /** Toque limpio (sin arrastre): el consumidor decide si selecciona o busca. */
   onTap?: (clientX: number, clientY: number, target: EventTarget | null) => void;
+  /**
+   * Seleccion por area. Con el modo activo, el arrastre de UN dedo dibuja un
+   * recuadro en vez de desplazar, y dos dedos desplazan o hacen zoom —lo que
+   * pida el gesto al despegar—, porque si no no habria forma de moverse sin
+   * salir del modo. Ver ./areaSelection.
+   */
+  areaSelect?: AreaSelectGesture;
+};
+
+export type AreaSelectGesture = {
+  active: () => boolean;
+  /** Arranca el recuadro en el punto donde se APOYO el dedo. */
+  begin: (clientX: number, clientY: number) => void;
+  update: (clientX: number, clientY: number) => void;
+  end: () => void;
+  /** Interrumpido (entra un segundo dedo, se pierde el foco): se deshace. */
+  cancel: () => void;
 };
 
 /** Native mobile browsing owns the canvas BEFORE contact. No React updates per sample.
@@ -78,7 +98,9 @@ export type MobileNavigationOptions = {
  * se puede devolver (ver Pointer Events, `touch-action`). */
 export class MobileTimelineNavigation {
   private points = new Map<number, Point>();
-  private anchor: { x: number; y: number; distance: number; content: number; zoom: number; moved: boolean; axis: GestureAxis } | null = null;
+  private anchor: { x: number; y: number; clientX: number; clientY: number; distance: number; content: number; zoom: number; moved: boolean; axis: GestureAxis } | null = null;
+  /** Hay un recuadro de seleccion abierto en este gesto. */
+  private drawing = false;
   private metrics: ContainerMetrics | null = null;
   private zoomView: { cameraX: number; zoomLevel: number } | null = null;
   private camera: number | null = null;
@@ -152,7 +174,8 @@ export class MobileTimelineNavigation {
     this.measure();
     const sample = this.sample();
     const state = this.options.getState();
-    this.anchor = { ...sample, zoom: state.zoomLevel, content: (state.cameraX + sample.x) / state.zoomLevel, moved: false, axis: "both" };
+    const first = [...this.points.values()][0];
+    this.anchor = { ...sample, clientX: first.x, clientY: first.y, zoom: state.zoomLevel, content: (state.cameraX + sample.x) / state.zoomLevel, moved: false, axis: "both" };
     this.options.onScrollVerticalSeed?.();
   }
 
@@ -174,6 +197,9 @@ export class MobileTimelineNavigation {
     this.points.set(event.pointerId, { x: event.clientX, y: event.clientY });
     if (this.points.size === 1) this.tapTarget = event.target;
     if (this.points.size > 1) this.multiTouch = true;
+    // Un segundo dedo a medio recuadro es que se queria mover la vista, no
+    // seleccionar: lo dibujado se deshace en vez de quedarse a medias.
+    if (this.drawing) { this.drawing = false; this.options.areaSelect?.cancel(); }
     this.options.container.setPointerCapture?.(event.pointerId);
     this.flush(); this.seed();
   };
@@ -186,12 +212,41 @@ export class MobileTimelineNavigation {
     const anchor = this.anchor;
     const movedX = Math.abs(sample.x - anchor.x), movedY = Math.abs(sample.y - anchor.y);
     if (!anchor.moved) {
-      if (Math.max(movedX, movedY, Math.abs(sample.distance - anchor.distance)) < MOVE_THRESHOLD_PX) return;
+      const spread = Math.abs(sample.distance - anchor.distance);
+      if (Math.max(movedX, movedY, spread) < MOVE_THRESHOLD_PX) return;
+      const area = this.options.areaSelect?.active() ?? false;
+      // Cada dedo manda su propio `pointermove`: en la primera muestra solo se
+      // ha movido uno, y ahi la separacion cambia el doble que el punto medio
+      // aunque los dos vayan juntos. Hay que dejar que ambos se muevan antes
+      // de decidir entre desplazar y hacer zoom.
+      if (area && this.points.size > 1 && Math.max(movedX, movedY, spread) < TWO_FINGER_DECIDE_PX) return;
       anchor.moved = true;
       // El eje se elige UNA vez, con el recorrido que acaba de despegar el
       // gesto, y no se revisa: revisarlo cuadro a cuadro es justo lo que hacia
       // que el desplazamiento saltara de un eje a otro a media pasada.
-      anchor.axis = this.points.size > 1 ? "both" : movedX >= movedY ? "x" : "y";
+      anchor.axis = this.points.size > 1
+        // En seleccion por area los dos dedos son la UNICA forma de moverse:
+        // eligen entre desplazar y hacer zoom segun que despegue antes, la
+        // separacion de los dedos o su punto medio.
+        ? area && spread < Math.max(movedX, movedY) ? "pan" : "both"
+        // El dedo que queda al soltar una pinza sigue desplazando: no es un
+        // recuadro que alguien haya decidido empezar.
+        : area && !this.multiTouch ? "area" : movedX >= movedY ? "x" : "y";
+      if (anchor.axis === "area") {
+        this.drawing = true;
+        this.options.areaSelect!.begin(anchor.clientX, anchor.clientY);
+      }
+    }
+    if (anchor.axis === "area") {
+      if (this.drawing) this.options.areaSelect?.update(event.clientX, event.clientY);
+      return;
+    }
+    if (anchor.axis === "pan") {
+      const zoomLevel = this.options.getState().zoomLevel;
+      this.camera = this.options.onPreviewCameraX(anchor.content * zoomLevel - sample.x);
+      this.options.onScrollVertical?.(anchor.y - sample.y);
+      anchor.y = sample.y;
+      return;
     }
     let zoom = this.options.getState().zoomLevel;
     if (this.points.size > 1) {
@@ -222,6 +277,7 @@ export class MobileTimelineNavigation {
     const tapped =
       this.anchor?.moved === false && this.points.size === 1 && !this.multiTouch;
     const target = this.tapTarget;
+    if (this.drawing) { this.drawing = false; this.options.areaSelect?.end(); }
     this.points.delete(event.pointerId);
     this.lastTouch = Date.now();
     if (this.options.container.hasPointerCapture?.(event.pointerId)) this.options.container.releasePointerCapture(event.pointerId);
@@ -247,6 +303,7 @@ export class MobileTimelineNavigation {
   }
 
   private cancel = () => {
+    if (this.drawing) { this.drawing = false; this.options.areaSelect?.cancel(); }
     for (const id of this.points.keys()) if (this.options.container.hasPointerCapture?.(id)) this.options.container.releasePointerCapture(id);
     this.points.clear(); this.anchor = null; this.metrics = null; this.yielding = false; this.multiTouch = false; this.tapTarget = null; this.flush();
   };

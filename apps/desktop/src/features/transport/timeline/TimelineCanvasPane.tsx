@@ -59,6 +59,7 @@ import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 import { useTouchContextMenu } from "./useTouchContextMenu";
 import { rulerClientXToSeconds } from "../helpers";
 import { useTouchClipSelection } from "../mobile/touchClipSelection";
+import { useLaneAreaSelection } from "../mobile/useAreaSelection";
 import { armLaneTouchDrag, laneMouseDragAllowed } from "./laneDragStart";
 import { MobileEmptyLanes } from "../mobile/MobileEmptyLanes";
 import { useTimelineUIStore } from "../uiStore";
@@ -471,6 +472,15 @@ export function TimelineCanvasPane({
     livePixelsPerSecondRef,
     () => onSelectRegion(null),
   );
+  const touchAreaSelect = useLaneAreaSelection({
+    surfaceRef: laneAreaRef,
+    clipsByTrack,
+    cameraXRef,
+    pixelsPerSecondRef: livePixelsPerSecondRef,
+    previewCameraX: onNativeCameraXPreview,
+    commitCameraX: onNativeCameraXCommit,
+    onBegin: () => onSelectRegion(null),
+  });
 
   const rulerTouchContextMenu = useTouchContextMenu({
     captureSeconds: isMobileApp ? (clientX) => normalizePositionSeconds(rulerClientXToSeconds(
@@ -1271,6 +1281,7 @@ export function TimelineCanvasPane({
               interactionContainerRef={laneAreaRef}
               onTouchShouldEdit={touchClips.shouldEdit}
               onTouchTap={touchClips.onTap}
+              touchAreaSelect={touchAreaSelect}
               rulerHeight={RULER_HEIGHT}
               timelineGrid={timelineGrid}
               selectedClipId={selectedClipId}
