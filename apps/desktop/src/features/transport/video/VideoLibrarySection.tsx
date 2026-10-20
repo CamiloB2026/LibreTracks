@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { VideoAssetSummary } from "../desktopApi";
@@ -14,12 +15,18 @@ function formatDuration(seconds: number) {
  * they live apart in `library.json` (see state/video_library.rs) and behave
  * differently: they are referenced in place, have a resolution and can be slow
  * to seek. Double-click (or the + button) puts one on the timeline at the
- * playhead.
+ * playhead; Delete (or the context menu the library panel opens through
+ * `onAssetContextMenu`) takes it out of the library.
  */
-export function VideoLibrarySection() {
+export function VideoLibrarySection({
+  onAssetContextMenu,
+}: {
+  onAssetContextMenu?: (event: MouseEvent<HTMLElement>, asset: VideoAssetSummary) => void;
+} = {}) {
   const { t } = useTranslation();
   const assets = useVideoStore((state) => state.assets);
   const placeAtPlayhead = useVideoStore((state) => state.placeAtPlayhead);
+  const deleteAssets = useVideoStore((state) => state.deleteAssets);
   const addFromDevice = useVideoStore((state) => state.addFromDevice);
   if (!assets.length && !addFromDevice) return null;
 
@@ -81,8 +88,15 @@ export function VideoLibrarySection() {
               aria-label={asset.fileName}
               title={describe(asset)}
               onDoubleClick={() => placeAtPlayhead?.(asset)}
+              onContextMenu={
+                onAssetContextMenu ? (event) => onAssetContextMenu(event, asset) : undefined
+              }
               onKeyDown={(event) => {
                 if (event.key === "Enter") placeAtPlayhead?.(asset);
+                if (event.key === "Delete" && deleteAssets) {
+                  event.preventDefault();
+                  deleteAssets([asset]);
+                }
               }}
             >
               <span className="lt-library-asset-icon material-symbols-outlined">

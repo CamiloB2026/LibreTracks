@@ -629,6 +629,75 @@ fn forgetting_a_linked_audio_entry_never_deletes_the_video() {
 }
 
 // ---------------------------------------------------------------------------
+// Deleting videos from the library.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn a_video_on_the_timeline_cannot_be_deleted_from_the_library() {
+    let mut session = two_song_session();
+    session
+        .register_video_assets(vec![("D:/Visuales/letras.mp4".into(), video_info(true))], None)
+        .expect("register");
+
+    assert!(session.delete_video_asset("D:/Visuales/letras.mp4").is_err());
+    assert_eq!(session.list_video_assets().expect("list").len(), 1);
+}
+
+#[test]
+fn deleting_an_external_video_forgets_it_but_keeps_the_file() {
+    let mut session = two_song_session();
+    let outside = tempdir().expect("outside dir");
+    let video_file = outside.path().join("intro.mp4");
+    fs::write(&video_file, b"not really a video").expect("video file");
+    let path = video_file.to_string_lossy().into_owned();
+    session
+        .register_video_assets(vec![(path.clone(), video_info(false))], None)
+        .expect("register");
+
+    let left = session.delete_video_asset(&path).expect("delete");
+
+    assert!(left.is_empty());
+    assert!(video_file.is_file(), "a video referenced in place is the user's file");
+}
+
+#[test]
+fn deleting_a_session_copy_of_a_video_removes_the_file() {
+    let mut session = two_song_session();
+    let song_dir = session.song_dir.clone().unwrap();
+    fs::create_dir_all(song_dir.join("video")).expect("video dir");
+    let video_file = song_dir.join("video").join("intro.mp4");
+    fs::write(&video_file, b"not really a video").expect("video file");
+    session
+        .register_video_assets(vec![("video/intro.mp4".into(), video_info(false))], None)
+        .expect("register");
+
+    let left = session.delete_video_asset("video/intro.mp4").expect("delete");
+
+    assert!(left.is_empty());
+    assert!(!video_file.exists());
+}
+
+#[test]
+fn deleting_a_video_keeps_the_file_an_audio_clip_still_plays() {
+    // On a phone the audio of a video is the video file itself.
+    let mut session = two_song_session();
+    let song_dir = session.song_dir.clone().unwrap();
+    fs::create_dir_all(song_dir.join("video")).expect("video dir");
+    let video_file = song_dir.join("video").join("intro.mp4");
+    fs::write(&video_file, b"not really a video").expect("video file");
+    session
+        .register_video_assets(vec![("video/intro.mp4".into(), video_info(true))], None)
+        .expect("register");
+    let mut edited = song(&session);
+    edited.clips[0].file_path = "video/intro.mp4".into();
+    session.engine.load_song(edited).expect("reload");
+
+    session.delete_video_asset("video/intro.mp4").expect("delete");
+
+    assert!(video_file.is_file(), "the audio clip still plays it");
+}
+
+// ---------------------------------------------------------------------------
 // Videos carried by a .ltpkg (paso 12).
 // ---------------------------------------------------------------------------
 

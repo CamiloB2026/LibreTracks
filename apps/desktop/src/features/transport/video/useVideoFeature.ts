@@ -174,11 +174,13 @@ export function useVideoFeature(deps: VideoFeatureDeps) {
     });
     const store = useVideoStore.getState();
     store.setPlaceAtPlayhead((asset) => handlers.placeLibraryAssets([asset], atPlayhead()));
+    store.setDeleteAssets((assets) => void handlers.deleteLibraryAssets(assets));
     store.setAddFromDevice(
       isMobileApp ? (source) => handlers.addVideosFromDevice(atPlayhead(), source) : null,
     );
     return () => {
       useVideoStore.getState().setPlaceAtPlayhead(null);
+      useVideoStore.getState().setDeleteAssets(null);
       useVideoStore.getState().setAddFromDevice(null);
     };
   }, [editable, handlers]);

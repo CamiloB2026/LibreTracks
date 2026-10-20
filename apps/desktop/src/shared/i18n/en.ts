@@ -1508,6 +1508,13 @@ const en = {
       analyzing_other: "Analysing {{count}} videos…",
       imported_one: "Video imported into the library.",
       imported_other: "{{count}} videos imported into the library.",
+      libraryDeleted_one: "Video removed from the library.",
+      libraryDeleted_other: "{{count}} videos removed from the library.",
+      libraryDeleteInUse_one: "That video is on the timeline: delete its clips first.",
+      libraryDeleteInUse_other: "Those videos are on the timeline: delete their clips first.",
+      libraryDeletedSomeInUse:
+        "{{count}} videos removed from the library; {{inUse}} are still on the timeline and were kept.",
+      deleteFromLibrary: "Remove from library",
       placed_one: "Video added to the timeline.",
       placed_other: "{{count}} videos added to the timeline.",
       clipMoved: "Video clip moved.",

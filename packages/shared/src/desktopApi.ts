@@ -3135,6 +3135,11 @@ export async function listVideoAssets(): Promise<VideoAssetSummary[]> {
   return invokeCommand<VideoAssetSummary[]>("list_video_assets");
 }
 
+/** Take a video out of the session library. Refused while a clip uses it. */
+export async function deleteVideoAsset(filePath: string): Promise<VideoAssetSummary[]> {
+  return invokeCommand<VideoAssetSummary[]>("delete_video_asset", { filePath });
+}
+
 export async function requestVideoThumbnails(
   filePaths: string[],
   urgent: boolean,

@@ -1,5 +1,6 @@
 import {
   createTrack,
+  deleteVideoAsset,
   deleteVideoClips,
   duplicateVideoClips,
   extractVideoAudio,
@@ -21,6 +22,7 @@ import {
   type VideoClipSummary,
   type VideoFit,
 } from "../desktopApi";
+import { confirmDialog } from "../../../shared/dialog/dialogService";
 import { decideVideoAudioExtraction } from "./videoAudioExtraction";
 import { useVideoStore } from "./videoStore";
 
@@ -52,6 +54,9 @@ export type VideoClipHandlerDeps = {
   /** Decoding a video's sound needs libmpv: false on phones, where the
    * question is never asked (plan video-mobile, paso 09 §2). */
   canExtractAudio?: boolean;
+  /** Asks before taking videos out of the library. Defaults to the app's
+   * confirm dialog. */
+  confirm?: (message: string) => Promise<boolean>;
 };
 
 export type VideoPlacement = { seconds: number; trackId: string | null };
@@ -81,6 +86,7 @@ export function createVideoClipHandlers(deps: VideoClipHandlerDeps) {
     onFirstVideoClip,
     decideAudioExtraction = decideVideoAudioExtraction,
     canExtractAudio = true,
+    confirm = confirmDialog,
   } = deps;
 
   const songHasVideo = () => (getSong()?.videoClips?.length ?? 0) > 0;
@@ -204,6 +210,39 @@ export function createVideoClipHandlers(deps: VideoClipHandlerDeps) {
     });
   };
 
+  /** Take videos out of the session library. The ones still on the timeline
+   * are kept (the backend refuses them too): delete their clips first. */
+  const deleteLibraryAssets = async (assets: VideoAssetSummary[]) => {
+    const unique = [...new Map(assets.map((asset) => [asset.filePath, asset])).values()];
+    if (!unique.length) return;
+    const usedPaths = new Set((getSong()?.videoClips ?? []).map((clip) => clip.filePath));
+    const deletable = unique.filter((asset) => !usedPaths.has(asset.filePath));
+    if (!deletable.length) {
+      setStatus(t("transport.video.libraryDeleteInUse", { count: unique.length }));
+      return;
+    }
+    const message =
+      deletable.length === 1
+        ? t("transport.confirm.deleteLibraryAsset", { name: deletable[0].fileName })
+        : t("transport.confirm.deleteLibraryAssets", { count: deletable.length });
+    if (!(await confirm(message))) return;
+    await runAction(async () => {
+      let next: VideoAssetSummary[] | null = null;
+      for (const asset of deletable) {
+        next = await deleteVideoAsset(asset.filePath);
+      }
+      if (next) useVideoStore.getState().setAssets(next);
+      setStatus(
+        deletable.length < unique.length
+          ? t("transport.video.libraryDeletedSomeInUse", {
+              count: deletable.length,
+              inUse: unique.length - deletable.length,
+            })
+          : t("transport.video.libraryDeleted", { count: deletable.length }),
+      );
+    });
+  };
+
   const moveClip = (clipId: string, startSeconds: number, targetTrackId: string | null) => {
     void runAction(async () => {
       applyPlaybackSnapshot(await moveVideoClip(clipId, startSeconds, targetTrackId));
@@ -298,6 +337,7 @@ export function createVideoClipHandlers(deps: VideoClipHandlerDeps) {
     addVideosFromDevice,
     finishDeviceImport,
     placeLibraryAssets,
+    deleteLibraryAssets,
     moveClip,
     trimClip,
     setFades,

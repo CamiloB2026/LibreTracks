@@ -111,6 +111,7 @@ vi.mock("../features/transport/desktopApi", async (importOriginal) => {
       reason: "libmpv not loaded in tests",
     })),
     listVideoAssets: vi.fn(async () => []),
+    deleteVideoAsset: vi.fn(async () => []),
     getVideoThumbnails: vi.fn(async () => null),
     listenToVideoThumbnailsReady: vi.fn(async () => () => {}),
     getVideoOutputStatus: vi.fn(async () => ({
