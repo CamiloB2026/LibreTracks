@@ -511,3 +511,58 @@ TEST_CASE("a timeline jump lets the sounding click ring out") {
     renderer.render(out, 2, 512, 48000.0, 101024, &session);
     CHECK(peak(left) < 0.001f);                  // fully done, no bleed onward
 }
+
+namespace {
+
+// Clicks rendered over [from, to), in blocks as the audio thread would.
+int clicks_between(MetronomeRenderer& renderer, const Session& session, Frame from, Frame to) {
+    std::vector<float> all;
+    std::vector<float> left(256), right(256);
+    for (Frame frame = from; frame < to; frame += 256) {
+        const int frames = static_cast<int>(std::min<Frame>(256, to - frame));
+        std::fill(left.begin(), left.end(), 0.0f);
+        std::fill(right.begin(), right.end(), 0.0f);
+        float* out[] = { left.data(), right.data() };
+        renderer.render(out, 2, frames, 48000.0, frame, &session);
+        all.insert(all.end(), left.begin(), left.begin() + frames);
+    }
+    return count_clicks(all);
+}
+
+} // namespace
+
+TEST_CASE("a beat a hair before a new grid is not a double click") {
+    // Real ("Digno de adorar" at 71 after 65): the change lands 3.5 ms after
+    // a beat of the old grid, which then clicked right before the new
+    // downbeat.
+    MetronomeRenderer renderer;
+    auto session = make_session(120.0, 4, 4);
+    session.songs[0].tempo_markers.push_back(TempoMarker{"tempo-71", 48168, 71.0});
+    session.songs[0].time_signature_markers.push_back(
+        TimeSignatureMarker{"sig", 48168, 4, 4});
+    renderer.set_config({true, 1.0f, "master", true});
+    // The 120 grid's beat at 24 000 plays; its beat at 48 000 does not, and
+    // the new downbeat does.
+    CHECK(clicks_between(renderer, session, 23000, 48100) == 1);
+    CHECK(renderer.diagnostics().last_beat_frame == 24000);
+    CHECK(clicks_between(renderer, session, 48100, 50000) == 1);
+    CHECK(renderer.diagnostics().last_beat_frame == 48168);
+}
+
+TEST_CASE("a beat a hair before the next song is not a double click") {
+    MetronomeRenderer renderer;
+    auto session = make_session(120.0, 4, 4);
+    session.songs[0].end_frame = 47000;
+    Song next = session.songs[0];
+    next.id = "next";
+    next.start_frame = 48168;
+    next.end_frame = 48000 * 16;
+    next.bpm = 71.0;
+    session.songs.push_back(next);
+    renderer.set_config({true, 1.0f, "master", true});
+    CHECK(clicks_between(renderer, session, 23000, 48100) == 1);
+    CHECK(renderer.diagnostics().last_beat_frame == 24000);
+    // The block straddles the next song's start: its downbeat plays on time.
+    CHECK(clicks_between(renderer, session, 48100, 50000) == 1);
+    CHECK(renderer.diagnostics().last_beat_frame == 48168);
+}

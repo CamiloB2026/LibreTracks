@@ -69,6 +69,41 @@ Frame timing_segment_start(const Song* song, Frame frame) noexcept {
     return start;
 }
 
+// Where the next grid starts after `frame`: a tempo or time signature marker
+// of the song, or the next song (`next_song_start`, -1 for none). -1 when
+// nothing follows.
+Frame next_grid_start(const Song* song, Frame frame, Frame next_song_start) noexcept {
+    Frame next = next_song_start > frame ? next_song_start : -1;
+    const auto earlier = [&](Frame candidate) {
+        if (candidate > frame && (next < 0 || candidate < next)) next = candidate;
+    };
+    for (const auto& marker : song->tempo_markers) {
+        if (marker.frame > frame) {
+            earlier(marker.frame);
+            break;
+        }
+    }
+    for (const auto& marker : song->time_signature_markers) {
+        if (marker.frame > frame) {
+            earlier(marker.frame);
+            break;
+        }
+    }
+    return next;
+}
+
+// A click this close to where the next grid starts (as a share of the space
+// between its clicks) is not played: that grid's own downbeat follows at
+// once. A change of song or tempo a few ms off the old grid ("Digno de
+// adorar" at 71 after 65, 3.5 ms past a beat of the 65) sounded as a double
+// click.
+constexpr double kClickBeforeGridShare = 0.25;
+
+bool lands_on_next_grid(Frame click_frame, double spacing_frames, Frame next_grid) noexcept {
+    return next_grid > click_frame
+        && static_cast<double>(next_grid - click_frame) < kClickBeforeGridShare * spacing_frames;
+}
+
 // The song whose timing map drives the click. Like the ambient pad, the
 // metronome must sound whether or not there is audio under the playhead: an
 // empty song (no clips) collapses to end_frame == start_frame and would cover
@@ -385,9 +420,36 @@ void MetronomeRenderer::render(float** output_channels,
                                const Session* session,
                                const int* active_output_channels,
                                int active_output_channel_count) noexcept {
-    render_song(output_channels, num_channels, num_frames, sample_rate, timeline_frame,
-                active_song(session, timeline_frame),
-                active_output_channels, active_output_channel_count);
+    // A song starting inside the block takes the click over on its first
+    // frame: the block is split there, or its downbeat was lost (or late) to
+    // the previous song's grid.
+    std::array<float*, 64> shifted{};
+    int done = 0;
+    while (done < num_frames) {
+        const Frame frame = timeline_frame + done;
+        const Song* song = active_song(session, frame);
+        Frame next_song_start = -1;
+        if (song) {
+            for (const auto& other : session->songs) {
+                if (other.start_frame > song->start_frame
+                    && (next_song_start < 0 || other.start_frame < next_song_start))
+                    next_song_start = other.start_frame;
+            }
+        }
+        int frames = num_frames - done;
+        if (next_song_start > frame && next_song_start < frame + frames)
+            frames = static_cast<int>(next_song_start - frame);
+        float** channels = output_channels;
+        if (done > 0) {
+            if (num_channels > static_cast<int>(shifted.size())) return;
+            for (int ch = 0; ch < num_channels; ++ch)
+                shifted[static_cast<std::size_t>(ch)] = output_channels[ch] + done;
+            channels = shifted.data();
+        }
+        render_song(channels, num_channels, frames, sample_rate, frame, song,
+                    active_output_channels, active_output_channel_count, next_song_start);
+        done += frames;
+    }
 }
 
 void MetronomeRenderer::freeze_timing_at(const Session* session,
@@ -409,7 +471,8 @@ void MetronomeRenderer::render_song(float** output_channels,
                                     Frame timeline_frame,
                                     const Song* song,
                                     const int* active_output_channels,
-                                    int active_output_channel_count) noexcept {
+                                    int active_output_channel_count,
+                                    Frame next_song_start) noexcept {
     if (num_channels <= 0 || num_frames <= 0 || sample_rate <= 0.0) return;
 
     if (last_render_end_ >= 0 && timeline_frame != last_render_end_)
@@ -497,7 +560,9 @@ void MetronomeRenderer::render_song(float** output_channels,
             };
             const int64_t beat_index = static_cast<int64_t>(std::floor(beats + 0.5));
             const Frame beat_frame = frame_of_beat(static_cast<double>(beat_index));
-            if (beat_frame == abs_frame && beat_frame != last_started_beat_frame_) {
+            if (beat_frame == abs_frame && beat_frame != last_started_beat_frame_
+                && !lands_on_next_grid(beat_frame, beat_frames,
+                                       next_grid_start(song, abs_frame, next_song_start))) {
                 fire_beat(beat_index % beats_per_bar == 0, sample_rate);
                 last_started_beat_frame_ = beat_frame;
                 last_beat_frame_.store(beat_frame, std::memory_order_release);
@@ -510,7 +575,9 @@ void MetronomeRenderer::render_song(float** output_channels,
                     const Frame sub_frame = frame_of_beat(
                         static_cast<double>(beat_floor) + static_cast<double>(k) / subdivision);
                     if (sub_frame == abs_frame && sub_frame != last_started_sub_frame_
-                        && sub_frame != last_started_beat_frame_) {
+                        && sub_frame != last_started_beat_frame_
+                        && !lands_on_next_grid(sub_frame, beat_frames / subdivision,
+                                               next_grid_start(song, abs_frame, next_song_start))) {
                         fire_subdivision(sample_rate);
                         last_started_sub_frame_ = sub_frame;
                     }
@@ -526,7 +593,9 @@ void MetronomeRenderer::render_song(float** output_channels,
             const int64_t beat_index = static_cast<int64_t>(
                 std::floor((static_cast<double>(rel) / beat_frames) + 0.5));
             const Frame beat_frame = rounded_beat_frame(segment_start, beat_frames, beat_index);
-            if (beat_frame == abs_frame && beat_frame != last_started_beat_frame_) {
+            if (beat_frame == abs_frame && beat_frame != last_started_beat_frame_
+                && !lands_on_next_grid(beat_frame, beat_frames,
+                                       next_grid_start(song, abs_frame, next_song_start))) {
                 fire_beat(beat_index % beats_per_bar == 0, sample_rate);
                 last_started_beat_frame_ = beat_frame;
                 last_beat_frame_.store(beat_frame, std::memory_order_release);
@@ -544,7 +613,9 @@ void MetronomeRenderer::render_song(float** output_channels,
                     const Frame sub_frame = segment_start
                         + static_cast<Frame>(std::llround(sub_pos * beat_frames));
                     if (sub_frame == abs_frame && sub_frame != last_started_sub_frame_
-                        && sub_frame != last_started_beat_frame_) {
+                        && sub_frame != last_started_beat_frame_
+                        && !lands_on_next_grid(sub_frame, beat_frames / subdivision,
+                                               next_grid_start(song, abs_frame, next_song_start))) {
                         fire_subdivision(sample_rate);
                         last_started_sub_frame_ = sub_frame;
                     }

@@ -75,7 +75,9 @@ public:
     // Same, with the song whose tempo map drives the clicks given explicitly
     // instead of looked up from `timeline_frame`. The "vamp between songs"
     // keeps clicking the song that just ended at frames past its end, which
-    // the lookup would hand to the next song.
+    // the lookup would hand to the next song. `next_song_start` (-1: none) is
+    // where the next song's grid takes over: a click a hair before it is not
+    // played.
     void render_song(float** output_channels,
                      int num_channels,
                      int num_frames,
@@ -83,7 +85,8 @@ public:
                      Frame timeline_frame,
                      const Song* song,
                      const int* active_output_channels = nullptr,
-                     int active_output_channel_count = 0) noexcept;
+                     int active_output_channel_count = 0,
+                     Frame next_song_start = -1) noexcept;
 
     // Copies into `out` the timing that drives the click at `frame` (tempo,
     // meter and the start of their grid) as a song without a tempo map.
