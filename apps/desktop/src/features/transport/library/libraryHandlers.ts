@@ -1,4 +1,8 @@
-import type { LibraryAssetSummary, SongView } from "@libretracks/shared/models";
+import type {
+  LibraryAssetSummary,
+  SongView,
+  TransportSnapshot,
+} from "@libretracks/shared/models";
 
 import { planOrganizeBySong } from "./organizeBySong";
 
@@ -33,12 +37,18 @@ export type LibraryHandlerDeps = {
   setIsImportingLibrary: (importing: boolean) => void;
   setLibraryImportProgress: (progress: null) => void;
   setDeletingLibraryFilePath: (filePath: string | null) => void;
-  loadLibraryState: () => Promise<{ folders: LibraryFolderSummary[] }>;
+  loadLibraryState: () => Promise<{
+    assets?: LibraryAssetSummary[];
+    folders: LibraryFolderSummary[];
+  }>;
   t: (key: string, options?: Record<string, unknown>) => string;
   // Persistence API.
   importLibraryAssetsFromDialog: () => Promise<LibraryAssetSummary[] | null>;
   getLibraryFolders: () => Promise<LibraryFolderSummary[]>;
   deleteLibraryAsset: (filePath: string) => Promise<LibraryAssetSummary[]>;
+  /** A missing file that clips still use: removes those clips too. */
+  removeMissingFile: (filePath: string) => Promise<TransportSnapshot>;
+  applyPlaybackSnapshot: (snapshot: TransportSnapshot) => void;
   createLibraryFolder: (folderPath: string) => Promise<LibraryFolderSummary[]>;
   moveLibraryAsset: (
     filePath: string,
@@ -73,6 +83,8 @@ export function createLibraryHandlers(deps: LibraryHandlerDeps) {
     importLibraryAssetsFromDialog,
     getLibraryFolders,
     deleteLibraryAsset,
+    removeMissingFile,
+    applyPlaybackSnapshot,
     createLibraryFolder,
     moveLibraryAsset,
     renameLibraryFolder,
@@ -80,6 +92,15 @@ export function createLibraryHandlers(deps: LibraryHandlerDeps) {
     confirm,
     prompt,
   } = deps;
+
+  /** Clips of the loaded song that play `filePath` (audio and video). */
+  const clipsUsing = (filePath: string) => {
+    const song = getSong();
+    return (
+      (song?.clips ?? []).filter((clip) => clip.filePath === filePath).length +
+      (song?.videoClips ?? []).filter((clip) => clip.filePath === filePath).length
+    );
+  };
 
   return {
     /** "Unfiled" → one folder per song, with the audio each song uses. */
@@ -156,8 +177,19 @@ export function createLibraryHandlers(deps: LibraryHandlerDeps) {
         return;
       }
 
-      const confirmationMessage =
-        uniqueAssets.length === 1
+      // A file that is gone and still on the timeline can't be "deleted from
+      // the library" (the clips keep it there): it is removed from the session
+      // with its clips, one undo step. Saying so is the point of the message.
+      const missingInUse = uniqueAssets.filter(
+        (asset) => asset.isMissing && clipsUsing(asset.filePath) > 0,
+      );
+      const confirmationMessage = missingInUse.length
+        ? t("transport.confirm.removeMissingLibraryAssets", {
+            count: uniqueAssets.length,
+            name: uniqueAssets[0].fileName,
+            clips: missingInUse.reduce((sum, asset) => sum + clipsUsing(asset.filePath), 0),
+          })
+        : uniqueAssets.length === 1
           ? t("transport.confirm.deleteLibraryAsset", {
               name: uniqueAssets[0].fileName,
             })
@@ -175,13 +207,18 @@ export function createLibraryHandlers(deps: LibraryHandlerDeps) {
             uniqueAssets.map((asset) => asset.filePath),
           );
 
+          const missingPaths = new Set(missingInUse.map((asset) => asset.filePath));
           for (const asset of uniqueAssets) {
             setDeletingLibraryFilePath(asset.filePath);
-            nextAssets = await deleteLibraryAsset(asset.filePath);
+            if (missingPaths.has(asset.filePath)) {
+              applyPlaybackSnapshot(await removeMissingFile(asset.filePath));
+            } else {
+              nextAssets = await deleteLibraryAsset(asset.filePath);
+            }
           }
 
-          const { folders } = await loadLibraryState();
-          setLibraryAssets(nextAssets);
+          const { assets, folders } = await loadLibraryState();
+          setLibraryAssets(missingPaths.size && assets ? assets : nextAssets);
           setLibraryFolders(folders);
           setLibraryClipPreview((current) =>
             current.filter(

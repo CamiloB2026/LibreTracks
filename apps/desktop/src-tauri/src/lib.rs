@@ -441,6 +441,7 @@ pub fn run() {
             commands::project::start_import_session_package_from_dialog,
             commands::project::import_external_project,
             commands::project::resolve_missing_file,
+            commands::project::remove_missing_file,
             commands::project::get_missing_media,
             commands::library::delete_library_asset,
             commands::library::forget_library_assets,

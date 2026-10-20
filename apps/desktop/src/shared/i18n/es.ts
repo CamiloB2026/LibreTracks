@@ -404,6 +404,12 @@ const es = {
       usedBy: "Lo usan: {{tracks}}",
       useCandidate: "Usar el de {{folder}}",
       locate: "Buscar…",
+      remove: "Quitar de la sesión",
+      removeConfirm_one:
+        "¿Quitar {{name}} de la sesión? Se borra el clip que lo usa y su entrada de la biblioteca. Puedes deshacerlo.",
+      removeConfirm_other:
+        "¿Quitar {{name}} de la sesión? Se borran los {{count}} clips que lo usan y su entrada de la biblioteca. Puedes deshacerlo.",
+      removed: "Archivo quitado de la sesión.",
       clipBadge: "Falta el audio",
     },
     backGuard: {
@@ -1093,6 +1099,10 @@ const es = {
       deleteTrackWithClips:
         "Este audio track tiene clips. ¿Quieres borrarlo junto con sus clips?",
       deleteLibraryAsset: "Borrar {{name}} de la biblioteca de esta sesion?",
+      removeMissingLibraryAssets_one:
+        "{{name}} ya no está en el disco y lo usan {{clips}} clip(s) del timeline. ¿Quitarlo de la sesión junto con esos clips? Puedes deshacerlo.",
+      removeMissingLibraryAssets_other:
+        "Algunos de estos {{count}} audios ya no están en el disco y los usan {{clips}} clip(s) del timeline. ¿Quitarlos de la sesión junto con esos clips? Puedes deshacerlo.",
       deleteLibraryAssets:
         "Borrar {{count}} assets seleccionados de la biblioteca de esta sesion?",
       deleteLibraryFolder:

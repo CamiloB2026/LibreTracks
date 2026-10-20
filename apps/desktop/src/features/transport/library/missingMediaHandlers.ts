@@ -4,6 +4,7 @@ import type { TransportSnapshot } from "@libretracks/shared/models";
 import {
   importStagedAudioFiles,
   isMobileApp,
+  removeMissingFile,
   resolveMissingFile,
 } from "@libretracks/shared/desktopApi";
 
@@ -28,6 +29,8 @@ export type MissingMediaHandlerDeps = {
   setStatus: (message: string) => void;
   /** `t` de i18next, ya ligada. */
   savedMessage: () => string;
+  /** Mensaje tras quitar de la sesión un fichero que falta. */
+  removedMessage: () => string;
 };
 
 export function createMissingMediaHandlers(deps: MissingMediaHandlerDeps) {
@@ -38,6 +41,7 @@ export function createMissingMediaHandlers(deps: MissingMediaHandlerDeps) {
     refreshLibraryState,
     setStatus,
     savedMessage,
+    removedMessage,
   } = deps;
 
   /** Cola común: repuntar, publicar, refrescar y avisar de que se guardó. */
@@ -112,6 +116,18 @@ export function createMissingMediaHandlers(deps: MissingMediaHandlerDeps) {
      * carpetas conocidas, así que no hace falta selector ni, en móvil, pasar
      * por el import por etapas: mismo camino corto en todas las plataformas.
      */
+    /**
+     * Quitar de la sesión un fichero que no va a volver: sus clips y su
+     * entrada de la biblioteca. Deshacer devuelve los clips.
+     */
+    async removeMissingFile(missingPath: string) {
+      await runAction(async () => {
+        applyPlaybackSnapshot(await removeMissingFile(missingPath));
+        await Promise.all([refreshSongView(), refreshLibraryState()]);
+        setStatus(removedMessage());
+      });
+    },
+
     async relinkMissingFile(missingPath: string, replacementPath: string) {
       await runAction(
         async () => {

@@ -243,6 +243,7 @@
     "place_video_clips",
     "preview_midi_clip",
     "render_song_audio",
+    "remove_missing_file",
     "resolve_missing_file",
     "save_project",
     "save_session_as_template_at",

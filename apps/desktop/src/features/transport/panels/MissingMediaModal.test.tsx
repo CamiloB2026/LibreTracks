@@ -51,6 +51,8 @@ function renderModal(overrides: Partial<Parameters<typeof MissingMediaModal>[0]>
     onClose: vi.fn(),
     onRelink: vi.fn().mockResolvedValue(undefined),
     onLocate: vi.fn().mockResolvedValue(undefined),
+    onRemove: vi.fn().mockResolvedValue(undefined),
+    confirm: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
   render(<MissingMediaModal {...props} />);
@@ -58,6 +60,34 @@ function renderModal(overrides: Partial<Parameters<typeof MissingMediaModal>[0]>
 }
 
 describe("pantalla de archivos que faltan", () => {
+  it("quita de la sesión un archivo que falta, después de preguntar", async () => {
+    getMissingMedia.mockResolvedValue([ENTRY]);
+    const { onRemove, confirm } = renderModal();
+    await screen.findByText("bateria.wav");
+
+    fireEvent.click(screen.getByRole("button", { name: "Quitar de la sesión" }));
+
+    await waitFor(() => expect(onRemove).toHaveBeenCalledWith("audio/bateria.wav"));
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("bateria.wav"));
+  });
+
+  it("no quita nada si el usuario cancela", async () => {
+    getMissingMedia.mockResolvedValue([ENTRY]);
+    const confirm = vi.fn().mockResolvedValue(false);
+    const { onRemove } = renderModal({ confirm });
+    await screen.findByText("bateria.wav");
+
+    fireEvent.click(screen.getByRole("button", { name: "Quitar de la sesión" }));
+
+    await waitFor(() => expect(confirm).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "Quitar de la sesión" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+    expect(onRemove).not.toHaveBeenCalled();
+  });
+
   it("lista lo que falta con su ruta esperada y las pistas que lo usan", async () => {
     getMissingMedia.mockResolvedValue([ENTRY]);
 

@@ -1269,6 +1269,23 @@ pub fn resolve_missing_file(
         .map_err(|error| crate::infra::error_log::log_command_err("resolve_missing_file", error))
 }
 
+/// Quitar de la sesión un fichero que falta (clips y biblioteca). Ver
+/// `DesktopSession::remove_missing_file`.
+#[tauri::command(async)]
+pub fn remove_missing_file(
+    file_path: String,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .remove_missing_file(&file_path, &state.audio)
+        .map_err(|error| crate::infra::error_log::log_command_err("remove_missing_file", error))
+}
+
 #[tauri::command]
 pub fn start_save_project_as(
     app: AppHandle,

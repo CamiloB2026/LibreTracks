@@ -26,6 +26,7 @@ use super::{
     build_empty_song, build_template_song, copy_project_audio_files, default_new_session_file_name,
     default_project_file_name, default_session_name, emit_project_load_progress,
     library_manifest_path, list_library_assets, project_root, read_library_manifest,
+    resolve_audio_file_path,
     strip_song_to_template, timestamp_suffix, ui_locale, write_library_manifest,
     write_library_manifest_assets, AudioChangeImpact, DesktopSession, LIBRARY_MANIFEST_FILE_NAME,
 };
@@ -302,6 +303,57 @@ impl DesktopSession {
             return Ok(Vec::new());
         };
         Ok(collect_missing_media(song_dir, song))
+    }
+
+    /// Quitar de la sesión un fichero que falta: los clips (audio y vídeo) que
+    /// lo usan y sus entradas de la biblioteca.
+    ///
+    /// Es la salida para lo que no se va a volver a enlazar —el fichero se
+    /// borró a propósito—. Sin esto no había forma de librarse de él: la
+    /// biblioteca se niega a borrar un audio que usa algún clip, y la pantalla
+    /// de archivos que faltan solo sabía reenlazar. Un solo paso de deshacer
+    /// devuelve los clips; las regiones se conservan aunque se queden vacías,
+    /// porque perder una canción entera por un audio que falta sería peor.
+    /// El disco no se toca: el fichero ya no está.
+    pub fn remove_missing_file(
+        &mut self,
+        file_path: &str,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        let song_dir = self.song_dir.clone().ok_or(DesktopError::NoSongLoaded)?;
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        if resolve_audio_file_path(&song_dir, file_path).is_file() {
+            return Err(DesktopError::AudioCommand(
+                "the file is not missing: delete it from the library instead".into(),
+            ));
+        }
+
+        let normalized = super::library::normalize_library_file_path(file_path);
+        let names_it = |path: &str| super::library::normalize_library_file_path(path) == normalized;
+        song.clips.retain(|clip| !names_it(&clip.file_path));
+        song.video_clips.retain(|clip| !names_it(&clip.file_path));
+
+        super::video_library::forget_video_entries(&song_dir, &normalized)?;
+        if let Some(mut manifest) = read_library_manifest(&song_dir)? {
+            manifest.file_paths.retain(|path| !names_it(path));
+            manifest.assets.retain(|asset| !names_it(&asset.file_path));
+            let manifest_json = serde_json::to_vec_pretty(&manifest)
+                .map_err(|error| DesktopError::AudioCommand(error.to_string()))?;
+            libretracks_project::write_file_atomically(
+                &library_manifest_path(&song_dir),
+                &manifest_json,
+            )?;
+        }
+        self.waveform_cache.remove(&song_dir, &normalized);
+
+        super::prune_auto_created_empty_tracks(&mut song);
+        super::refresh_song_duration(&mut song);
+        self.persist_song_update(song, audio, AudioChangeImpact::StructureRebuild, true)?;
+        Ok(self.snapshot())
     }
 
     pub fn resolve_missing_file(

@@ -1273,6 +1273,23 @@ html.lt-ios body {
   color: #002c27;
 }
 
+.lt-dialog-button--danger {
+  border-color: rgb(226 88 88 / 0.4);
+  color: #f0a3a3;
+}
+
+.lt-dialog-button--danger:hover,
+.lt-dialog-button--danger:focus-visible {
+  border-color: rgb(226 88 88 / 0.75);
+  background: rgb(226 88 88 / 0.12);
+  color: #ffd2d2;
+}
+
+.lt-dialog-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 @media (max-width: 640px) {
   .lt-dialog-layer {
     padding-top: 0.75rem;
@@ -9925,8 +9942,17 @@ body.lt-song-reordering .lt-compact-column-resize-slot {
 .lt-missing-media-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.2rem;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.lt-missing-media-actions .lt-dialog-button {
+  padding: 0 0.85rem;
+}
+
+/* "Quitar" a la derecha, apartado de los botones que reparan. */
+.lt-missing-media-actions .lt-dialog-button--danger {
+  margin-left: auto;
 }
 
 /* ── Aviso "pulsa atras otra vez para salir" (Android) ───────────────── */

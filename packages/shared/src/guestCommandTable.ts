@@ -237,6 +237,7 @@ export const GUEST_COMMAND_ROUTES: Readonly<Record<string, GuestCommandRoute>> =
   place_video_clips: "blocked",
   preview_midi_clip: "blocked",
   render_song_audio: "blocked",
+  remove_missing_file: "blocked",
   resolve_missing_file: "blocked",
   save_project: "blocked",
   save_session_as_template_at: "blocked",

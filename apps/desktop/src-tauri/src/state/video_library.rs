@@ -132,6 +132,18 @@ pub(super) fn register_video_entries(
     Ok(registered)
 }
 
+/// Drop the library entries that name `file_path` (its file is gone).
+pub(super) fn forget_video_entries(song_dir: &Path, file_path: &str) -> Result<(), DesktopError> {
+    let mut entries = read_video_entries(song_dir)?;
+    let file_path = normalize_library_file_path(file_path);
+    let before = entries.len();
+    entries.retain(|entry| normalize_library_file_path(&entry.file_path) != file_path);
+    if entries.len() != before {
+        write_video_entries(song_dir, entries)?;
+    }
+    Ok(())
+}
+
 /// Point library entries that named `old_path` at `new_path` (relink).
 pub(super) fn relink_video_entries(
     song_dir: &Path,

@@ -1793,6 +1793,12 @@ export async function resolveMissingFile(
   return invokeCommand<TransportSnapshot>("resolve_missing_file", { oldPath, newPath });
 }
 
+/** Quitar de la sesión un fichero que falta: sus clips y su entrada de la
+ * biblioteca, en un solo paso de deshacer. */
+export async function removeMissingFile(filePath: string): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("remove_missing_file", { filePath });
+}
+
 export async function deleteLibraryAsset(filePath: string): Promise<LibraryAssetSummary[]> {
   return invokeCommand<LibraryAssetSummary[]>("delete_library_asset", { filePath });
 }

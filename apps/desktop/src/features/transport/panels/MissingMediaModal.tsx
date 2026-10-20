@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import type { MissingMediaEntry } from "@libretracks/shared/desktopApi";
 import { getMissingMedia } from "@libretracks/shared/desktopApi";
 
+import { confirmDialog } from "../../../shared/dialog/dialogService";
 import { formatUserFacingError } from "../errors/formatTransportError";
 import { useDismissOnBack } from "../mobile/backNavigation";
 
@@ -18,6 +19,10 @@ type Props = {
   onRelink: (filePath: string, replacementPath: string) => Promise<void>;
   /** Buscar a mano: abre el selector de ficheros del sistema. */
   onLocate: (filePath: string) => Promise<void> | void;
+  /** Quitar de la sesión el fichero y los clips que lo usan (deshacible). */
+  onRemove: (filePath: string) => Promise<void>;
+  /** Pregunta antes de quitar; por defecto el diálogo de la app. */
+  confirm?: (message: string) => Promise<boolean>;
 };
 
 /**
@@ -37,7 +42,13 @@ type Props = {
  * abre igual y suena lo que pueda sonar. Esto se abre cuando el usuario pulsa
  * el aviso.
  */
-export function MissingMediaModal({ onClose, onRelink, onLocate }: Props) {
+export function MissingMediaModal({
+  onClose,
+  onRelink,
+  onLocate,
+  onRemove,
+  confirm = confirmDialog,
+}: Props) {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<MissingMediaEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -153,7 +164,7 @@ export function MissingMediaModal({ onClose, onRelink, onLocate }: Props) {
                       <button
                         key={candidate}
                         type="button"
-                        className="lt-secondary-button"
+                        className="lt-dialog-button lt-dialog-button--primary"
                         disabled={busyPath !== null}
                         title={candidate}
                         onClick={() =>
@@ -170,7 +181,7 @@ export function MissingMediaModal({ onClose, onRelink, onLocate }: Props) {
                     ))}
                     <button
                       type="button"
-                      className="lt-secondary-button"
+                      className={`lt-dialog-button${entry.candidates.length ? "" : " lt-dialog-button--primary"}`}
                       disabled={busyPath !== null}
                       onClick={() =>
                         void run(entry.filePath, () => onLocate(entry.filePath))
@@ -178,6 +189,28 @@ export function MissingMediaModal({ onClose, onRelink, onLocate }: Props) {
                     >
                       {t("transport.missingMedia.locate", {
                         defaultValue: "Buscar…",
+                      })}
+                    </button>
+                    <button
+                      type="button"
+                      className="lt-dialog-button lt-dialog-button--danger"
+                      disabled={busyPath !== null}
+                      onClick={() =>
+                        void run(entry.filePath, async () => {
+                          const sure = await confirm(
+                            t("transport.missingMedia.removeConfirm", {
+                              defaultValue:
+                                "¿Quitar {{name}} de la sesión? Se borran los clips que lo usan. Puedes deshacerlo.",
+                              name: entry.fileName,
+                              count: entry.clipCount,
+                            }),
+                          );
+                          if (sure) await onRemove(entry.filePath);
+                        })
+                      }
+                    >
+                      {t("transport.missingMedia.remove", {
+                        defaultValue: "Quitar de la sesión",
                       })}
                     </button>
                   </div>

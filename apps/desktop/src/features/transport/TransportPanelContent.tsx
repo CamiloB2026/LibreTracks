@@ -72,6 +72,7 @@ import {
   deleteLibraryAsset,
   deleteLibraryFolder,
   deleteSectionMarker,
+  removeMissingFile,
   deleteSongRegion,
   deleteSongTempoMarker,
   deleteSongTimeSignatureMarker,
@@ -2198,6 +2199,9 @@ export function TransportPanelContent() {
         importLibraryAssetsFromDialog,
         getLibraryFolders,
         deleteLibraryAsset,
+        removeMissingFile,
+        // Declared further down; only called after the render that built it.
+        applyPlaybackSnapshot: (snapshot) => applyPlaybackSnapshot(snapshot),
         createLibraryFolder,
         moveLibraryAsset,
         renameLibraryFolder,
@@ -2383,8 +2387,11 @@ export function TransportPanelContent() {
 
   // Los dos manejadores de "falta el audio" viven en su propia factory: el
   // paso 08 anadia el segundo y el fichero rebasaba su presupuesto de tamano.
-  const { locateMissingFile: handleLocateMissingFile, relinkMissingFile: handleRelinkMissingFile } =
-    useMemo(
+  const {
+    locateMissingFile: handleLocateMissingFile,
+    relinkMissingFile: handleRelinkMissingFile,
+    removeMissingFile: handleRemoveMissingFile,
+  } = useMemo(
       () =>
         createMissingMediaHandlers({
           runAction,
@@ -2393,6 +2400,7 @@ export function TransportPanelContent() {
           refreshLibraryState,
           setStatus,
           savedMessage: () => t("transport.status.projectSaved"),
+          removedMessage: () => t("transport.missingMedia.removed"),
         }),
       [
         applyPlaybackSnapshot,
@@ -8344,6 +8352,7 @@ export function TransportPanelContent() {
                 onClose={() => setMissingMediaOpen(false)}
                 onLocate={handleLocateMissingFile}
                 onRelink={handleRelinkMissingFile}
+                onRemove={handleRemoveMissingFile}
               />
             ) : null}
 

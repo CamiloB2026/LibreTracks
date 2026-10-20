@@ -403,6 +403,12 @@ const en = {
       usedBy: "Used by: {{tracks}}",
       useCandidate: "Use the one in {{folder}}",
       locate: "Browse…",
+      remove: "Remove from session",
+      removeConfirm_one:
+        "Remove {{name}} from the session? The clip that uses it and its library entry are deleted. You can undo this.",
+      removeConfirm_other:
+        "Remove {{name}} from the session? The {{count}} clips that use it and its library entry are deleted. You can undo this.",
+      removed: "File removed from the session.",
       clipBadge: "Audio missing",
     },
     backGuard: {
@@ -1077,6 +1083,10 @@ const en = {
       deleteTrackWithClips:
         "This audio track contains clips. Delete it together with its clips?",
       deleteLibraryAsset: "Delete {{name}} from this session library?",
+      removeMissingLibraryAssets_one:
+        "{{name}} is no longer on disk and {{clips}} timeline clip(s) use it. Remove it from the session along with those clips? You can undo this.",
+      removeMissingLibraryAssets_other:
+        "Some of these {{count}} audio files are no longer on disk and {{clips}} timeline clip(s) use them. Remove them from the session along with those clips? You can undo this.",
       deleteLibraryAssets:
         "Delete {{count}} selected assets from this session library?",
       deleteLibraryFolder:
