@@ -4554,6 +4554,15 @@ html.lt-ios body {
   pointer-events: none;
 }
 
+/* Modo area (movil): el tramo coge marcas, no es un rango para crear una
+   cancion. Se pinta como el recuadro de pistas y clips (.lt-area-select-box). */
+.lt-ruler-range-selection.is-area {
+  border: 1.5px dashed rgb(87 241 219 / 0.9);
+  border-radius: 3px;
+  background: rgb(87 241 219 / 0.12);
+  box-shadow: none;
+}
+
 /* The three track canvases inside only hold the visible vertical slice and are
    absolutely positioned, so their boxes take part in the scroll container's
    scrollable overflow. Clipping to this layer (which is exactly the painted

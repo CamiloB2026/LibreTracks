@@ -495,6 +495,9 @@ export function TimelineCanvasPane({
   const markerTouchContextMenu = useTouchContextMenu();
   // Lo que el canvas de la regla resalta: la seleccion de marcas entera.
   const selectedMarkers = useTimelineUIStore((state) => state.selectedMarkers);
+  // En el modo area el tramo de la regla coge marcas: no es el rango del que
+  // sale una cancion, y no debe parecerlo.
+  const areaSelectMode = useTimelineUIStore((state) => isMobileApp && state.areaSelectMode);
   const selectedTempoMarkerId = useTimelineUIStore((state) => state.selectedTempoMarkerId);
   const selectedTimeSignatureMarkerId = useTimelineUIStore((state) => state.selectedTimeSignatureMarkerId);
   const selectedMarkerIds = useMemo(() => selectedRulerMarkers({
@@ -963,7 +966,7 @@ export function TimelineCanvasPane({
 
             {selectedTimelineRange ? (
               <div
-                className="lt-ruler-range-selection"
+                className={`lt-ruler-range-selection ${areaSelectMode ? "is-area" : ""}`}
                 style={{
                   left: selectedTimelineRange.startSeconds * pixelsPerSecond,
                   width: Math.max(

@@ -171,6 +171,18 @@ export function useHeaderAreaSelection(
       window.addEventListener("pointercancel", finish, true);
     };
 
+    // `touch-action: none` no basta: con el dedo sobre la columna los WebView
+    // de iOS y Android seguian desplazando el visor, y el `pointercancel` se
+    // llevaba el recuadro antes de dibujarlo. Los carriles lo resuelven igual,
+    // con `preventDefault` sobre el evento tactil (ver InputManager). Aqui va
+    // sobre `touchmove` y no `touchstart`, que mataria el `click` del toque
+    // suelto que suma o quita una pista.
+    const blockNativeScroll = (event: TouchEvent) => {
+      if (start && event.touches.length === 1 && event.cancelable) {
+        event.preventDefault();
+      }
+    };
+
     const swallowClick = (event: MouseEvent) => {
       if (Date.now() < suppressClickUntil) {
         suppressClickUntil = 0;
@@ -181,9 +193,13 @@ export function useHeaderAreaSelection(
 
     pane.addEventListener("pointerdown", down, true);
     pane.addEventListener("click", swallowClick, true);
+    // Sobre el propio panel y no `window`: WebKit trata como pasivas las
+    // escuchas tactiles del documento, y ahi `preventDefault` no hace nada.
+    pane.addEventListener("touchmove", blockNativeScroll, { passive: false });
     return () => {
       drag?.cancel();
       detach();
+      pane.removeEventListener("touchmove", blockNativeScroll);
       pane.removeEventListener("pointerdown", down, true);
       pane.removeEventListener("click", swallowClick, true);
     };
