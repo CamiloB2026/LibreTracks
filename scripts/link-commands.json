@@ -24,6 +24,7 @@
     "delete_library_asset",
     "delete_library_folder",
     "delete_pad",
+    "delete_video_asset",
     "download_pad",
     "download_speech_model",
     "exit_app",

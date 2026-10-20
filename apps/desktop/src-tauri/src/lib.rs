@@ -520,6 +520,7 @@ pub fn run() {
             commands::video::delete_video_clips,
             commands::video::video_media_status,
             commands::video::import_video_files,
+            commands::video::delete_video_asset,
             commands::video::list_video_assets,
             commands::video::request_video_thumbnails,
             commands::video::get_video_thumbnails,

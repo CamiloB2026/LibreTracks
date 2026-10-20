@@ -207,6 +207,17 @@ pub fn import_video_files(
     Ok(VideoImportResult { assets, skipped })
 }
 
+/// Take a video out of the session library; answers with the library as
+/// `list_video_assets` lists it.
+#[tauri::command(async)]
+pub fn delete_video_asset(
+    file_path: String,
+    state: State<'_, DesktopState>,
+) -> Result<Vec<VideoAssetSummary>, String> {
+    with_session(&state, |session, _| session.delete_video_asset(&file_path))?;
+    list_video_assets(state)
+}
+
 #[tauri::command(async)]
 pub fn list_video_assets(state: State<'_, DesktopState>) -> Result<Vec<VideoAssetSummary>, String> {
     let (mut assets, song_dir) = with_session(&state, |session, _| {

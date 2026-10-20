@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
   createTrack: vi.fn(async () => ({ projectRevision: 1 })),
+  deleteVideoAsset: vi.fn(async () => []),
   deleteVideoClips: vi.fn(async () => ({ projectRevision: 2 })),
   duplicateVideoClips: vi.fn(async () => ({ projectRevision: 3 })),
   extractVideoAudio: vi.fn(async () => ({ projectRevision: 9 })),
@@ -18,7 +19,7 @@ vi.mock("../desktopApi", async (importOriginal) => ({
   ...api,
 }));
 
-import type { SongView, VideoClipSummary } from "../desktopApi";
+import type { SongView, VideoAssetSummary, VideoClipSummary } from "../desktopApi";
 import { createVideoClipHandlers } from "./videoClipHandlers";
 import { applyVideoDrag } from "./useVideoClipHotspots";
 import { INITIAL_VIDEO_STATE, useVideoStore } from "./videoStore";
@@ -52,6 +53,7 @@ function setup(song: Partial<SongView> = { videoClips: [clip()] }) {
     reportSkipped: vi.fn(),
     onFirstVideoClip: vi.fn(),
     decideAudioExtraction: vi.fn(async () => true),
+    confirm: vi.fn(async () => true),
   };
   return { deps, handlers: createVideoClipHandlers(deps) };
 }
@@ -64,6 +66,33 @@ beforeEach(() => {
 });
 
 describe("video clip handlers", () => {
+  const libraryAsset = (filePath: string) =>
+    ({ filePath, fileName: filePath.split("/").pop() }) as VideoAssetSummary;
+
+  it("deletes library videos that no clip uses, after asking", async () => {
+    const { handlers, deps } = setup();
+    await handlers.deleteLibraryAssets([libraryAsset("D:/v.mp4"), libraryAsset("D:/otro.mp4")]);
+    expect(deps.confirm).toHaveBeenCalledTimes(1);
+    expect(api.deleteVideoAsset).toHaveBeenCalledTimes(1);
+    expect(api.deleteVideoAsset).toHaveBeenCalledWith("D:/otro.mp4");
+    expect(deps.setStatus).toHaveBeenCalledWith("transport.video.libraryDeletedSomeInUse");
+  });
+
+  it("does not delete library videos when the user cancels", async () => {
+    const { handlers, deps } = setup();
+    deps.confirm.mockResolvedValueOnce(false);
+    await handlers.deleteLibraryAssets([libraryAsset("D:/otro.mp4")]);
+    expect(api.deleteVideoAsset).not.toHaveBeenCalled();
+  });
+
+  it("refuses to delete a library video that is on the timeline", async () => {
+    const { handlers, deps } = setup();
+    await handlers.deleteLibraryAssets([libraryAsset("D:/v.mp4")]);
+    expect(deps.confirm).not.toHaveBeenCalled();
+    expect(api.deleteVideoAsset).not.toHaveBeenCalled();
+    expect(deps.setStatus).toHaveBeenCalledWith("transport.video.libraryDeleteInUse");
+  });
+
   it("moves a clip, optionally to another video track", async () => {
     const { handlers, deps } = setup();
     handlers.moveClip("vc1", 12.5, "v2");

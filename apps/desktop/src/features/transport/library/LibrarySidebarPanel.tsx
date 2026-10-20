@@ -1,4 +1,5 @@
 import { VideoLibrarySection } from "../video/VideoLibrarySection";
+import { useVideoStore } from "../video/videoStore";
 import {
   useCallback,
   useEffect,
@@ -12,7 +13,11 @@ import {
 import { useTranslation } from "react-i18next";
 import { TOUR_TARGETS } from "../../tutorial/tourTargets";
 
-import { isMobileApp, type LibraryImportProgressEvent } from "../desktopApi";
+import {
+  isMobileApp,
+  type LibraryImportProgressEvent,
+  type VideoAssetSummary,
+} from "../desktopApi";
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { useViewportClampedMenu } from "../hooks/useViewportClampedMenu";
 import { DRAG_THRESHOLD_PX } from "../constants";
@@ -404,6 +409,24 @@ export function LibrarySidebarPanel({
     }
 
     return actions;
+  };
+
+  const openVideoContextMenu = (event: MouseEvent<HTMLElement>, asset: VideoAssetSummary) => {
+    const { placeAtPlayhead, deleteAssets } = useVideoStore.getState();
+    const actions: ContextMenuAction[] = [];
+    if (placeAtPlayhead && !asset.isMissing) {
+      actions.push({
+        label: t("transport.video.placeAtPlayhead"),
+        onSelect: () => placeAtPlayhead(asset),
+      });
+    }
+    if (deleteAssets) {
+      actions.push({
+        label: t("transport.video.deleteFromLibrary"),
+        onSelect: () => deleteAssets([asset]),
+      });
+    }
+    if (actions.length) openContextMenu(event, asset.fileName, actions);
   };
 
   const folderContextMenu = (
@@ -860,7 +883,9 @@ export function LibrarySidebarPanel({
           </div>
         ) : null}
 
-        {isMobileApp ? null : <VideoLibrarySection />}
+        {isMobileApp ? null : (
+          <VideoLibrarySection onAssetContextMenu={openVideoContextMenu} />
+        )}
 
         {contextMenu ? (
           <div

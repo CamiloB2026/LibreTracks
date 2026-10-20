@@ -1533,6 +1533,13 @@ const es = {
       analyzing_other: "Analizando {{count}} vídeos…",
       imported_one: "Vídeo importado a la biblioteca.",
       imported_other: "{{count}} vídeos importados a la biblioteca.",
+      libraryDeleted_one: "Vídeo quitado de la biblioteca.",
+      libraryDeleted_other: "{{count}} vídeos quitados de la biblioteca.",
+      libraryDeleteInUse_one: "Ese vídeo está en el timeline: borra antes sus clips.",
+      libraryDeleteInUse_other: "Esos vídeos están en el timeline: borra antes sus clips.",
+      libraryDeletedSomeInUse:
+        "{{count}} vídeos quitados de la biblioteca; {{inUse}} siguen en el timeline y se conservan.",
+      deleteFromLibrary: "Quitar de la biblioteca",
       placed_one: "Vídeo añadido al timeline.",
       placed_other: "{{count}} vídeos añadidos al timeline.",
       clipMoved: "Clip de vídeo movido.",

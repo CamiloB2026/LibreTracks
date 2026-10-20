@@ -25,6 +25,9 @@ export type VideoStoreState = {
    * useVideoFeature on desktop; null elsewhere (the library then shows the
    * videos without the action). */
   placeAtPlayhead: ((asset: VideoAssetSummary) => void) | null;
+  /** Take videos out of the library (asks first). Published by
+   * useVideoFeature where video can be edited; null elsewhere. */
+  deleteAssets: ((assets: VideoAssetSummary[]) => void) | null;
   /** Phone: pick a video on the device and put it at the playhead (plan
    * video-mobile, paso 08 §3). Null on the desktop and when video cannot be
    * edited here. */
@@ -56,6 +59,7 @@ export type VideoStoreState = {
   audioExtractions: Record<string, number>;
   setAudioExtraction: (clipId: string, fraction: number | null) => void;
   setPlaceAtPlayhead: (place: ((asset: VideoAssetSummary) => void) | null) => void;
+  setDeleteAssets: (remove: ((assets: VideoAssetSummary[]) => void) | null) => void;
   setAddFromDevice: (add: ((source: VideoPickSource) => void) | null) => void;
   setMediaStatus: (status: VideoLibraryStatus | null) => void;
   setAssets: (assets: VideoAssetSummary[]) => void;
@@ -76,6 +80,7 @@ export const INITIAL_VIDEO_STATE = {
   assets: [],
   selectedVideoClipIds: [],
   placeAtPlayhead: null,
+  deleteAssets: null,
   addFromDevice: null,
   outputStatus: null,
   forcedBlack: false,
@@ -92,6 +97,7 @@ export const INITIAL_VIDEO_STATE = {
   | "assets"
   | "selectedVideoClipIds"
   | "placeAtPlayhead"
+  | "deleteAssets"
   | "addFromDevice"
   | "outputStatus"
   | "forcedBlack"
@@ -109,6 +115,7 @@ export const useVideoStore = create<VideoStoreState>()((set) => ({
   setMediaStatus: (status) => set({ status }),
   setAssets: (assets) => set({ assets }),
   setPlaceAtPlayhead: (placeAtPlayhead) => set({ placeAtPlayhead }),
+  setDeleteAssets: (deleteAssets) => set({ deleteAssets }),
   setAddFromDevice: (addFromDevice) => set({ addFromDevice }),
   setOutputStatus: (outputStatus) => set({ outputStatus }),
   setForcedBlack: (forcedBlack) => set({ forcedBlack }),
