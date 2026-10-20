@@ -15,9 +15,9 @@ export const FEATURE_FLAGS = {
   networkSessions: true,
   /** «Analizar canción…»: tempo, key and section markers read from a song's
    * click, guide and audio. Planned for 1.16.0. */
-  songAnalysis: false,
+  songAnalysis: true,
   /** Song templates: new songs from a template, stems organised on drop by
    * match aliases, and the «one folder per song» track layout. Planned for
    * 1.16.0. */
-  songTemplates: false,
+  songTemplates: true,
 } as const;

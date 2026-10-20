@@ -14,10 +14,10 @@ describe("feature flags", () => {
   });
 
   it("song analysis stays hidden until 1.16.0", () => {
-    expect(FEATURE_FLAGS.songAnalysis).toBe(false);
+    expect(FEATURE_FLAGS.songAnalysis).toBe(true);
   });
 
   it("song templates stay hidden until 1.16.0", () => {
-    expect(FEATURE_FLAGS.songTemplates).toBe(false);
+    expect(FEATURE_FLAGS.songTemplates).toBe(true);
   });
 });
