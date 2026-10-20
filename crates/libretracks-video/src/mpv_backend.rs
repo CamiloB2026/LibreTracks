@@ -247,7 +247,9 @@ impl MpvOutputBackend {
         let Some(player) = &self.players[index] else {
             return Ok(());
         };
-        player.set_property_f64("contrast", value).map_err(failed)?;
+        player
+            .set_property_async("contrast", &format!("{value:.3}"))
+            .map_err(failed)?;
         self.levels[index] = Some(value);
         let endpoint = value == 0.0 || value == -100.0;
         if endpoint || self.traced_levels[index].is_none_or(|traced| (traced - value).abs() >= 10.0) {
@@ -461,12 +463,15 @@ impl OutputBackend for MpvOutputBackend {
                     .command_async(0, &["seek", &format!("{:.6}", seconds.max(0.0)), "absolute+exact"])
                     .map_err(failed)?;
             }
+            // Async: see `Mpv::set_property_async`. The sync sends these often.
             PlayerCommand::SetPause(paused) => {
-                player.set_property_flag("pause", *paused).map_err(failed)?;
+                player
+                    .set_property_async("pause", if *paused { "yes" } else { "no" })
+                    .map_err(failed)?;
             }
             PlayerCommand::SetSpeed(speed) => {
                 player
-                    .set_property_f64("speed", speed.clamp(0.01, 100.0))
+                    .set_property_async("speed", &format!("{:.6}", speed.clamp(0.01, 100.0)))
                     .map_err(failed)?;
             }
             PlayerCommand::Stop => {

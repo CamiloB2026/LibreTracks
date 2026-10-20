@@ -370,6 +370,16 @@ impl Mpv {
         self.check(code, &args.join(" "))
     }
 
+    /// Set a property WITHOUT waiting for mpv. A synchronous set waits for
+    /// the core's next turn, which while playing is the next frame: ~31 ms
+    /// each, measured. Fades and the sync's speed nudges change every 10 ms,
+    /// so they queued up behind each other — a fade-out reached black most of
+    /// a second late. Queued like `command_async`, in order with every other
+    /// request; a failure arrives as a [`MpvEvent::CommandReply`].
+    pub fn set_property_async(&self, name: &str, value: &str) -> Result<(), VideoError> {
+        self.command_async(0, &["set", name, value])
+    }
+
     pub fn set_property_string(&self, name: &str, value: &str) -> Result<(), VideoError> {
         let (name_c, value_c) = (c_string(name)?, c_string(value)?);
         // SAFETY: valid handle and strings.

@@ -514,6 +514,13 @@ pub fn video_test_pattern(
     Ok(())
 }
 
+/// The playhead is being dragged (`Some`, view seconds) or was released or
+/// cancelled (`None`): the output shows the frame under it meanwhile.
+#[tauri::command(async)]
+pub fn video_scrub(position_seconds: Option<f64>, state: State<'_, DesktopState>) {
+    state.video.set_scrub(position_seconds);
+}
+
 /// Sync diagnostics for the settings tab (error p50/p95, seeks, swaps…).
 #[tauri::command(async)]
 pub fn video_sync_stats(state: State<'_, DesktopState>) -> crate::video::runtime::VideoSyncStats {

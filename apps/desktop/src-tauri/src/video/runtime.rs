@@ -55,6 +55,11 @@ pub trait RuntimeOutput: Send {
     fn forced_idle(&self) -> bool {
         false
     }
+    /// The playhead being dragged, in view seconds: shown paused there, ahead
+    /// of the seek that the release commits.
+    fn scrub(&self, _now: Instant) -> Option<f64> {
+        None
+    }
     /// Latency calibration running (paso 09): the beat grid to flash on.
     fn calibration(&self) -> Option<CalibrationGrid> {
         None
@@ -326,13 +331,24 @@ impl RuntimeCore {
         }
         self.idle_sent = false;
 
-        let settings = output.settings();
+        let mut settings = output.settings();
         let clock = inputs.clock();
         let latency = inputs.output_latency();
-        let position = (clock.position_at(now) - latency
-            + f64::from(settings.latency_offset_ms) / 1000.0)
-            .max(0.0);
-        let running = clock.running();
+        let scrub = output.scrub(now);
+        // Dragging the playhead: the frame under it, held. Not the audible
+        // position (no latency): it is where the user points.
+        let (position, running) = match scrub {
+            Some(at) => {
+                // Whatever the stopped screen, a drag shows the picture.
+                settings.when_stopped = StoppedScreen::LastFrame;
+                (at, false)
+            }
+            None => (
+                (clock.position_at(now) - latency + f64::from(settings.latency_offset_ms) / 1000.0)
+                    .max(0.0),
+                clock.running(),
+            ),
+        };
         // A new clock generation is an announced jump; the position going
         // back, or ahead by more than a tick allows, is an unannounced one.
         let jumped = running
@@ -633,7 +649,7 @@ impl RuntimeCore {
             self.stats.error_p95_ms = percentile(&sorted, 0.95).map(|value| value * 1000.0);
         }
 
-        if running || fading {
+        if running || fading || scrub.is_some() {
             TickRate::Fast
         } else {
             TickRate::Slow
@@ -722,6 +738,9 @@ impl RuntimeOutput for SystemOutput {
     }
     fn calibration(&self) -> Option<CalibrationGrid> {
         self.0.calibration()
+    }
+    fn scrub(&self, now: Instant) -> Option<f64> {
+        self.0.scrub(now)
     }
 }
 
@@ -834,6 +853,7 @@ mod tests {
         sent: RefCell<Vec<OutputCommand>>,
         settings: VideoOutputSettings,
         black: bool,
+        scrub: std::cell::Cell<Option<f64>>,
     }
 
     // SAFETY-free: tests are single-threaded; the trait wants Send.
@@ -867,6 +887,16 @@ mod tests {
                     ..Default::default()
                 };
             }
+            if let OutputCommand::Player {
+                slot,
+                command: PlayerCommand::Seek { seconds },
+            } = &command
+            {
+                let mut status = self.status.borrow_mut();
+                let index = if *slot == Slot::A { 0 } else { 1 };
+                status.players[index].time_pos = Some(*seconds);
+                status.players[index].time_pos_at = Some(Instant::now());
+            }
             if let OutputCommand::ShowSlot(slot) = &command {
                 self.status.borrow_mut().visible_slot = *slot;
             }
@@ -884,6 +914,9 @@ mod tests {
         }
         fn settings(&self) -> VideoOutputSettings {
             self.settings.clone()
+        }
+        fn scrub(&self, _now: Instant) -> Option<f64> {
+            self.scrub.get()
         }
         fn black_amount(&self, _now: Instant) -> f64 {
             if self.black {
@@ -1269,6 +1302,64 @@ mod tests {
             )),
             "and kept black until shown"
         );
+    }
+
+    /// Dragging the playhead with the transport stopped: the frame under the
+    /// pointer, held (even with "black when stopped"), and fast ticks so the
+    /// picture keeps up. Released, the transport's position rules again.
+    #[test]
+    fn a_dragged_playhead_shows_the_frame_under_it() {
+        let mut core = RuntimeCore::default();
+        let mut output = ready_output();
+        output.settings.when_stopped = StoppedScreen::Black;
+        let mut inputs = FakeInputs {
+            clock: VideoTransportClock {
+                anchor_position_seconds: 5.0,
+                ..Default::default()
+            },
+            timeline: one_clip_timeline(),
+            fetches: 0,
+        };
+        let now = Instant::now();
+        let seeks = |output: &FakeOutput| -> Vec<f64> {
+            output
+                .sent
+                .borrow()
+                .iter()
+                .filter_map(|command| match command {
+                    OutputCommand::Player {
+                        command: PlayerCommand::Load { start_seconds, .. },
+                        ..
+                    } => Some(*start_seconds),
+                    OutputCommand::Player {
+                        command: PlayerCommand::Seek { seconds },
+                        ..
+                    } => Some(*seconds),
+                    _ => None,
+                })
+                .collect()
+        };
+
+        core.tick(&mut inputs, &output, now);
+        assert_eq!(seeks(&output).last(), Some(&5.0), "stopped: the transport's frame");
+
+        output.scrub.set(Some(42.0));
+        // Settle the previous seek so the next one is not held back.
+        output.status.borrow_mut().players[0].restarts += 1;
+        let rate = core.tick(&mut inputs, &output, now + Duration::from_millis(100));
+        assert_eq!(rate, TickRate::Fast, "fast ticks while dragging");
+        assert_eq!(seeks(&output).last(), Some(&42.0), "the frame under the pointer");
+        let last_level = output.sent.borrow().iter().rev().find_map(|command| match command {
+            OutputCommand::SetBrightness(value) => Some(*value),
+            _ => None,
+        });
+        assert_eq!(last_level, Some(0.0), "visible though stopped shows black");
+
+        output.scrub.set(None);
+        output.status.borrow_mut().players[0].restarts += 1;
+        let rate = core.tick(&mut inputs, &output, now + Duration::from_millis(200));
+        assert_eq!(rate, TickRate::Slow);
+        assert_eq!(seeks(&output).last(), Some(&5.0), "released: the transport again");
     }
 
     /// Play through the end of a clip that fades out into nothing; returns

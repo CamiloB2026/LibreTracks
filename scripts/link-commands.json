@@ -80,6 +80,7 @@
     "video_live_state",
     "video_media_status",
     "video_output_status",
+    "video_scrub",
     "video_sync_stats",
     "video_test_pattern"
   ],

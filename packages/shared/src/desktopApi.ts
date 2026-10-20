@@ -3181,6 +3181,12 @@ export async function getVideoSyncStats(): Promise<VideoSyncStats> {
   return invokeCommand<VideoSyncStats>("video_sync_stats");
 }
 
+/** The playhead is being dragged to `positionSeconds` (view seconds): the
+ * video output shows the frame under it. `null` when the drag ends. */
+export async function setVideoScrub(positionSeconds: number | null): Promise<void> {
+  return invokeCommand<void>("video_scrub", { positionSeconds });
+}
+
 /** Start the latency calibration flash on a beat grid, or stop it (null). */
 export async function setVideoCalibration(grid: VideoCalibrationGrid | null): Promise<void> {
   return invokeCommand<void>("video_calibration", { grid });

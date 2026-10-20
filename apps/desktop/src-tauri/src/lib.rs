@@ -508,6 +508,7 @@ pub fn run() {
             commands::timeline::move_midi_clip,
             commands::timeline::preview_midi_clip,
             commands::video::create_video_clip,
+            commands::video::video_scrub,
             commands::video::update_video_clip,
             commands::video::move_video_clip,
             commands::video::trim_video_clip,

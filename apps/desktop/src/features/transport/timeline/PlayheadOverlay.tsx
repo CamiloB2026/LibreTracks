@@ -20,6 +20,7 @@ import {
   secondsToAbsoluteX,
   screenXToSeconds,
 } from "./timelineMath";
+import { playheadVideoScrub } from "../video/videoScrub";
 
 function isSyncDebugAvailable() {
   if (import.meta.env.DEV) return true;
@@ -334,6 +335,8 @@ export function PlayheadOverlay({
       };
       onPreviewPositionChange?.(normalizedSeconds);
       latestPropsRef.current.onSeekIntent?.(normalizedSeconds);
+      // The video output follows the drag, not only the release.
+      playheadVideoScrub.update(normalizedSeconds);
     };
 
     const stopAutoScroll = () => {
@@ -446,8 +449,9 @@ export function PlayheadOverlay({
      * `pointercancel` (el gesto de dos dedos del timeline sintetiza uno para
      * apartar los arrastres de un dedo) y a la pulsacion larga que abre el menu
      * de la regla: ninguno de los dos debe mover el cabezal. */
-    const abandonDrag = () => {
+    const abandonDrag = (releaseVideo = true) => {
       armed = false;
+      if (releaseVideo) playheadVideoScrub.end();
       dragStateRef.current = null;
       playheadRef.current?.classList.remove("is-dragging");
       dragCleanupRef.current?.();
@@ -468,8 +472,12 @@ export function PlayheadOverlay({
       }
 
       const commitSeconds = activeDrag.currentSeconds;
-      abandonDrag();
-      void onSeekCommit(commitSeconds);
+      // The video keeps the dragged frame until the seek lands, then goes
+      // back to following the transport (now at that same position).
+      abandonDrag(false);
+      void Promise.resolve(onSeekCommit(commitSeconds)).finally(() =>
+        playheadVideoScrub.end(),
+      );
     };
 
     const cancelDrag = (pointerEvent: PointerEvent) => {

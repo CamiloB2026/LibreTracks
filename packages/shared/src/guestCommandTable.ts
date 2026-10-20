@@ -84,6 +84,7 @@ export const GUEST_COMMAND_ROUTES: Readonly<Record<string, GuestCommandRoute>> =
   video_live_state: "local",
   video_media_status: "local",
   video_output_status: "local",
+  video_scrub: "local",
   video_sync_stats: "local",
   video_test_pattern: "local",
   get_missing_media: "view",
@@ -337,6 +338,7 @@ export const GUEST_LOCAL_COMMANDS: ReadonlySet<string> = new Set([
   "video_live_state",
   "video_media_status",
   "video_output_status",
+  "video_scrub",
   "video_sync_stats",
   "video_test_pattern",
 ]);

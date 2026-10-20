@@ -37,6 +37,10 @@ struct LoadedLibrary {
 }
 
 /// Process-wide video services, owned by `DesktopState`.
+/// A drag that never reported its end (a lost event) is over after this. Long:
+/// holding the mouse still on a frame sends nothing and must keep it.
+const SCRUB_STALE: std::time::Duration = std::time::Duration::from_secs(30);
+
 #[derive(Default)]
 pub struct VideoSystem {
     resource_dir: OnceLock<PathBuf>,
@@ -55,6 +59,9 @@ pub struct VideoSystem {
     live: std::sync::Mutex<live::LiveState>,
     pub runtime: runtime::VideoRuntimeHandle,
     calibration: std::sync::Mutex<Option<runtime::CalibrationGrid>>,
+    /// The playhead being dragged (view seconds) and when it last moved: the
+    /// picture follows it before the seek is committed on release.
+    scrub: std::sync::Mutex<Option<(f64, std::time::Instant)>>,
     /// Videos this device cannot decode (plan video-mobile, paso 07 §1), by
     /// `thumbs::source_identity` of the file on disk, with the reason. Per
     /// device and per run: never written to the session, which may open on a
@@ -247,6 +254,24 @@ impl VideoSystem {
             .ok()?
             .get(&libretracks_video::thumbs::source_identity(path))
             .cloned()
+    }
+
+    /// The playhead is being dragged to `position` (view seconds), or the
+    /// drag ended (`None`).
+    pub fn set_scrub(&self, position: Option<f64>) {
+        if let Ok(mut scrub) = self.scrub.lock() {
+            *scrub = position
+                .filter(|position| position.is_finite())
+                .map(|position| (position.max(0.0), std::time::Instant::now()));
+        }
+        self.runtime.notify();
+    }
+
+    /// Where a drag in progress points. A drag whose end never arrived (a
+    /// lost event) stops counting after `SCRUB_STALE`.
+    pub fn scrub(&self, now: std::time::Instant) -> Option<f64> {
+        let scrub = self.scrub.lock().ok().and_then(|scrub| *scrub)?;
+        (now.saturating_duration_since(scrub.1) < SCRUB_STALE).then_some(scrub.0)
     }
 
     pub fn calibration(&self) -> Option<runtime::CalibrationGrid> {

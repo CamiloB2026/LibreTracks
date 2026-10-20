@@ -129,6 +129,7 @@ vi.mock("../features/transport/desktopApi", async (importOriginal) => {
     showVideoTestPattern: vi.fn(async () => undefined),
     getVideoSyncStats: vi.fn(async () => null),
     setVideoCalibration: vi.fn(async () => undefined),
+    setVideoScrub: vi.fn(async () => undefined),
     extractVideoAudio: vi.fn(async () => null),
     getVideoExportPayload: vi.fn(async () => ({ count: 0, bytes: 0 })),
     videoLiveAction: vi.fn(async () => ({ forcedBlack: false, forcedIdle: false, outputEnabled: false })),
