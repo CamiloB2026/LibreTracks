@@ -16,8 +16,10 @@ const styles = readFileSync(
   resolve(rendererDir, "../../../shared/styles.css"),
   "utf8",
 );
+// Las zonas táctiles de las marcas viven en su propio componente desde que se
+// sacaron del panel (selección múltiple de marcas).
 const pane = readFileSync(
-  resolve(rendererDir, "../timeline/TimelineCanvasPane.tsx"),
+  resolve(rendererDir, "../rulerMarkers/RulerMarkerHotspots.tsx"),
   "utf8",
 );
 const drawBackground = readFileSync(

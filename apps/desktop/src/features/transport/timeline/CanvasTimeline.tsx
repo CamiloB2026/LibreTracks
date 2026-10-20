@@ -11,7 +11,7 @@ import type {
   ActiveVampSummary,
   PendingAutomationCueSummary,
   PendingJumpSummary,
-  MarkerCategory,
+  RulerMarkerRef,
   SectionMarkerSummary,
   SongRegionSummary,
   TempoMarkerSummary,
@@ -27,6 +27,7 @@ import {
   InputManager,
   type TimelineNavigationScheme,
 } from "../Renderer/InputManager";
+import type { MarkerMovePreview } from "./useMarkerMoveDrag";
 import {
   drawGridLines,
   drawRulerBackgroundLayer,
@@ -85,7 +86,8 @@ type RulerCanvasProps = {
   tempoMarkers: TempoMarkerSummary[];
   timeSignatureMarkers: TimeSignatureMarkerSummary[];
   selectedRegionId: string | null;
-  selectedMarkerId: string | null;
+  /** Ids de las marcas seleccionadas, de cualquier tipo (seleccion multiple). */
+  selectedMarkerIds: readonly string[];
   pendingMarkerJump: PendingJumpSummary | null;
   pendingAutomationCue: PendingAutomationCueSummary | null;
   activeVamp: ActiveVampSummary | null;
@@ -99,11 +101,7 @@ type RulerCanvasProps = {
    * El bucle sustituye la marca arrastrada por su posición y carril de
    * previsualización justo antes de pintar.
    */
-  markerMovePreviewRef?: MutableRefObject<{
-    markerId: string;
-    startSeconds: number;
-    category: MarkerCategory;
-  } | null>;
+  markerMovePreviewRef?: MutableRefObject<MarkerMovePreview>;
   interactionContainerRef: RefObject<HTMLDivElement | null>;
   canNativeZoom: boolean;
   navigationScheme: TimelineNavigationScheme;
@@ -293,14 +291,13 @@ function buildWaveformCacheSignature(
  */
 export function applyMarkerMovePreview(
   markers: SectionMarkerSummary[],
-  preview: {
-    markerId: string;
-    startSeconds: number;
-    category: MarkerCategory;
-  } | null,
+  preview: MarkerMovePreview,
 ): SectionMarkerSummary[] {
   if (!preview) {
     return markers;
+  }
+  if (preview.group) {
+    return applyGroupMovePreview(markers, preview, "section");
   }
   return markers.map((marker) =>
     marker.id === preview.markerId
@@ -309,6 +306,32 @@ export function applyMarkerMovePreview(
           startSeconds: preview.startSeconds,
           categoryOverride: preview.category,
         }
+      : marker,
+  );
+}
+
+/**
+ * Arrastre de GRUPO: desplaza lo mismo a cada marca de este tipo que este en
+ * el grupo. Misma regla que arriba: sin grupo devuelve la MISMA lista.
+ */
+export function applyGroupMovePreview<T extends { id: string; startSeconds: number }>(
+  markers: T[],
+  preview: MarkerMovePreview,
+  kind: RulerMarkerRef["kind"],
+): T[] {
+  const group = preview?.group;
+  if (!group || group.deltaSeconds === 0) {
+    return markers;
+  }
+  const ids = new Set(
+    group.markers.filter((marker) => marker.kind === kind).map((marker) => marker.id),
+  );
+  if (ids.size === 0) {
+    return markers;
+  }
+  return markers.map((marker) =>
+    ids.has(marker.id)
+      ? { ...marker, startSeconds: marker.startSeconds + group.deltaSeconds }
       : marker,
   );
 }
@@ -326,7 +349,7 @@ export function TimelineRulerCanvas({
   tempoMarkers,
   timeSignatureMarkers,
   selectedRegionId,
-  selectedMarkerId,
+  selectedMarkerIds,
   pendingMarkerJump,
   pendingAutomationCue,
   activeVamp,
@@ -357,7 +380,7 @@ export function TimelineRulerCanvas({
     tempoMarkers,
     timeSignatureMarkers,
     selectedRegionId,
-    selectedMarkerId,
+    selectedMarkerIds,
     pendingMarkerJump,
     pendingAutomationCue,
     activeVamp,
@@ -376,7 +399,7 @@ export function TimelineRulerCanvas({
     tempoMarkers,
     timeSignatureMarkers,
     selectedRegionId,
-    selectedMarkerId,
+    selectedMarkerIds,
     pendingMarkerJump,
     pendingAutomationCue,
     activeVamp,
@@ -407,6 +430,7 @@ export function TimelineRulerCanvas({
     [markers],
   );
 
+  const selectedMarkersSignature = selectedMarkerIds.join("|");
   const tempoMarkersSignature = useMemo(
     () =>
       tempoMarkers.map((m) => `${m.id}:${m.startSeconds}:${m.bpm}`).join("|"),
@@ -442,7 +466,7 @@ export function TimelineRulerCanvas({
     activeVampSignature,
     pixelsPerSecond,
     selectedRegionId,
-    selectedMarkerId,
+    selectedMarkersSignature,
     timelineGrid,
     width,
   ]);
@@ -681,7 +705,7 @@ export function TimelineRulerCanvas({
           // lista mientras hay un arrastre, y sólo cuando el preview cambia.
           const markerPreview = snapshot.markerMovePreviewRef?.current ?? null;
           const markerPreviewKey = markerPreview
-            ? `${markerPreview.markerId}:${markerPreview.startSeconds}:${markerPreview.category}`
+            ? `${markerPreview.markerId}:${markerPreview.startSeconds}:${markerPreview.category}:${markerPreview.group?.deltaSeconds ?? ""}`
             : "";
           const shouldRedrawOverlay =
             lastOverlaySceneVersion !== sceneVersionRef.current ||
@@ -707,11 +731,19 @@ export function TimelineRulerCanvas({
               pixelsPerSecond: livePixelsPerSecond,
               playheadSeconds,
               markers: applyMarkerMovePreview(snapshot.markers, markerPreview),
-              tempoMarkers: snapshot.tempoMarkers,
-              timeSignatureMarkers: snapshot.timeSignatureMarkers,
+              tempoMarkers: applyGroupMovePreview(
+                snapshot.tempoMarkers,
+                markerPreview,
+                "tempo",
+              ),
+              timeSignatureMarkers: applyGroupMovePreview(
+                snapshot.timeSignatureMarkers,
+                markerPreview,
+                "timeSignature",
+              ),
               pendingMarkerJump: snapshot.pendingMarkerJump,
               pendingAutomationCue: snapshot.pendingAutomationCue,
-              selectedMarkerId: snapshot.selectedMarkerId,
+              selectedMarkerIds: snapshot.selectedMarkerIds,
               currentMarkerId,
               pulseAlpha,
             });

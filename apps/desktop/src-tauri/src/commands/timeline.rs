@@ -21,7 +21,7 @@ use tauri::State;
 use crate::audio::automation::{AutomationCue, MixScene};
 use crate::infra::error::DesktopError;
 use crate::models::{SongStructureResult, TransportSnapshot};
-use crate::state::{ClipMoveRequest, DesktopState};
+use crate::state::{ClipMoveRequest, DesktopState, RulerMarkerPlacement, RulerMarkerRef};
 use libretracks_core::{Arrangement, MarkerCategory, MarkerKind, MidiClip, TrackKind};
 use serde::Deserialize;
 
@@ -343,6 +343,55 @@ pub fn delete_section_marker(
 
     session
         .delete_section_marker(&section_id, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+/// Mueve una selección de marcas de la regla (secciones, tempo, compás) en un
+/// solo paso de deshacer. Posiciones en tiempo de vista.
+#[tauri::command(async)]
+pub fn move_ruler_markers(
+    moves: Vec<RulerMarkerPlacement>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .move_ruler_markers(&moves, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+/// Copia cada marca a la posición indicada, en un solo paso de deshacer.
+#[tauri::command(async)]
+pub fn duplicate_ruler_markers(
+    copies: Vec<RulerMarkerPlacement>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .duplicate_ruler_markers(&copies, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+/// Borra una selección de marcas de la regla en un solo paso de deshacer.
+#[tauri::command(async)]
+pub fn delete_ruler_markers(
+    markers: Vec<RulerMarkerRef>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .delete_ruler_markers(&markers, &state.audio)
         .map_err(|error| error.to_string())
 }
 

@@ -71,9 +71,11 @@ mod video_edit;
 mod video_library;
 mod video_audio;
 mod regions;
+mod ruler_markers;
 mod session;
 pub use external_import::parse_external_project;
 pub use session::ExistingProjectDir;
+pub use ruler_markers::{RulerMarkerKind, RulerMarkerPlacement, RulerMarkerRef};
 mod song_analysis;
 pub use song_analysis::AnalysedSection;
 mod song_edit;
@@ -4581,3 +4583,5 @@ mod charts_tests;
 mod midi_song_ops_tests;
 #[cfg(test)]
 mod song_template_tests;
+#[cfg(test)]
+mod ruler_markers_tests;

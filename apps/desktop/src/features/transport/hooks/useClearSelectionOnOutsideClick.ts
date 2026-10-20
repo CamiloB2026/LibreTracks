@@ -54,7 +54,7 @@ const SELECTION_OWNED_SURFACES = [
 /** Mismo umbral que el resto de arrastres del timeline. */
 const DRAG_TOLERANCE_PX = 4;
 
-type SelectionSignature = readonly [string[], string[], string | null, string | null];
+type SelectionSignature = readonly unknown[];
 
 function selectionSignature(): SelectionSignature {
   const state = useTimelineUIStore.getState();
@@ -63,6 +63,10 @@ function selectionSignature(): SelectionSignature {
     state.selectedClipIds,
     state.selectedClipId,
     state.selectedSectionId,
+    state.selectedTempoMarkerId,
+    state.selectedTimeSignatureMarkerId,
+    // Ctrl+clic en una marca cambia solo la lista multiple.
+    state.selectedMarkers,
   ];
 }
 

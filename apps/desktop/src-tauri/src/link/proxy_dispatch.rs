@@ -56,6 +56,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "delete_clips"
         | "delete_midi_clip"
         | "delete_mix_scene"
+        | "delete_ruler_markers"
         | "delete_section_marker"
         | "delete_song_arrangement"
         | "delete_song_region"
@@ -67,6 +68,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "discard_song_structure"
         | "duplicate_clip"
         | "duplicate_clips"
+        | "duplicate_ruler_markers"
         | "duplicate_video_clips"
         | "move_clip"
         | "move_clip_live"
@@ -74,6 +76,7 @@ pub fn access(command: &str) -> Option<ProxyAccess> {
         | "move_clips_batch"
         | "move_clips_live_batch"
         | "move_midi_clip"
+        | "move_ruler_markers"
         | "move_song_region"
         | "move_track"
         | "move_video_clip"
@@ -185,6 +188,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "delete_clips",
     "delete_midi_clip",
     "delete_mix_scene",
+    "delete_ruler_markers",
     "delete_section_marker",
     "delete_song_arrangement",
     "delete_song_region",
@@ -196,6 +200,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "discard_song_structure",
     "duplicate_clip",
     "duplicate_clips",
+    "duplicate_ruler_markers",
     "duplicate_video_clips",
     "move_clip",
     "move_clip_live",
@@ -203,6 +208,7 @@ pub const PROXIED_COMMANDS: &[&str] = &[
     "move_clips_batch",
     "move_clips_live_batch",
     "move_midi_clip",
+    "move_ruler_markers",
     "move_song_region",
     "move_track",
     "move_video_clip",
@@ -539,6 +545,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             .await
             .map_err(|error| error.to_string())?
         }
+        "delete_ruler_markers" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::delete_ruler_markers(arg(&args, "markers")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
         "delete_section_marker" => {
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
@@ -627,6 +641,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             .await
             .map_err(|error| error.to_string())?
         }
+        "duplicate_ruler_markers" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::duplicate_ruler_markers(arg(&args, "copies")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
         "duplicate_video_clips" => {
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
@@ -679,6 +701,14 @@ pub async fn dispatch(app: &AppHandle, command: &str, args: Value) -> Result<Val
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
                 into_value_result(crate::commands::timeline::move_midi_clip(arg(&args, "clipId")?, arg(&args, "timelineStartSeconds")?, arg(&args, "targetTrackId")?, app.state()))
+            })
+            .await
+            .map_err(|error| error.to_string())?
+        }
+        "move_ruler_markers" => {
+            let app = app.clone();
+            tauri::async_runtime::spawn_blocking(move || -> Result<Value, String> {
+                into_value_result(crate::commands::timeline::move_ruler_markers(arg(&args, "moves")?, app.state()))
             })
             .await
             .map_err(|error| error.to_string())?

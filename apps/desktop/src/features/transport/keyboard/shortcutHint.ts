@@ -11,6 +11,17 @@ import { resolveBindings, useKeybindingStore } from "./keybindingStore";
 // the key next to context-menu items, Reaper-style, so shortcuts are
 // discoverable without opening Settings. Returns "" for unbound actions —
 // and for everything on Android, where there is no physical keyboard to hint.
+/** Lo mismo leido en el momento, para quien no es un componente (las
+ * factories de handlers que montan su menu al abrirlo). */
+export function shortcutHintNow(actionId: ShortcutActionId): string {
+  if (isMobileApp) {
+    return "";
+  }
+  const binding =
+    resolveBindings(useKeybindingStore.getState().overrides)[actionId] ?? null;
+  return formatBindingForDisplay(binding, isMacPlatform());
+}
+
 export function useShortcutHint(): (actionId: ShortcutActionId) => string {
   const overrides = useKeybindingStore((state) => state.overrides);
   return useCallback(

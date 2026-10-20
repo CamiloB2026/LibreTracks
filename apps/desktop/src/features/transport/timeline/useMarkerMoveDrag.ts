@@ -18,7 +18,12 @@ import {
   secondsToScreenX,
   snapToTimelineGrid,
 } from "./timelineMath";
-import type { SongView } from "../desktopApi";
+import type { RulerMarkerRef, SongView } from "../desktopApi";
+import {
+  clampGroupDelta,
+  resolveRulerMarkers,
+  type RulerMarkerEntry,
+} from "../rulerMarkers/rulerMarkerSelection";
 
 const MARKER_DRAG_THRESHOLD_PX = 4;
 
@@ -64,6 +69,14 @@ type MarkerMoveDrag = {
   initialCategory: MarkerCategory;
   previewCategory: MarkerCategory;
   moved: boolean;
+  /**
+   * Arrastre de GRUPO: la seleccion multiple entera se mueve lo mismo que la
+   * marca agarrada. El ajuste a la rejilla se aplica a la agarrada y el resto
+   * la sigue, asi las distancias entre ellas no cambian. Un grupo no cambia de
+   * carril. Tambien va por aqui una sola marca de tempo o compas, que solo se
+   * mueven con el comando de lotes.
+   */
+  group: { markers: RulerMarkerRef[]; entries: RulerMarkerEntry[] } | null;
 };
 
 export type MarkerMovePreview = {
@@ -71,6 +84,8 @@ export type MarkerMovePreview = {
   startSeconds: number;
   /** Lane the flag should preview in — it follows the pointer across lanes. */
   category: MarkerCategory;
+  /** Arrastre de grupo: lo que se desplaza cada miembro. */
+  group?: { markers: RulerMarkerRef[]; deltaSeconds: number };
 } | null;
 
 export type MarkerMoveDragDeps = {
@@ -93,6 +108,8 @@ export type MarkerMoveDragDeps = {
     category?: MarkerCategory,
   ) => void;
   onAutomationCueMoveCommit?: (cueId: string, atSeconds: number) => void;
+  /** Suelta un arrastre de grupo (ver `MarkerMoveDrag.group`). */
+  onGroupMoveCommit?: (markers: RulerMarkerRef[], deltaSeconds: number) => void;
 };
 
 /**
@@ -120,6 +137,7 @@ export function useMarkerMoveDrag({
   pixelsPerSecond,
   onMarkerMoveCommit,
   onAutomationCueMoveCommit,
+  onGroupMoveCommit,
 }: MarkerMoveDragDeps) {
   const dragRef = useRef<MarkerMoveDrag | null>(null);
   // Set true the instant a drag actually moves; consumed by the marker's
@@ -153,7 +171,9 @@ export function useMarkerMoveDrag({
   function publishPreview(next: MarkerMovePreview) {
     previewRef.current = next;
     setPreviewLane((current) => {
-      if (!next) return current === null ? current : null;
+      // Un grupo no cambia de carril: sin bandas de "Secciones / Avisos" que
+      // sugieran lo contrario.
+      if (!next || next.group) return current === null ? current : null;
       if (
         current &&
         current.markerId === next.markerId &&
@@ -170,6 +190,7 @@ export function useMarkerMoveDrag({
     markerId: string,
     startSeconds: number,
     kind: MarkerMoveKind = "marker",
+    group: RulerMarkerRef[] | null = null,
   ) {
     if (event.button !== 0) return;
     didDragRef.current = false;
@@ -203,6 +224,9 @@ export function useMarkerMoveDrag({
       initialCategory,
       previewCategory: initialCategory,
       moved: false,
+      group: group
+        ? { markers: group, entries: resolveRulerMarkers(song, group) }
+        : null,
     };
     try {
       event.currentTarget.setPointerCapture(event.pointerId);
@@ -242,7 +266,7 @@ export function useMarkerMoveDrag({
     const pointerDeltaY = event.clientY - drag.pointerStartClientY;
     const rulerTop = rulerRef?.current?.getBoundingClientRect().top;
     const nextCategory: MarkerCategory =
-      drag.kind === "cue"
+      drag.kind === "cue" || drag.group
         ? drag.initialCategory
         : laneCategoryAtY(
             rulerTop != null
@@ -285,8 +309,12 @@ export function useMarkerMoveDrag({
       );
     }
 
-    // A marker can't sit before the timeline start.
-    nextStart = Math.max(0, nextStart);
+    // A marker can't sit before the timeline start — nor can any member of a
+    // dragged group, so the whole group stops when its earliest one hits zero.
+    nextStart = drag.group
+      ? drag.initialStartSeconds +
+        clampGroupDelta(drag.group.entries, nextStart - drag.initialStartSeconds)
+      : Math.max(0, nextStart);
 
     drag.previewStartSeconds = nextStart;
     drag.previewCategory = nextCategory;
@@ -294,6 +322,12 @@ export function useMarkerMoveDrag({
       markerId: drag.markerId,
       startSeconds: nextStart,
       category: nextCategory,
+      group: drag.group
+        ? {
+            markers: drag.group.markers,
+            deltaSeconds: nextStart - drag.initialStartSeconds,
+          }
+        : undefined,
     });
   }
 
@@ -322,7 +356,9 @@ export function useMarkerMoveDrag({
     if (!moved) {
       return;
     }
-    if (drag.kind === "cue") {
+    if (drag.group) {
+      onGroupMoveCommit?.(drag.group.markers, finalStart - drag.initialStartSeconds);
+    } else if (drag.kind === "cue") {
       onAutomationCueMoveCommit?.(drag.markerId, finalStart);
     } else {
       onMarkerMoveCommit?.(

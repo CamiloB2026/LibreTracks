@@ -753,6 +753,7 @@ export function drawRulerTempoMarker(
   cameraX: number,
   pixelsPerSecond: number,
   overrideLabel?: string,
+  isSelected = false,
 ) {
   const x = secondsToScreenX(marker.startSeconds, cameraX, pixelsPerSecond);
   const label =
@@ -784,15 +785,19 @@ export function drawRulerTempoMarker(
   }
 
   context.save();
-  context.strokeStyle = overrideLabel
-    ? "rgba(255, 184, 107, 0.85)"
-    : "rgba(87, 241, 219, 0.85)";
+  // Seleccionada: borde blanco y cuerpo mas lleno, como las banderas de
+  // seccion. Hasta la seleccion multiple nada las marcaba como elegidas.
+  context.strokeStyle = isSelected
+    ? "rgba(255, 255, 255, 0.95)"
+    : overrideLabel
+      ? "rgba(255, 184, 107, 0.85)"
+      : "rgba(87, 241, 219, 0.85)";
   // Opaque, for the same reason as the section flags: a translucent body let
   // the grid lines show through the number.
   context.fillStyle = overrideLabel
-    ? blendOnRulerBackdrop("#ffb86b", 0.24)
-    : blendOnRulerBackdrop("#57f1db", 0.24);
-  context.lineWidth = 1.2;
+    ? blendOnRulerBackdrop("#ffb86b", isSelected ? 0.42 : 0.24)
+    : blendOnRulerBackdrop("#57f1db", isSelected ? 0.42 : 0.24);
+  context.lineWidth = isSelected ? 1.8 : 1.2;
   context.beginPath();
   context.moveTo(snappedX, flagTop + 2);
   context.lineTo(

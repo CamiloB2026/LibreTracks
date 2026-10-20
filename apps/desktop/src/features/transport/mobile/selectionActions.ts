@@ -1,5 +1,6 @@
 import type {
   ClipSummary,
+  RulerMarkerRef,
   SectionMarkerSummary,
   SongRegionSummary,
   SongView,
@@ -22,6 +23,8 @@ export type MobileSelectionTarget =
   | { kind: "marker"; marker: SectionMarkerSummary }
   | { kind: "tempoMarker"; marker: TempoMarkerSummary }
   | { kind: "timeSignatureMarker"; marker: TimeSignatureMarkerSummary }
+  /** Varias marcas de la regla, de cualquier tipo (seleccion multiple). */
+  | { kind: "markers"; markers: RulerMarkerRef[] }
   | { kind: "region"; region: SongRegionSummary }
   | { kind: "track"; track: TrackSummary }
   | { kind: "tracks"; tracks: TrackSummary[] }
@@ -37,6 +40,8 @@ export type MobileSelectionInput = {
   /** Marca de tempo/compas seleccionada desde la regla (paso 6). */
   selectedTempoMarkerId?: string | null;
   selectedTimeSignatureMarkerId?: string | null;
+  /** Seleccion MULTIPLE de marcas; con una sola se usan los ids sueltos. */
+  selectedMarkers?: RulerMarkerRef[];
 };
 
 /**
@@ -56,6 +61,12 @@ export function resolveMobileSelection(
   const song = input.song;
   if (!song) {
     return { kind: "none" };
+  }
+
+  // Varias marcas: el store las deja como unica seleccion, igual que las
+  // sueltas, asi que van delante por la misma razon.
+  if ((input.selectedMarkers?.length ?? 0) > 1) {
+    return { kind: "markers", markers: input.selectedMarkers! };
   }
 
   const tempoMarker = input.selectedTempoMarkerId
@@ -136,6 +147,8 @@ export type MobileSelectionMenus = {
   trackContextMenu: (track: TrackSummary) => ContextMenuAction[];
   multiTrackContextMenu: (tracks: TrackSummary[]) => ContextMenuAction[];
   automationTrackContextMenu: () => ContextMenuAction[];
+  /** Duplicar/eliminar una seleccion multiple de marcas (rulerMarkers/). */
+  rulerMarkersMenu?: (markers: RulerMarkerRef[]) => ContextMenuAction[];
 };
 
 export type MobileCreationHandlers = {
@@ -215,6 +228,15 @@ export function mobileSelectionBarModel(args: {
         }),
         actions: menus.timeSignatureMarkerContextMenu(target.marker),
         count: null,
+      };
+    case "markers":
+      return {
+        title: t("mobileSelectionActions.markers", {
+          count: target.markers.length,
+          defaultValue: "{{count}} marcas",
+        }),
+        actions: menus.rulerMarkersMenu?.(target.markers) ?? [],
+        count: target.markers.length,
       };
     case "region":
       return {

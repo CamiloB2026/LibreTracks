@@ -89,6 +89,7 @@ export function MobileSelectionActionBar({
   // (son el mismo panel), y con una sola pista seleccionada salian los dos.
   const mixOpen = useTimelineUIStore((state) => state.selectionMixOpen);
   const areaSelectMode = useTimelineUIStore((state) => state.areaSelectMode);
+  const selectedMarkers = useTimelineUIStore((state) => state.selectedMarkers);
 
   if (!isMobileApp || !menus) {
     return null;
@@ -132,6 +133,7 @@ export function MobileSelectionActionBar({
     selectedTrackIds,
     selectedTempoMarkerId,
     selectedTimeSignatureMarkerId,
+    selectedMarkers,
   });
   const model = mobileSelectionBarModel({ target, menus, creation, t });
   if (model.actions.length === 0) {

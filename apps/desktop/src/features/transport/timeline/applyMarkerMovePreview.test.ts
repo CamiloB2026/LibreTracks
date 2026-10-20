@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyMarkerMovePreview } from "./CanvasTimeline";
+import { applyGroupMovePreview, applyMarkerMovePreview } from "./CanvasTimeline";
 import type { SectionMarkerSummary } from "../desktopApi";
 
 /**
@@ -42,5 +42,39 @@ describe("applyMarkerMovePreview", () => {
       category: "cue",
     });
     expect(result.map((marker) => marker.startSeconds)).toEqual([1, 5]);
+  });
+});
+
+describe("arrastre de un GRUPO de marcas", () => {
+  const TEMPO = [
+    { id: "t1", startSeconds: 3, bpm: 100 },
+    { id: "t2", startSeconds: 9, bpm: 90 },
+  ];
+  const groupPreview = {
+    markerId: "a",
+    startSeconds: 2,
+    category: "section" as const,
+    group: {
+      markers: [
+        { kind: "section" as const, id: "a" },
+        { kind: "section" as const, id: "b" },
+        { kind: "tempo" as const, id: "t1" },
+      ],
+      deltaSeconds: 1,
+    },
+  };
+
+  it("desplaza a todas las del grupo, no solo a la agarrada", () => {
+    expect(
+      applyMarkerMovePreview(MARKERS, groupPreview).map((marker) => marker.startSeconds),
+    ).toEqual([2, 6]);
+    expect(
+      applyGroupMovePreview(TEMPO, groupPreview, "tempo").map((marker) => marker.startSeconds),
+    ).toEqual([4, 9]);
+  });
+
+  it("un tipo sin miembros en el grupo pasa intacto, misma lista", () => {
+    expect(applyGroupMovePreview(TEMPO, groupPreview, "timeSignature")).toBe(TEMPO);
+    expect(applyGroupMovePreview(TEMPO, null, "tempo")).toBe(TEMPO);
   });
 });

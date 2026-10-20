@@ -2546,6 +2546,35 @@ export async function deleteSectionMarker(sectionId: string): Promise<TransportS
   return invokeCommand<TransportSnapshot>("delete_section_marker", { sectionId });
 }
 
+/** A ruler marker of any kind: section/cue flags share `Marker`, tempo and
+ * time-signature markers are their own lists. */
+export type RulerMarkerKind = "section" | "tempo" | "timeSignature";
+export type RulerMarkerRef = { kind: RulerMarkerKind; id: string };
+/** A marker and where it should end up (move) or where its copy goes
+ * (duplicate), in view seconds. */
+export type RulerMarkerPlacement = RulerMarkerRef & { startSeconds: number };
+
+/** Moves a multi-selection of ruler markers. One undo step. */
+export async function moveRulerMarkers(
+  moves: RulerMarkerPlacement[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("move_ruler_markers", { moves });
+}
+
+/** Copies each marker to the given position. One undo step. */
+export async function duplicateRulerMarkers(
+  copies: RulerMarkerPlacement[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("duplicate_ruler_markers", { copies });
+}
+
+/** Deletes a multi-selection of ruler markers. One undo step. */
+export async function deleteRulerMarkers(
+  markers: RulerMarkerRef[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("delete_ruler_markers", { markers });
+}
+
 export async function assignSectionMarkerDigit(
   sectionId: string,
   digit: number | null,

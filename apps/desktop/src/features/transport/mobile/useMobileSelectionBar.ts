@@ -12,6 +12,8 @@ type UseMobileSelectionBarArgs = {
   getPlayheadSeconds: () => number;
   /** El MISMO dialogo de importacion que la biblioteca. */
   onAddAudios: () => void;
+  /** Menu de una seleccion multiple de marcas (rulerMarkers/). */
+  rulerMarkersMenu?: MobileSelectionMenus["rulerMarkersMenu"];
 };
 
 /**
@@ -29,6 +31,7 @@ export function useMobileSelectionBar({
   timelineMenus,
   getPlayheadSeconds,
   onAddAudios,
+  rulerMarkersMenu,
 }: UseMobileSelectionBarArgs): {
   menus: MobileSelectionMenus | null;
   creation: MobileCreationHandlers;
@@ -51,9 +54,10 @@ export function useMobileSelectionBar({
             trackContextMenu: timelineMenus.trackContextMenu,
             multiTrackContextMenu: timelineMenus.multiTrackContextMenu,
             automationTrackContextMenu: timelineMenus.automationTrackContextMenu,
+            rulerMarkersMenu,
           }
         : null,
-    [ready, timelineMenus],
+    [ready, timelineMenus, rulerMarkersMenu],
   );
 
   // Lo publica useVideoFeature solo si el video se puede editar aqui.

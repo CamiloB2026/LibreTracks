@@ -336,6 +336,8 @@ beforeEach(async () => {
     selectedSectionId: null,
     selectedTempoMarkerId: null,
     selectedTimeSignatureMarkerId: null,
+    selectedMarkers: [],
+    markerSelectionAnchor: null,
     snapEnabled: TIMELINE_DEFAULT_SNAP_ENABLED,
     followPlayheadEnabled: TIMELINE_DEFAULT_FOLLOW_PLAYHEAD_ENABLED,
     midiLearnMode: null,

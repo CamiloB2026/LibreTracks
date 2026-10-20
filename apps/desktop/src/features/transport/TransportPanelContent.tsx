@@ -464,6 +464,7 @@ import { createTrackHeaderHandlers } from "./tracks/trackHeaderHandlers";
 import { useTrackHeights } from "./tracks/useTrackHeights";
 import { createCompactSongHandlers } from "./compact/compactSongHandlers";
 import { createMarkerMoveHandlers } from "./timeline/markerMoveHandlers";
+import { createRulerMarkerHandlers } from "./rulerMarkers/rulerMarkerHandlers";
 import { useLibraryState } from "./hooks/useLibraryState";
 import { useSongWaveforms } from "./hooks/useSongWaveforms";
 import { useWaveformProgress } from "./hooks/useWaveformProgress";
@@ -4742,7 +4743,12 @@ export function TransportPanelContent() {
     openClipMenu: (event, clip) => timelineMenus.openVideoClipMenu(event, clip),
   });
 
+  // Seleccion multiple de marcas de la regla: ver rulerMarkers/.
+  const rulerMarkers = useMemo(() => createRulerMarkerHandlers({
+    getSong: () => songRef.current, runAction, applyPlaybackSnapshot, refreshSongView, setStatus, t,
+  }), [applyPlaybackSnapshot, refreshSongView, runAction, setStatus, t]);
   const { runShortcutAction } = useTimelineKeyboardShortcuts({
+    rulerMarkers,
     videoEdits: video.keyboardEdits,
     runAction,
     applyPlaybackSnapshot,
@@ -6668,6 +6674,7 @@ export function TransportPanelContent() {
       timelineMenus,
       getPlayheadSeconds: () => displayPositionSecondsRef.current,
       onAddAudios: handleImportLibraryFromDialog,
+      rulerMarkersMenu: rulerMarkers.groupMenu,
     });
 
   const handleRulerPointerDown = useTimelineRangeSelection({
@@ -6687,6 +6694,7 @@ export function TransportPanelContent() {
       updateCameraX(nextCameraX, { commitToStore: false }),
     prewarmPosition: prewarmTimelinePosition,
     clearTimelineSelection: () => clearSelections(),
+    areaMarkers: rulerMarkers.area,
     setRange: setSelectedTimelineRange,
     seek: (seconds) => {
       void runAction(async () => {
@@ -7891,6 +7899,9 @@ export function TransportPanelContent() {
                             });
                           }}
                           onMarkerMoveCommit={handleMarkerMoveCommit}
+                          onRulerMarkersMoveCommit={rulerMarkers.moveGroup}
+                          onRulerMarkersContextMenu={(event, markers) =>
+                            openMenu(event, t("transport.menu.markersTitle", { count: markers.length, defaultValue: "{{count}} markers" }), rulerMarkers.groupMenu(markers))}
                           onAutomationCueMoveCommit={
                             handleAutomationCueMoveCommit
                           }

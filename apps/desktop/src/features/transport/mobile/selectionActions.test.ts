@@ -265,3 +265,33 @@ describe("las acciones de la barra son las del escritorio", () => {
     expect(model.count).toBe(2);
   });
 });
+
+describe("varias marcas de la regla en la barra", () => {
+  it("se resuelven como grupo y la barra ofrece el menu del grupo", () => {
+    const markers = [
+      { kind: "section" as const, id: "s1" },
+      { kind: "tempo" as const, id: "t1" },
+    ];
+    const target = resolveMobileSelection({
+      song: { clips: [], sectionMarkers: [], tempoMarkers: [], timeSignatureMarkers: [], tracks: [], regions: [] } as unknown as SongView,
+      selectedClipIds: [],
+      selectedSectionId: null,
+      selectedRegionId: null,
+      selectedTrackIds: [],
+      selectedMarkers: markers,
+    });
+    expect(target).toEqual({ kind: "markers", markers });
+
+    const rulerMarkersMenu = vi.fn(() => [action("Duplicar 2 marcas"), action("Borrar 2 marcas")]);
+    const model = mobileSelectionBarModel({
+      target,
+      menus: { ...desktopMenus, rulerMarkersMenu },
+      creation: {} as never,
+      t,
+    });
+    expect(model.title).toBe("mobileSelectionActions.markers:2");
+    expect(model.count).toBe(2);
+    expect(model.actions.map((entry) => entry.label)).toEqual(["Duplicar 2 marcas", "Borrar 2 marcas"]);
+    expect(rulerMarkersMenu).toHaveBeenCalledWith(markers);
+  });
+});

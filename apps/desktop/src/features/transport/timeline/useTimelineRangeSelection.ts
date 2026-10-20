@@ -37,6 +37,17 @@ type TimelineRangeSelectionDeps = {
    * lo ha pulsado.
    */
   onSeekBlocked?: () => void;
+  /**
+   * Seleccion por area (movil): con el modo activo, arrastrar por la regla
+   * coge las marcas del tramo en vez de dejar un rango. Ver
+   * ../rulerMarkers/rulerAreaSelection.
+   */
+  areaMarkers?: {
+    active: () => boolean;
+    update: (startSeconds: number, endSeconds: number) => void;
+    end: () => void;
+    cancel: () => void;
+  };
 };
 
 const INTERACTIVE_RULER_SELECTOR = [
@@ -97,6 +108,8 @@ export function useTimelineRangeSelection(
         startSeconds <= d.currentRange.endSeconds,
     );
     let hasMoved = false;
+    // Se decide al apoyar: cambiar de modo a medio gesto no lo reinterpreta.
+    const area = d.areaMarkers?.active() ? d.areaMarkers : null;
     let autoScrollFrameId: number | null = null;
     let autoScrollVelocity = 0;
     let latestClientX = startClientX;
@@ -113,10 +126,14 @@ export function useTimelineRangeSelection(
 
     const updateRange = (clientX: number) => {
       const currentSeconds = d.getSnappedSeconds(clientX);
-      d.setRange({
+      const span = {
         startSeconds: Math.min(startSeconds, currentSeconds),
         endSeconds: Math.max(startSeconds, currentSeconds),
-      });
+      };
+      // El rango se pinta igual en el modo area: es lo que ensena el tramo
+      // que se esta cogiendo. Al soltar desaparece y quedan las marcas.
+      d.setRange(span);
+      area?.update(span.startSeconds, span.endSeconds);
     };
 
     const tickAutoScroll = () => {
@@ -181,7 +198,8 @@ export function useTimelineRangeSelection(
 
       if (!hasMoved) {
         hasMoved = true;
-        d.clearTimelineSelection();
+        // En el modo area el gesto SUMA a la seleccion: no se suelta.
+        if (!area) d.clearTimelineSelection();
       }
       latestClientX = windowEvent.clientX;
       d.prewarmPosition(d.getSnappedSeconds(windowEvent.clientX));
@@ -196,6 +214,13 @@ export function useTimelineRangeSelection(
 
       if (rawEvent.type === "pointercancel") {
         if (hasMoved) d.setRange(null);
+        if (hasMoved) area?.cancel();
+        return;
+      }
+
+      if (area && hasMoved) {
+        area.end();
+        d.setRange(null);
         return;
       }
 

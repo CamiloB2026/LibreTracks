@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { subscribeWithSelector } from "zustand/middleware";
 import { recordProductEvent } from "../telemetry/telemetry";
+import type { RulerMarkerRef } from "@libretracks/shared/desktopApi";
 
 export type GlobalJumpMode = "immediate" | "after_bars" | "next_marker";
 export type SongJumpTrigger =
@@ -33,12 +34,57 @@ const EMPTY_SELECTION = {
   selectedSectionId: null as string | null,
   selectedTempoMarkerId: null as string | null,
   selectedTimeSignatureMarkerId: null as string | null,
+  selectedMarkers: [] as RulerMarkerRef[],
 };
 
 const CLEAR_RULER_MARKERS = {
   selectedTempoMarkerId: null as string | null,
   selectedTimeSignatureMarkerId: null as string | null,
+  selectedMarkers: [] as RulerMarkerRef[],
 };
+
+/**
+ * Las marcas seleccionadas, de cualquier tipo.
+ *
+ * Con UNA marca la verdad siguen siendo los campos sueltos de siempre
+ * (`selectedSectionId`, `selectedTempoMarkerId`, ...), que es lo que lee todo
+ * el codigo de antes; `selectedMarkers` solo se llena con una seleccion
+ * multiple. Leer siempre por aqui evita tener que mirar los dos sitios.
+ */
+export function selectedRulerMarkers(state: {
+  selectedMarkers: RulerMarkerRef[];
+  selectedSectionId: string | null;
+  selectedTempoMarkerId: string | null;
+  selectedTimeSignatureMarkerId: string | null;
+}): RulerMarkerRef[] {
+  if (state.selectedMarkers.length > 0) return state.selectedMarkers;
+  if (state.selectedSectionId) return [{ kind: "section", id: state.selectedSectionId }];
+  if (state.selectedTempoMarkerId) return [{ kind: "tempo", id: state.selectedTempoMarkerId }];
+  if (state.selectedTimeSignatureMarkerId) {
+    return [{ kind: "timeSignature", id: state.selectedTimeSignatureMarkerId }];
+  }
+  return [];
+}
+
+function sameMarker(a: RulerMarkerRef, b: RulerMarkerRef) {
+  return a.kind === b.kind && a.id === b.id;
+}
+
+/** Una seleccion de marcas como campos del store: con una sola, los campos
+ * sueltos de siempre; con varias, la lista. */
+function markerSelectionFields(markers: RulerMarkerRef[]) {
+  if (markers.length === 1) {
+    const [only] = markers;
+    return {
+      ...EMPTY_SELECTION,
+      selectedSectionId: only.kind === "section" ? only.id : null,
+      selectedTempoMarkerId: only.kind === "tempo" ? only.id : null,
+      selectedTimeSignatureMarkerId:
+        only.kind === "timeSignature" ? only.id : null,
+    };
+  }
+  return { ...EMPTY_SELECTION, selectedMarkers: markers };
+}
 
 /**
  * La altura global de las pistas es una preferencia de la instalación, como el
@@ -84,6 +130,11 @@ type TimelineUIState = {
    * la puerta a sus acciones; en escritorio siguen yendo por clic derecho. */
   selectedTempoMarkerId: string | null;
   selectedTimeSignatureMarkerId: string | null;
+  /** Seleccion MULTIPLE de marcas de la regla (de cualquier tipo). Vacia con
+   * una sola: ver `selectedRulerMarkers`. */
+  selectedMarkers: RulerMarkerRef[];
+  /** Desde donde cuenta Shift+clic: la ultima marca elegida sola o con Ctrl. */
+  markerSelectionAnchor: RulerMarkerRef | null;
   snapEnabled: boolean;
   followPlayheadEnabled: boolean;
   midiLearnMode: string | null;
@@ -121,6 +172,11 @@ type TimelineUIState = {
   setSelectedSectionId: (sectionId: string | null) => void;
   selectTempoMarker: (markerId: string | null) => void;
   selectTimeSignatureMarker: (markerId: string | null) => void;
+  /** Sustituye la seleccion por estas marcas. `anchor` fija desde donde cuenta
+   * el siguiente Shift+clic; sin el, se queda el que habia. */
+  setSelectedMarkers: (markers: RulerMarkerRef[], anchor?: RulerMarkerRef) => void;
+  /** Ctrl+clic: pone o quita una marca, y pasa a ser el ancla. */
+  toggleMarkerSelection: (marker: RulerMarkerRef) => void;
   clearSelection: () => void;
   clearSelectionIfAny: () => void;
   selectTrack: (trackIds: string[]) => void;
@@ -166,6 +222,8 @@ export const useTimelineUIStore = create<TimelineUIState>()(
     selectedSectionId: null,
     selectedTempoMarkerId: null,
     selectedTimeSignatureMarkerId: null,
+    selectedMarkers: [],
+    markerSelectionAnchor: null,
     snapEnabled: TIMELINE_DEFAULT_SNAP_ENABLED,
     followPlayheadEnabled: TIMELINE_DEFAULT_FOLLOW_PLAYHEAD_ENABLED,
     midiLearnMode: null,
@@ -269,18 +327,39 @@ export const useTimelineUIStore = create<TimelineUIState>()(
       set({
         ...EMPTY_SELECTION,
         selectedTempoMarkerId,
+        markerSelectionAnchor: selectedTempoMarkerId
+          ? { kind: "tempo", id: selectedTempoMarkerId }
+          : null,
       });
     },
     selectTimeSignatureMarker: (selectedTimeSignatureMarkerId) => {
       set({
         ...EMPTY_SELECTION,
         selectedTimeSignatureMarkerId,
+        markerSelectionAnchor: selectedTimeSignatureMarkerId
+          ? { kind: "timeSignature", id: selectedTimeSignatureMarkerId }
+          : null,
+      });
+    },
+    setSelectedMarkers: (markers, anchor) => {
+      set((state) => ({
+        ...markerSelectionFields(markers),
+        markerSelectionAnchor: anchor ?? state.markerSelectionAnchor,
+      }));
+    },
+    toggleMarkerSelection: (marker) => {
+      set((state) => {
+        const current = selectedRulerMarkers(state);
+        const next = current.some((entry) => sameMarker(entry, marker))
+          ? current.filter((entry) => !sameMarker(entry, marker))
+          : [...current, marker];
+        return { ...markerSelectionFields(next), markerSelectionAnchor: marker };
       });
     },
     clearSelection: () => {
       // Soltar la seleccion sale tambien de los modos de sumar: si no, el
       // siguiente toque volveria a sumar sin que nadie lo haya pedido.
-      set({ ...EMPTY_SELECTION, areaSelectMode: false });
+      set({ ...EMPTY_SELECTION, areaSelectMode: false, markerSelectionAnchor: null });
     },
     /** Como `clearSelection`, pero no toca el estado si no había nada
      * seleccionado. El fondo del timeline llama a esto en CADA clic de salto y
@@ -294,7 +373,8 @@ export const useTimelineUIStore = create<TimelineUIState>()(
         state.selectedClipId === null &&
         state.selectedSectionId === null &&
         state.selectedTempoMarkerId === null &&
-        state.selectedTimeSignatureMarkerId === null
+        state.selectedTimeSignatureMarkerId === null &&
+        state.selectedMarkers.length === 0
       ) {
         return;
       }
@@ -317,6 +397,7 @@ export const useTimelineUIStore = create<TimelineUIState>()(
       set({
         ...EMPTY_SELECTION,
         selectedSectionId: sectionId,
+        markerSelectionAnchor: sectionId ? { kind: "section", id: sectionId } : null,
       });
     },
     setSnapEnabled: (snapEnabled) => {

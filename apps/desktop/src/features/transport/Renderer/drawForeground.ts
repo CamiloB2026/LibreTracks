@@ -20,7 +20,8 @@ export type RulerForegroundLayerArgs = {
   timeSignatureMarkers: TimeSignatureMarkerSummary[];
   pendingMarkerJump: PendingJumpSummary | null;
   pendingAutomationCue: PendingAutomationCueSummary | null;
-  selectedMarkerId: string | null;
+  /** Seleccion (multiple) de marcas, de cualquier tipo. */
+  selectedMarkerIds: readonly string[];
   currentMarkerId: string | null;
   pulseAlpha: number;
 };
@@ -180,7 +181,7 @@ export function drawRulerForegroundLayer(
       args.cameraX,
       args.pixelsPerSecond,
       {
-        isSelected: args.selectedMarkerId === marker.id,
+        isSelected: args.selectedMarkerIds.includes(marker.id),
         isArmed: args.pendingMarkerJump?.targetMarkerId === marker.id,
         isCurrent: args.currentMarkerId === marker.id,
         pulseAlpha: args.pulseAlpha,
@@ -203,6 +204,8 @@ export function drawRulerForegroundLayer(
       args.height,
       args.cameraX,
       args.pixelsPerSecond,
+      undefined,
+      args.selectedMarkerIds.includes(marker.id),
     );
   }
 
@@ -219,6 +222,7 @@ export function drawRulerForegroundLayer(
       args.cameraX,
       args.pixelsPerSecond,
       marker.signature,
+      args.selectedMarkerIds.includes(marker.id),
     );
   }
 
