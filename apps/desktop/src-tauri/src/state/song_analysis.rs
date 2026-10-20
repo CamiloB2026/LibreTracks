@@ -60,13 +60,6 @@ pub(super) fn apply_tempo_analysis_to_song(
         .iter()
         .find(|region| region.id == region_id)
         .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
-    // The analysis reads the timeline as rendered; with warp that is not the
-    // source time markers are stored in.
-    if region.warp_enabled {
-        return Err(DesktopError::AudioCommand(
-            "song analysis does not support songs with warp".into(),
-        ));
-    }
     let (start, end) = (region.start_seconds, region.end_seconds);
     let inside = |position: f64| {
         position >= start - SAME_POSITION_SECONDS && position < end - SAME_POSITION_SECONDS

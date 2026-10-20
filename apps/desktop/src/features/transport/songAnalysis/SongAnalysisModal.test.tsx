@@ -128,7 +128,9 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
     cancelled: false,
     regionId: "b",
     regionStartSeconds: 100,
+    regionEndSeconds: 200,
     renderStartSeconds: 100,
+    viewScale: 1,
     tempo: withLevels({
       analysis: {
         segments: [{ startSeconds: 0.5, bpm: 92, beatsPerBar: 6, beatUnit: 8, bars: 40 }],
@@ -151,7 +153,6 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
       },
       asEighths: null,
     }),
-    tempoUnavailable: null,
     key: {
       analysis: {
         key: "D",
@@ -505,16 +506,6 @@ describe("SongAnalysisModal", () => {
     expect(
       screen.getByText("transport.songAnalysis.apply").closest("button")?.disabled,
     ).toBe(true);
-  });
-
-  it("explains why a warped song got its key but not its tempo", async () => {
-    analyzeSong.mockResolvedValue(
-      result({ tempo: null, tempoUnavailable: "song_analysis_warp" }),
-    );
-    render(<SongAnalysisModal onApplied={() => {}} />);
-    await analyzeAndReview();
-    await screen.findByText("transport.songAnalysis.errorWarp");
-    expect(screen.getByLabelText("transport.songAnalysis.key")).toBeTruthy();
   });
 
   it("says where the song modulates and proposes the key that lasts longest", async () => {

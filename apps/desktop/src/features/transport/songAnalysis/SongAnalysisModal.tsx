@@ -40,7 +40,9 @@ import {
   rowIsValid,
   scaleTempoRows,
   startsOnEighths,
+  tempoInView,
   tempoLevel,
+  viewSeconds,
   type ReviewRow,
   type TempoDetail,
 } from "./songAnalysisPlan";
@@ -100,13 +102,6 @@ type DialogProps = {
   onClose: () => void;
   onApplied: (snapshot: TransportSnapshot) => void;
 };
-
-/** Backend refusals that have their own message. */
-function refusalKey(message: string): string | null {
-  if (message.includes("song_analysis_warp")) return "transport.songAnalysis.errorWarp";
-  if (message.includes("song_analysis_varispeed")) return "transport.songAnalysis.errorVarispeed";
-  return null;
-}
 
 function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: DialogProps) {
   const { t } = useTranslation();
@@ -259,8 +254,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       setPhase({ kind: "review", result });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const key = refusalKey(message);
-      setPhase({ kind: "error", message: key ? t(key) : message });
+      setPhase({ kind: "error", message });
     } finally {
       unlistenRef.current?.();
       unlistenRef.current = null;
@@ -274,7 +268,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   const tempoPayload = useMemo(
     () =>
       phase.kind === "review" && touchesTempo
-        ? buildApplyPayload(song, regionId, rows, include)
+        ? buildApplyPayload(song, regionId, rows, include, phase.result)
         : null,
     [phase.kind, touchesTempo, song, regionId, rows, include],
   );
@@ -289,7 +283,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       phase.result.renderStartSeconds,
       phase.result.guide.analysis,
       groupMarkers,
-      touchesTempo ? tempoPayload : null,
+      touchesTempo && tempoPayload ? tempoInView(tempoPayload, phase.result) : null,
       guideLeadBars,
     );
   }, [phase, song, regionId, groupMarkers, touchesTempo, tempoPayload, guideLeadBars]);
@@ -534,14 +528,6 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
 
         {phase.kind === "review" ? (
           <div className="lt-settings-modal-body lt-render-modal-body">
-            {phase.result.tempoUnavailable ? (
-              <p className="lt-render-warning">
-                {t(
-                  refusalKey(phase.result.tempoUnavailable) ??
-                    "transport.songAnalysis.errorWarp",
-                )}
-              </p>
-            ) : null}
             {phase.result.tempo ? (
               <TempoReview
                 result={phase.result}
@@ -1208,7 +1194,9 @@ function TempoReview({
                     row.kind === "tempo"
                       ? t("transport.songAnalysis.kindTempo")
                       : t("transport.songAnalysis.kindSignature");
-                  const position = formatSongPosition(row.startSeconds - regionStartSeconds);
+                  const position = formatSongPosition(
+                    viewSeconds(result, row.startSeconds) - result.renderStartSeconds,
+                  );
                   return (
                     <tr
                       key={`${row.kind}-${row.index}`}
@@ -1269,9 +1257,9 @@ function TempoReview({
                 <button
                   type="button"
                   className="lt-link-button"
-                  onClick={() => onSeek(regionStartSeconds + warning.seconds)}
+                  onClick={() => onSeek(viewSeconds(result, regionStartSeconds + warning.seconds))}
                 >
-                  {formatSongPosition(warning.seconds)}
+                  {formatSongPosition(warning.seconds * result.viewScale)}
                 </button>
               )}{" "}
               {t(`transport.songAnalysis.warning.${warning.kind}`)}

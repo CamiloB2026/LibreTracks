@@ -1311,7 +1311,9 @@ export const testDesktopApiMock = {
       cancelled: false,
       regionId: request.regionId,
       regionStartSeconds: region?.startSeconds ?? 0,
+      regionEndSeconds: region?.endSeconds ?? 0,
       renderStartSeconds: region?.startSeconds ?? 0,
+      viewScale: 1,
       tempo:
         request.clickTrackIds.length > 0 || request.musicTempoTrackIds.length > 0
           ? (() => {
@@ -1332,7 +1334,6 @@ export const testDesktopApiMock = {
               };
             })()
           : null,
-      tempoUnavailable: null,
       guide:
         request.guideTrackIds.length > 0
           ? { analysis: { announcements: [], groups: [] }, speechRecognition: false }

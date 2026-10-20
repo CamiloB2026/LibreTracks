@@ -768,10 +768,6 @@ const en = {
       close: "Close",
       applied: "Markers applied. Use Undo to revert.",
       failed: "Could not analyze: {{error}}",
-      errorWarp:
-        "The song has warp on, so the tempo was not analyzed. Turn it off to read the click as it is.",
-      errorVarispeed:
-        "A varispeed transpose stretches the timeline, so the tempo was not analyzed. Remove it to read the click.",
       tempo: "Tempo",
       signature: "Meter",
       changes: "Changes",

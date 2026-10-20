@@ -110,24 +110,72 @@ pub struct TempoLevel {
 }
 
 impl TempoReading {
-    fn new(analysis: ClickAnalysis, span: SongSpan, existing: &ExistingTiming) -> Self {
+    fn new(analysis: ClickAnalysis, tempo: &TempoJob) -> Self {
+        // The markers are placed in the click's own (recorded) tempo, where
+        // its bars are, and then given the tempo the song plays at.
+        let scale = tempo.bpm_scale;
+        let existing = ExistingTiming {
+            bpm: tempo.existing.bpm / scale,
+            tempo_markers: tempo
+                .existing
+                .tempo_markers
+                .iter()
+                .map(|&(start, bpm)| (start, bpm / scale))
+                .collect(),
+            ..tempo.existing.clone()
+        };
+        let propose = |analysis: &ClickAnalysis| {
+            as_played_proposal(
+                propose_tempo_markers(analysis, tempo.span, &existing),
+                scale,
+            )
+        };
         let level = |segments: Vec<TempoSegment>| {
             let reduced = ClickAnalysis {
                 segments,
                 ..analysis.clone()
             };
             TempoLevel {
-                proposal: propose_tempo_markers(&reduced, span, existing),
-                segments: reduced.segments,
+                proposal: propose(&reduced),
+                segments: as_played_segments(reduced.segments, scale),
             }
         };
         Self {
-            proposal: propose_tempo_markers(&analysis, span, existing),
+            proposal: propose(&analysis),
             simplified: level(simplify_segments(&analysis.segments)),
             initial: level(initial_tempo_only(&analysis.segments)),
-            analysis,
+            analysis: ClickAnalysis {
+                segments: as_played_segments(analysis.segments.clone(), scale),
+                ..analysis
+            },
         }
     }
+}
+
+/// A tempo as the song plays it: the original one times the warp ratio,
+/// rounded as the tempo editor keeps it.
+fn as_played_bpm(bpm: f64, scale: f64) -> f64 {
+    if scale == 1.0 {
+        bpm
+    } else {
+        (bpm * scale * 1000.0).round() / 1000.0
+    }
+}
+
+fn as_played_segments(mut segments: Vec<TempoSegment>, scale: f64) -> Vec<TempoSegment> {
+    for segment in &mut segments {
+        segment.bpm = as_played_bpm(segment.bpm, scale);
+        segment.end_bpm = segment.end_bpm.map(|bpm| as_played_bpm(bpm, scale));
+    }
+    segments
+}
+
+fn as_played_proposal(mut proposal: TempoProposal, scale: f64) -> TempoProposal {
+    for marker in &mut proposal.tempo_markers {
+        marker.bpm = as_played_bpm(marker.bpm, scale);
+    }
+    proposal.current_bpm = as_played_bpm(proposal.current_bpm, scale);
+    proposal
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -219,14 +267,14 @@ pub struct AnalyzeSongResult {
     pub cancelled: bool,
     pub region_id: String,
     pub region_start_seconds: f64,
-    /// Where the song starts on the rendered timeline: the origin of the
-    /// guide's times. Equal to `region_start_seconds` without warp or
-    /// varispeed.
+    pub region_end_seconds: f64,
+    /// Where the song starts as it plays: the origin of the guide's times.
+    /// Equal to `region_start_seconds` without warp or varispeed.
     pub render_start_seconds: f64,
+    /// Seconds as it plays per second as recorded (the tempo markers are in
+    /// recorded seconds; the guide's times are already as it plays).
+    pub view_scale: f64,
     pub tempo: Option<TempoResult>,
-    /// Why the tempo was not analysed though a click was chosen
-    /// (`song_analysis_warp`, `song_analysis_varispeed`).
-    pub tempo_unavailable: Option<String>,
     pub key: Option<KeyResult>,
     pub guide: Option<GuideResult>,
     pub missing_files: Vec<String>,
@@ -238,9 +286,10 @@ impl AnalyzeSongResult {
             cancelled: true,
             region_id,
             region_start_seconds: 0.0,
+            region_end_seconds: 0.0,
             render_start_seconds: 0.0,
+            view_scale: 1.0,
             tempo: None,
-            tempo_unavailable: None,
             key: None,
             guide: None,
             missing_files: Vec::new(),
@@ -260,6 +309,11 @@ struct TempoJob {
     span: SongSpan,
     existing: ExistingTiming,
     fallback_beats_per_bar: u32,
+    /// The song's warp ratio (target ÷ original BPM), 1 without warp. The
+    /// click is read as recorded; with warp its tempos play this much
+    /// faster, and that is what the tempo markers say. A varispeed transpose
+    /// needs nothing: the session scales a varispeed song's markers itself.
+    bpm_scale: f64,
 }
 
 struct KeyJob {
@@ -282,7 +336,6 @@ struct AnalysisJob {
     /// the whole song at one speed, so its times only scale.
     view_scale: f64,
     tempo: Option<TempoJob>,
-    tempo_unavailable: Option<String>,
     key: Option<KeyJob>,
     /// The guide track(s): the section announcements.
     guide_track_ids: Vec<String>,
@@ -316,27 +369,12 @@ fn prepare_job(
         1.0
     };
 
-    // The tempo is stored in source time and its markers rule the song as it
-    // plays: warp or a varispeed transpose (here or in an earlier song) make
-    // the two differ. The key does not care: neither changes which notes play.
-    let timeline_matches = (view_start - region.start_seconds).abs() <= SAME_BOUND_SECONDS
-        && (view_end - region.end_seconds).abs() <= SAME_BOUND_SECONDS;
     let tempo_track_ids = if request.click_track_ids.is_empty() {
         &request.music_tempo_track_ids
     } else {
         &request.click_track_ids
     };
-    let tempo_unavailable = if tempo_track_ids.is_empty() {
-        None
-    } else if region.warp_enabled {
-        Some("song_analysis_warp".to_string())
-    } else if !timeline_matches {
-        Some("song_analysis_varispeed".to_string())
-    } else {
-        None
-    };
-
-    let tempo = (!tempo_track_ids.is_empty() && tempo_unavailable.is_none()).then(|| {
+    let tempo = (!tempo_track_ids.is_empty()).then(|| {
         let next_song_start_seconds = song
             .regions
             .iter()
@@ -380,6 +418,7 @@ fn prepare_job(
                 .and_then(|(numerator, _)| numerator.trim().parse::<u32>().ok())
                 .filter(|numerator| *numerator > 0)
                 .unwrap_or(4),
+            bpm_scale: libretracks_core::region_warp_ratio_in_song(region, song),
         }
     });
 
@@ -391,11 +430,7 @@ fn prepare_job(
         transpose_semitones: region.transpose_semitones,
     });
 
-    if tempo.is_none()
-        && key.is_none()
-        && tempo_unavailable.is_none()
-        && request.guide_track_ids.is_empty()
-    {
+    if tempo.is_none() && key.is_none() && request.guide_track_ids.is_empty() {
         return Err("Nothing to analyze".to_string());
     }
     Ok(AnalysisJob {
@@ -406,7 +441,6 @@ fn prepare_job(
         render_start_seconds: view_start,
         view_scale,
         tempo,
-        tempo_unavailable,
         key,
         guide_track_ids: request.guide_track_ids.clone(),
     })
@@ -494,9 +528,10 @@ fn run_job(
         cancelled: false,
         region_id: job.region_id.clone(),
         region_start_seconds: job.region_start_seconds,
+        region_end_seconds: job.region_end_seconds,
         render_start_seconds: job.render_start_seconds,
+        view_scale: job.view_scale,
         tempo: None,
-        tempo_unavailable: job.tempo_unavailable.clone(),
         key: None,
         guide: None,
         missing_files: Vec::new(),
@@ -597,12 +632,12 @@ fn run_job(
                 .then(|| analyze_click_as_eighths(&samples, rate, tempo.fallback_beats_per_bar))
                 .flatten()
                 .filter(|eighths| !eighths.segments.is_empty())
-                .map(|analysis| TempoReading::new(analysis, tempo.span, &tempo.existing));
+                .map(|analysis| TempoReading::new(analysis, tempo));
             if !tempo.from_music && !analysis.downbeat_known && !job.guide_track_ids.is_empty() {
                 unaccented_click = Some((samples, rate));
             }
             result.tempo = Some(TempoResult {
-                reading: TempoReading::new(analysis, tempo.span, &tempo.existing),
+                reading: TempoReading::new(analysis, tempo),
                 as_eighths,
             });
         }
@@ -653,7 +688,7 @@ fn run_job(
                         &analysis,
                     )
                     .filter(|reading| !reading.segments.is_empty())
-                    .map(|reading| TempoReading::new(reading, tempo.span, &tempo.existing))
+                    .map(|reading| TempoReading::new(reading, tempo))
                 };
                 if let Some(reading) = reread(false) {
                     let had_eighths = result
@@ -952,15 +987,49 @@ mod tests {
     }
 
     #[test]
-    fn a_warped_song_still_gets_its_key_but_not_its_tempo() {
+    fn a_warped_song_gets_its_tempo_as_it_plays() {
+        // Recorded at 100, warped to the session's 120: the click is read as
+        // recorded, its bars placed in recorded seconds, and its tempos
+        // played 1.2 times as fast.
         let dir = tempfile::tempdir().expect("dir");
         let mut warped = song();
         warped.regions[2].warp_enabled = true;
         warped.regions[2].warp_source_bpm = Some(100.0);
         let job = prepare_job(dir.path(), &warped, &request("b")).expect("job");
-        assert!(job.tempo.is_none());
-        assert_eq!(job.tempo_unavailable.as_deref(), Some("song_analysis_warp"));
-        assert!(job.key.is_some());
+        let tempo = job.tempo.expect("tempo job");
+        assert!((tempo.bpm_scale - 1.2).abs() < 1e-9);
+
+        let segment = |start_seconds: f64, bpm: f64| TempoSegment {
+            start_seconds,
+            bpm,
+            beats_per_bar: 4,
+            beat_unit: 4,
+            bars: 8,
+            end_bpm: None,
+        };
+        // 8 bars of 100 (19.2 s as recorded), then 80.
+        let reading = TempoReading::new(
+            ClickAnalysis {
+                segments: vec![segment(0.0, 100.0), segment(19.2, 80.0)],
+                warnings: Vec::new(),
+                beat_count: 0,
+                downbeat_known: true,
+            },
+            &tempo,
+        );
+        let markers: Vec<(f64, f64)> = reading
+            .proposal
+            .tempo_markers
+            .iter()
+            .filter(|marker| !marker.restores_next_song)
+            .map(|marker| (marker.start_seconds, marker.bpm))
+            .collect();
+        // At the start, the tempo the song already plays at: the warp stays.
+        assert_eq!(markers.len(), 2, "{:?}", reading.proposal);
+        assert_eq!(markers[0], (64.0, 120.0));
+        assert!((markers[1].0 - 83.2).abs() < 1e-6, "{markers:?}");
+        assert!((markers[1].1 - 96.0).abs() < 1e-9, "{markers:?}");
+        assert_eq!(reading.analysis.segments[1].bpm, 96.0);
     }
 
     #[test]

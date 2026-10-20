@@ -169,7 +169,7 @@ fn a_marker_at_zero_sets_the_base_tempo_and_meter() {
 }
 
 #[test]
-fn rejects_out_of_range_values_and_warped_songs() {
+fn rejects_out_of_range_values() {
     let mut song = setlist();
     assert!(apply_tempo_analysis_to_song(&mut song, "r2", &[proposed(60.0, 400.0)], &[]).is_err());
     assert!(
@@ -177,8 +177,6 @@ fn rejects_out_of_range_values_and_warped_songs() {
             .is_err()
     );
     assert!(apply_tempo_analysis_to_song(&mut song, "nope", &[], &[]).is_err());
-    song.regions[1].warp_enabled = true;
-    assert!(apply_tempo_analysis_to_song(&mut song, "r2", &[proposed(60.0, 90.0)], &[]).is_err());
     assert_eq!(
         song.tempo_markers.len(),
         4,

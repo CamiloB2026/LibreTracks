@@ -19,7 +19,10 @@ import {
   parseSignature,
   reviewRows,
   startsOnEighths,
+  storedSeconds,
+  tempoInView,
   tempoLevel,
+  viewSeconds,
 } from "./songAnalysisPlan";
 
 const audioTrack = (id: string, name: string, kind = "audio") =>
@@ -489,3 +492,51 @@ describe("buildApplyPayload", () => {
     expect(buildApplyPayload(song(), "b", rows, { tempo: true, signature: true })).toBeNull();
   });
 });
+
+describe("warped song", () => {
+  // Recorded 100–150 s; warped to play 1.2 times as long, starting at 90 s
+  // (a faster song before it): it plays 90–150 s.
+  const timeline = {
+    regionStartSeconds: 100,
+    regionEndSeconds: 150,
+    renderStartSeconds: 90,
+    viewScale: 1.2,
+  };
+
+  it("maps recorded seconds to the song as it plays and back", () => {
+    expect(viewSeconds(timeline, 100)).toBe(90);
+    expect(viewSeconds(timeline, 110)).toBeCloseTo(102);
+    // After it: shifted by where it ends.
+    expect(viewSeconds(timeline, 160)).toBeCloseTo(160);
+    for (const seconds of [95, 100, 110, 149, 160]) {
+      expect(storedSeconds(timeline, viewSeconds(timeline, seconds))).toBeCloseTo(seconds);
+    }
+  });
+
+  it("places the proposed tempo map where it plays, BPM untouched", () => {
+    const inView = tempoInView(
+      {
+        tempoMarkers: [{ startSeconds: 110, bpm: 96, restoresNextSong: false }],
+        signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+      },
+      timeline,
+    );
+    expect(inView.tempoMarkers[0].startSeconds).toBeCloseTo(102);
+    expect(inView.tempoMarkers[0].bpm).toBe(96);
+    expect(inView.signatureMarkers[0].startSeconds).toBe(90);
+  });
+
+  it("keeps the song's own markers at their recorded seconds", () => {
+    // The timeline shows the 3/4 at 110 s as it plays; it is stored at 116.67.
+    const shown = { ...timeline, regionStartSeconds: 100, renderStartSeconds: 100 };
+    const payload = buildApplyPayload(
+      song(),
+      "b",
+      reviewRows(proposal),
+      { tempo: true, signature: false },
+      shown,
+    );
+    expect(payload?.signatureMarkers[0].startSeconds).toBeCloseTo(100 + 10 / 1.2);
+  });
+});
+

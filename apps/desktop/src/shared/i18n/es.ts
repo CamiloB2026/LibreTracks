@@ -783,10 +783,6 @@ const es = {
       close: "Cerrar",
       applied: "Marcas aplicadas. Puedes deshacerlo con Deshacer.",
       failed: "No se pudo analizar: {{error}}",
-      errorWarp:
-        "La canción tiene el warp activado, así que no se ha analizado el tempo. Desactívalo para leer el click tal cual.",
-      errorVarispeed:
-        "Una transposición por varispeed estira el timeline, así que no se ha analizado el tempo. Quítala para leer el click.",
       tempo: "Tempo",
       signature: "Compás",
       changes: "Cambios",

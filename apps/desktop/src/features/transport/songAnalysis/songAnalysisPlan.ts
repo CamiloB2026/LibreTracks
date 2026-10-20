@@ -209,6 +209,62 @@ export function offersTempoDetail(reading: TempoReading): boolean {
   return reading.analysis.segments.length > 1;
 }
 
+/**
+ * The song as recorded against the song as it plays. The analysis reads the
+ * song as recorded (no warp or varispeed), where the tempo markers are
+ * stored; the timeline shows it as it plays. Warp and varispeed play a whole
+ * song at one speed, so inside it times scale, and after it they shift.
+ */
+export type AnalysisTimeline = {
+  regionStartSeconds: number;
+  regionEndSeconds: number;
+  renderStartSeconds: number;
+  viewScale: number;
+};
+
+const SAME_TIMELINE: AnalysisTimeline = {
+  regionStartSeconds: 0,
+  regionEndSeconds: 0,
+  renderStartSeconds: 0,
+  viewScale: 1,
+};
+
+/** A recorded (stored) second as the song plays it. */
+export function viewSeconds(timeline: AnalysisTimeline, seconds: number): number {
+  const { regionStartSeconds, regionEndSeconds, renderStartSeconds, viewScale } = timeline;
+  const viewEnd = renderStartSeconds + (regionEndSeconds - regionStartSeconds) * viewScale;
+  if (seconds < regionStartSeconds) return seconds + renderStartSeconds - regionStartSeconds;
+  if (seconds >= regionEndSeconds) return seconds + viewEnd - regionEndSeconds;
+  return renderStartSeconds + (seconds - regionStartSeconds) * viewScale;
+}
+
+/** A second as the song plays it, as recorded (stored). */
+export function storedSeconds(timeline: AnalysisTimeline, seconds: number): number {
+  const { regionStartSeconds, regionEndSeconds, renderStartSeconds, viewScale } = timeline;
+  const viewEnd = renderStartSeconds + (regionEndSeconds - regionStartSeconds) * viewScale;
+  if (seconds < renderStartSeconds) return seconds - renderStartSeconds + regionStartSeconds;
+  if (seconds >= viewEnd) return seconds - viewEnd + regionEndSeconds;
+  return regionStartSeconds + (seconds - renderStartSeconds) / (viewScale || 1);
+}
+
+/** The tempo map to write, where it falls as the song plays (its BPM are
+ * already the ones it plays at, or the grid applies the varispeed). */
+export function tempoInView(
+  tempo: { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] },
+  timeline: AnalysisTimeline,
+): { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] } {
+  return {
+    tempoMarkers: tempo.tempoMarkers.map((marker) => ({
+      ...marker,
+      startSeconds: viewSeconds(timeline, marker.startSeconds),
+    })),
+    signatureMarkers: tempo.signatureMarkers.map((marker) => ({
+      ...marker,
+      startSeconds: viewSeconds(timeline, marker.startSeconds),
+    })),
+  };
+}
+
 /** The guide stem: a voice announcing the sections. */
 const GUIDE_NAME = /\b(guides?|gu[ií]as?|cues?)\b/i;
 
@@ -558,6 +614,7 @@ export function buildApplyPayload(
   regionId: string,
   rows: ReviewRow[],
   include: { tempo: boolean; signature: boolean },
+  timeline: AnalysisTimeline = SAME_TIMELINE,
 ): { tempoMarkers: ProposedTempoMarker[]; signatureMarkers: ProposedSignatureMarker[] } | null {
   const region = song.regions.find((candidate) => candidate.id === regionId);
   if (!region) return null;
@@ -583,7 +640,7 @@ export function buildApplyPayload(
     tempoMarkers = song.tempoMarkers
       .filter((marker) => inside(marker.startSeconds))
       .map((marker) => ({
-        startSeconds: marker.startSeconds,
+        startSeconds: storedSeconds(timeline, marker.startSeconds),
         bpm: marker.bpm,
         restoresNextSong: false,
         ...(marker.ramp ? { ramp: true } : {}),
@@ -607,7 +664,7 @@ export function buildApplyPayload(
     signatureMarkers = song.timeSignatureMarkers
       .filter((marker) => inside(marker.startSeconds))
       .map((marker) => ({
-        startSeconds: marker.startSeconds,
+        startSeconds: storedSeconds(timeline, marker.startSeconds),
         signature: marker.signature,
         restoresNextSong: false,
       }));

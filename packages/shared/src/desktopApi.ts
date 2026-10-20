@@ -1567,9 +1567,14 @@ export type SectionChange = {
 export type AnalyzeSongResult = {
   cancelled: boolean;
   regionId: string;
+  /** The song as recorded (stored seconds): where the tempo markers are. */
   regionStartSeconds: number;
-  /** The song's start on the rendered timeline (differs with warp/varispeed). */
+  regionEndSeconds: number;
+  /** The song's start as it plays (differs with warp/varispeed): the origin
+   * of the guide's times. */
   renderStartSeconds: number;
+  /** Seconds as it plays per second as recorded. */
+  viewScale: number;
   tempo:
     | (TempoReading & {
         /** A click without accent read as eighths (÷2): one click in two is the
@@ -1577,8 +1582,6 @@ export type AnalyzeSongResult = {
         asEighths: TempoReading | null;
       })
     | null;
-  /** Why a chosen click was not analysed: "song_analysis_warp" | "song_analysis_varispeed". */
-  tempoUnavailable: string | null;
   /** The key in the song's ORIGINAL key: the transpose is taken out. */
   key: {
     analysis: KeyAnalysis;
