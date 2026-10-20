@@ -1431,7 +1431,8 @@ export type ClickWarningKind =
   | "unreliableClick"
   | "freeTempo"
   | "clickReadAsEighths"
-  | "downbeatFromGuide";
+  | "downbeatFromGuide"
+  | "downbeatFromTempoChange";
 
 export type KeyAnalysis = {
   /** Sharp spelling like the key picker ("Dm", "F#"); null: no pitched audio. */

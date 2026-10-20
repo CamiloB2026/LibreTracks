@@ -828,6 +828,8 @@ const es = {
           "El click no tiene acento y se ha leído en corcheas: cada dos golpes, un tiempo.",
         downbeatFromGuide:
           "El primer tiempo del compás se ha sacado de la guía: es donde terminan sus avisos, no el primer golpe del click.",
+        downbeatFromTempoChange:
+          "El primer tiempo del compás se ha sacado de donde el click cambia de tempo (siempre en una barra de compás), no de su primer golpe.",
       },
     },
     levelSongs: {

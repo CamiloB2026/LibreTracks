@@ -812,6 +812,8 @@ const en = {
           "The click has no accent and was read as eighths: one beat every two clicks.",
         downbeatFromGuide:
           "Beat 1 of the bar was taken from the guide, where its announcements end, not from the click's first hit.",
+        downbeatFromTempoChange:
+          "Beat 1 of the bar was taken from where the click changes tempo (always on a bar line), not from its first hit.",
       },
     },
     levelSongs: {

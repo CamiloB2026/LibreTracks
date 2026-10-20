@@ -9,6 +9,11 @@
 //! downbeat is the one the announcements end closest before.
 //!
 //! The announcement STARTS do not tell: a guide speaks on beats 1 and 3 alike.
+//!
+//! Before the guide, the click's own tempo changes: a click jumps to a new
+//! tempo on a bar line. "Fiesta en el desierto" (Montesanto) goes from 125
+//! to 140 and back on its first click's bars; the guide, two beats off,
+//! left the change on beat 3 and a bar of 132 off the click by 50 ms.
 
 use crate::guide::GuideAnalysis;
 
@@ -74,6 +79,57 @@ pub(crate) fn pickup_from_guide(
         .collect();
     scores.sort_by(|a, b| a.1.total_cmp(&b.1));
     (scores[1].1 - scores[0].1 >= MIN_MARGIN_BEATS).then_some(scores[0].0)
+}
+
+/// Beats in each window either side of a tempo change, all at one tempo.
+const STEADY_BEATS: usize = 4;
+/// Within a window, beats this far apart from its mean (share of a beat) are
+/// still one tempo: onset noise. Ramps and a click following the band are
+/// not steady, and say nothing.
+const STEADY_SHARE: f64 = 0.006;
+/// A jump in beat length of this share at least is a tempo change (70 → 71
+/// is 1.4 %).
+const CHANGE_SHARE: f64 = 0.012;
+
+/// How many beats of `beat_times` (one run of a click without accent) come
+/// before its first downbeat, from where its tempo jumps: there a bar starts.
+/// None without such a jump, or when the jumps disagree on the bar.
+pub(crate) fn pickup_from_tempo_changes(beat_times: &[f64], beats_per_bar: usize) -> Option<usize> {
+    if beats_per_bar < 2 || beat_times.len() < 2 * STEADY_BEATS + 1 {
+        return None;
+    }
+    let lengths: Vec<f64> = beat_times.windows(2).map(|w| w[1] - w[0]).collect();
+    let steady = |window: &[f64]| -> Option<f64> {
+        let mean = window.iter().sum::<f64>() / window.len() as f64;
+        (mean > 0.0
+            && window
+                .iter()
+                .all(|&l| (l - mean).abs() <= STEADY_SHARE * mean))
+        .then_some(mean)
+    };
+    let mut phase: Option<usize> = None;
+    let mut index = STEADY_BEATS;
+    while index + STEADY_BEATS <= lengths.len() {
+        let before = steady(&lengths[index - STEADY_BEATS..index]);
+        let after = steady(&lengths[index..index + STEADY_BEATS]);
+        if let (Some(before), Some(after)) = (before, after) {
+            // At once, from one beat to the next: a ramp moves a little each
+            // beat and adds up to as much.
+            let jump = (lengths[index] - lengths[index - 1]).abs();
+            if (after - before).abs() >= CHANGE_SHARE * before && jump >= CHANGE_SHARE * before {
+                // Beat `index` is the first at the new tempo: a downbeat.
+                let here = index % beats_per_bar;
+                if phase.is_some_and(|known| known != here) {
+                    return None;
+                }
+                phase = Some(here);
+                index += STEADY_BEATS;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    phase
 }
 
 /// Where each announcement ends: the end of its last fragment.
@@ -185,6 +241,50 @@ mod tests {
             pickup_from_guide(&beats(0.0, 70.0, 460), 4, &guide(&[])),
             None
         );
+    }
+
+    /// "Fiesta en el desierto": 16 bars of 125 from the first click, then 140.
+    fn fiesta(pickup: usize) -> Vec<f64> {
+        let mut times = beats(0.061, 125.0, 64 + pickup);
+        times.extend(beats(
+            0.061 + (64 + pickup) as f64 * 60.0 / 125.0,
+            140.0,
+            400,
+        ));
+        times
+    }
+
+    #[test]
+    fn a_tempo_change_starts_a_bar() {
+        assert_eq!(pickup_from_tempo_changes(&fiesta(0), 4), Some(0));
+        // The change two beats into the click: the bars start two beats in.
+        assert_eq!(pickup_from_tempo_changes(&fiesta(2), 4), Some(2));
+    }
+
+    #[test]
+    fn a_steady_click_or_a_ramp_says_nothing() {
+        assert_eq!(pickup_from_tempo_changes(&beats(0.0, 70.0, 460), 4), None);
+        // 120 → 100 a little every beat.
+        let mut ramp = vec![0.0];
+        for i in 0..60 {
+            let bpm = 120.0 - i as f64 / 3.0;
+            ramp.push(ramp[i] + 60.0 / bpm);
+        }
+        assert_eq!(pickup_from_tempo_changes(&ramp, 4), None);
+    }
+
+    #[test]
+    fn tempo_changes_that_disagree_say_nothing() {
+        // On a bar at 64, then two beats into one at 202.
+        let mut times = fiesta(0);
+        times.truncate(202);
+        let change = times[201] + 60.0 / 140.0;
+        times.extend(beats(change, 115.0, 40));
+        assert_eq!(pickup_from_tempo_changes(&times, 4), None);
+        times.truncate(200);
+        let change = times[199] + 60.0 / 140.0;
+        times.extend(beats(change, 115.0, 40));
+        assert_eq!(pickup_from_tempo_changes(&times, 4), Some(0));
     }
 
     #[test]

@@ -14,7 +14,7 @@
 //! `metronome_renderer.cpp`), so a marker anywhere else would make the app's
 //! click disagree with the multitrack's.
 
-use crate::bar_phase::pickup_from_guide;
+use crate::bar_phase::{pickup_from_guide, pickup_from_tempo_changes};
 use crate::fft::fft;
 use crate::guide::GuideAnalysis;
 use serde::Serialize;
@@ -171,6 +171,9 @@ pub enum ClickWarningKind {
     /// The click has no accent, and where the bar starts was taken from the
     /// guide's announcements instead of its first click (see `bar_phase`).
     DownbeatFromGuide,
+    /// The click has no accent, and where the bar starts was taken from where
+    /// its tempo changes instead of its first click (see `bar_phase`).
+    DownbeatFromTempoChange,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -289,7 +292,18 @@ fn analyze_click_reading(
             .unwrap_or(beats.len());
         let times: Vec<f64> = beats[..first_run].iter().map(|b| b.seconds).collect();
         let beats_per_bar = fallback_beats_per_bar.max(1) as usize;
-        let found = guide.and_then(|guide| {
+        // A jump in tempo is on a bar line: surer than the guide.
+        let from_tempo = pickup_from_tempo_changes(&times, beats_per_bar);
+        if let Some(found) = from_tempo {
+            pickup = found;
+            if pickup > 0 {
+                warnings.push(ClickWarning {
+                    seconds: times[pickup],
+                    kind: ClickWarningKind::DownbeatFromTempoChange,
+                });
+            }
+        }
+        let found = guide.filter(|_| from_tempo.is_none()).and_then(|guide| {
             let found = pickup_from_guide(&times, beats_per_bar, guide);
             if as_eighths {
                 return found;
