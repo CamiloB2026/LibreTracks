@@ -58,6 +58,11 @@ const SPLIT_OVER_SPREAD: f64 = 2.0;
 /// Below this pulse, 3, 6, 9 or 12 clicks per accent are eighths of a
 /// compound meter (6/8 at 74 is an eighth every 0.405 s).
 const COMPOUND_EIGHTH_MAX_SECONDS: f64 = 0.45;
+/// A beat closer than this to the one before (share of the beat) may be a
+/// stray off-beat (see `without_stray_offbeats`)...
+const STRAY_OFFBEAT_SHARE: f64 = 0.75;
+/// ...when the beats either side of it are a beat apart, within this.
+const STRAY_BEAT_TOLERANCE: f64 = 0.1;
 /// Clicks closer than this (over 270 a minute) are subdivisions: the beat is
 /// every other one. A real 6/8 at 76 clicked in sixteenths runs at 0.197 s.
 const SUBDIVISION_MAX_SECONDS: f64 = 0.22;
@@ -681,9 +686,9 @@ fn classify(onsets: &[Onset]) -> (Vec<Beat>, bool) {
     if accent_period.is_some_and(|period| (0.3..=1.5).contains(&period))
         && (beats_per_accent - 2.0).abs() < 0.25
     {
-        let beats = accent_times
-            .iter()
-            .map(|&seconds| Beat {
+        let beats = without_stray_offbeats(&accent_times, accent_period.unwrap_or(0.0))
+            .into_iter()
+            .map(|seconds| Beat {
                 seconds,
                 downbeat: false,
             })
@@ -691,6 +696,30 @@ fn classify(onsets: &[Onset]) -> (Vec<Beat>, bool) {
         return (beats, false);
     }
     (fold_subdivisions(beats, SUBDIVISION_MAX_SECONDS), true)
+}
+
+/// An off-beat louder than the rest passes for a beat: "La bondad de Dios"
+/// (Church of the City, 68 in eighths) has one 6 ms early and louder, which
+/// put a beat of 104 in a bar and every bar after it a beat off. One that
+/// falls between two beats a beat apart is that off-beat.
+fn without_stray_offbeats(times: &[f64], period: f64) -> Vec<f64> {
+    if !(period > 0.0) {
+        return times.to_vec();
+    }
+    let mut kept: Vec<f64> = Vec::with_capacity(times.len());
+    for (index, &time) in times.iter().enumerate() {
+        let stray = kept
+            .last()
+            .zip(times.get(index + 1))
+            .is_some_and(|(&last, &next)| {
+                time - last < STRAY_OFFBEAT_SHARE * period
+                    && ((next - last) - period).abs() <= STRAY_BEAT_TOLERANCE * period
+            });
+        if !stray {
+            kept.push(time);
+        }
+    }
+    kept
 }
 
 /// Keep every other click, counted from each accent, while the clicks are
@@ -1180,6 +1209,24 @@ mod tests {
 
     fn kinds(analysis: &ClickAnalysis) -> Vec<ClickWarningKind> {
         analysis.warnings.iter().map(|w| w.kind).collect()
+    }
+
+    #[test]
+    fn a_loud_offbeat_is_not_a_beat() {
+        // Real ("La bondad de Dios", 68): the off-beat after 127.087 s came
+        // 6 ms early and loud enough to pass for a beat.
+        let beat = 60.0 / 68.0;
+        let mut times: Vec<f64> = (0..12).map(|i| 120.0 + i as f64 * beat).collect();
+        times.insert(5, 120.0 + 4.5 * beat - 0.006);
+        let kept = without_stray_offbeats(&times, beat);
+        assert_eq!(kept.len(), 12);
+        assert!(kept.windows(2).all(|w| ((w[1] - w[0]) - beat).abs() < 1e-9));
+        // A real tempo change keeps every beat.
+        let faster: Vec<f64> = (0..6)
+            .map(|i| 120.0 + i as f64 * beat)
+            .chain((1..6).map(|i| 120.0 + 5.0 * beat + i as f64 * beat * 0.7))
+            .collect();
+        assert_eq!(without_stray_offbeats(&faster, beat), faster);
     }
 
     #[test]

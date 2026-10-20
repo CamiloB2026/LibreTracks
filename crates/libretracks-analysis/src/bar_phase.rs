@@ -9,6 +9,11 @@
 //! downbeat is the one the announcements end closest before.
 //!
 //! The announcement STARTS do not tell: a guide speaks on beats 1 and 3 alike.
+//! And a guide that speaks at the start of the bar before ("La bondad de
+//! Dios", Church of the City) ends its words two beats or more before the
+//! downbeat, closer to the wrong one. Its counts are surer: the beat after a
+//! count's last number ("…tres, cuatro") is a downbeat, so when the guide
+//! counts, the counts decide.
 //!
 //! Before the guide, the click's own tempo changes: a click jumps to a new
 //! tempo on a bar line. "Fiesta en el desierto" (Montesanto) goes from 125
@@ -50,6 +55,9 @@ pub(crate) fn pickup_from_guide(
     if !(beat > 0.0) {
         return None;
     }
+    if let Some(phase) = phase_from_counts(beat_times, beats_per_bar, beat, guide) {
+        return Some(phase);
+    }
     let ends = announcement_ends(guide, beat);
     let ends: Vec<f64> = ends
         .into_iter()
@@ -79,6 +87,54 @@ pub(crate) fn pickup_from_guide(
         .collect();
     scores.sort_by(|a, b| a.1.total_cmp(&b.1));
     (scores[1].1 - scores[0].1 >= MIN_MARGIN_BEATS).then_some(scores[0].0)
+}
+
+/// The numbers of one count can be a half note apart ("uno . dos . | uno,
+/// dos, tres, cuatro"): two beats and a breath.
+const COUNT_CHAIN_GAP_BEATS: f64 = 2.5;
+
+/// The phase every count of the guide agrees on: the first beat after a
+/// count's last fragment ends is a downbeat. None without counts, or when
+/// they disagree.
+fn phase_from_counts(
+    beat_times: &[f64],
+    beats_per_bar: usize,
+    beat: f64,
+    guide: &GuideAnalysis,
+) -> Option<usize> {
+    let is_count = |group: usize| {
+        guide.groups.get(group).is_some_and(|group| {
+            group
+                .labels
+                .iter()
+                .any(|label| label == "count" || label == "spoken_count")
+        })
+    };
+    let mut announcements: Vec<_> = guide.announcements.iter().collect();
+    announcements.sort_by(|a, b| a.start_seconds.total_cmp(&b.start_seconds));
+    let (first, last) = (beat_times[0], *beat_times.last()?);
+    let mut phase: Option<usize> = None;
+    for (index, announcement) in announcements.iter().enumerate() {
+        if !is_count(announcement.group) {
+            continue;
+        }
+        // Only where the speech stops: a fragment a breath later is the
+        // count going on (its "uno, dos" may not have matched a clip), or
+        // more words.
+        let goes_on = announcements.get(index + 1).is_some_and(|next| {
+            next.start_seconds - announcement.end_seconds < COUNT_CHAIN_GAP_BEATS * beat
+        });
+        let from = announcement.end_seconds - TAIL_BEATS * beat;
+        if goes_on || from <= first || from >= last {
+            continue;
+        }
+        let here = beat_times.partition_point(|&t| t < from) % beats_per_bar;
+        if phase.is_some_and(|known| known != here) {
+            return None;
+        }
+        phase = Some(here);
+    }
+    phase
 }
 
 /// Beats in each window either side of a tempo change, all at one tempo.
@@ -285,6 +341,83 @@ mod tests {
         let change = times[199] + 60.0 / 140.0;
         times.extend(beats(change, 115.0, 40));
         assert_eq!(pickup_from_tempo_changes(&times, 4), Some(0));
+    }
+
+    fn counted(fragments: &[(f64, f64, bool)]) -> GuideAnalysis {
+        GuideAnalysis {
+            announcements: fragments
+                .iter()
+                .map(|&(start_seconds, end_seconds, count)| GuideAnnouncement {
+                    start_seconds,
+                    end_seconds,
+                    group: usize::from(count),
+                    count_words: Vec::new(),
+                })
+                .collect(),
+            groups: [vec![], vec!["count".to_string()]]
+                .into_iter()
+                .map(|labels| crate::guide::GuideGroup {
+                    labels,
+                    transcript: None,
+                    match_cost: None,
+                    counted_in: false,
+                    occurrences: 1,
+                    first_start_seconds: 0.0,
+                    first_end_seconds: 0.0,
+                })
+                .collect(),
+        }
+    }
+
+    /// The fragments the guide analysis found on "La bondad de Dios" (Church
+    /// of the City, 68 BPM, bars from the click's first beat at 0.028 s): a
+    /// count "1 . 2 . 1 2 3 4" and then announcements said at the start of
+    /// the bar before their section.
+    const BONDAD: &[(f64, f64, bool)] = &[
+        (0.03, 0.44, true),
+        (1.79, 2.24, true),
+        // "uno, dos": no clip matched it.
+        (3.56, 4.89, false),
+        (5.32, 5.77, true),
+        (6.20, 6.66, true),
+        (17.67, 18.49, false),
+        (47.68, 48.10, false),
+        (72.38, 73.20, false),
+        (74.14, 74.92, false),
+        (86.51, 87.36, false),
+        (114.74, 115.88, false),
+        (116.50, 116.93, false),
+        (141.20, 142.03, false),
+        (155.33, 155.86, false),
+        (178.27, 179.41, false),
+        (183.56, 184.10, false),
+        (185.32, 186.10, false),
+        (210.03, 210.85, false),
+        (211.79, 212.68, false),
+        (224.15, 224.58, false),
+    ];
+
+    #[test]
+    fn a_guide_that_counts_puts_the_bar_after_its_count() {
+        let click = beats(0.028, 68.0, 380);
+        assert_eq!(pickup_from_guide(&click, 4, &counted(BONDAD)), Some(0));
+        // Without the count to go by, its announcements say another bar.
+        let words: Vec<(f64, f64)> = BONDAD[5..].iter().map(|&(s, e, _)| (s, e)).collect();
+        assert_ne!(pickup_from_guide(&click, 4, &guide(&words)), Some(0));
+    }
+
+    #[test]
+    fn es_el_counts_agree_with_its_announcements() {
+        // "Intro… uno, dos, tres, cuatro" and the counts after "Coro": the
+        // bars two beats after the click's first.
+        let fragments: Vec<(f64, f64, bool)> = ES_EL
+            .iter()
+            .map(|&(s, e)| (s, e, [1.71, 2.57, 3.43, 155.14, 339.43].contains(&s)))
+            .collect();
+        assert_eq!(
+            pickup_from_guide(&beats(0.0, 70.0, 460), 4, &counted(&fragments)),
+            Some(2)
+        );
     }
 
     #[test]
