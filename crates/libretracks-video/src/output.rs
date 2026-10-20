@@ -83,6 +83,11 @@ pub enum OutputCommand {
     /// −100 (black) … 0 (normal). Fades and "black" ride on this: it answers
     /// at once, while unloading takes time and leaves a stale frame.
     SetBrightness(f64),
+    /// The brightness `slot` must already have when a swap shows it: the
+    /// hidden player draws its preloaded frame with it, so the swap does not
+    /// flash that frame at the brightness of the clip it replaces. Only
+    /// backends whose players have separate brightness use it.
+    PrepareBrightness { slot: Slot, value: f64 },
     /// Per-clip fit override; `None` returns to the settings' fit.
     SetFit(Option<VideoFit>),
     /// Show the idle screen (image or black) on the visible slot.
@@ -156,6 +161,11 @@ pub trait OutputBackend: Send {
     fn player(&mut self, slot: Slot, command: &PlayerCommand) -> Result<(), BackendError>;
     fn show_slot(&mut self, slot: Slot) -> Result<(), BackendError>;
     fn set_brightness(&mut self, value: f64) -> Result<(), BackendError>;
+    /// See [`OutputCommand::PrepareBrightness`]. A backend with one black
+    /// layer over both players (mobile) has nothing to prepare.
+    fn prepare_brightness(&mut self, _slot: Slot, _value: f64) -> Result<(), BackendError> {
+        Ok(())
+    }
     fn set_fit(&mut self, fit: VideoFit) -> Result<(), BackendError>;
     /// Show a still image (idle picture or test pattern) on `slot`, or clear
     /// it (black background) with `None`.
@@ -584,6 +594,11 @@ impl<B: OutputBackend> OutputController<B> {
                     let _ = self.backend.set_brightness(value);
                 }
             }
+            OutputCommand::PrepareBrightness { slot, value } => {
+                if self.backend.is_open() {
+                    let _ = self.backend.prepare_brightness(slot, value.clamp(-100.0, 0.0));
+                }
+            }
             OutputCommand::SetFit(fit) => {
                 if fit == self.fit_override {
                     return;
@@ -892,6 +907,7 @@ pub(crate) mod fake {
         pub commands: Vec<(Slot, PlayerCommand)>,
         pub fits: Vec<VideoFit>,
         pub brightness: Vec<f64>,
+        pub prepared: Vec<(Slot, f64)>,
         pub visible: Vec<Slot>,
         pub images: Vec<(Slot, Option<String>)>,
         pub delay: Duration,
@@ -934,6 +950,10 @@ pub(crate) mod fake {
         }
         fn set_brightness(&mut self, value: f64) -> Result<(), BackendError> {
             self.brightness.push(value);
+            Ok(())
+        }
+        fn prepare_brightness(&mut self, slot: Slot, value: f64) -> Result<(), BackendError> {
+            self.prepared.push((slot, value));
             Ok(())
         }
         fn set_fit(&mut self, fit: VideoFit) -> Result<(), BackendError> {

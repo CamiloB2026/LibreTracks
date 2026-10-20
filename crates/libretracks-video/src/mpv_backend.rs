@@ -55,6 +55,13 @@ pub struct MpvOutputBackend {
     #[cfg(target_os = "macos")]
     main_thread: Option<crate::surface_macos::MainThread>,
     players: [Option<Mpv>; 2],
+    /// Index of the player on screen.
+    visible: usize,
+    /// The level each player was last given (`None` = mpv's default, 0).
+    levels: [Option<f64>; 2],
+    /// The level the picture on screen should have: a slot made visible
+    /// takes it.
+    picture: f64,
     /// Linux: one player (mpv's own window) serves both slots.
     single_player: bool,
     open: bool,
@@ -71,6 +78,9 @@ impl MpvOutputBackend {
             #[cfg(target_os = "macos")]
             main_thread: None,
             players: [None, None],
+            visible: 0,
+            levels: [None, None],
+            picture: 0.0,
             single_player: !cfg!(any(windows, target_os = "macos")),
             open: false,
         }
@@ -217,6 +227,23 @@ impl MpvOutputBackend {
         Ok(mpv)
     }
 
+    /// Fades, forced black and "black when stopped" as a GAIN on the
+    /// picture: −100 → black, 0 → untouched. mpv's `contrast` scales every
+    /// channel keeping black at black (both renderers, `gpu` and `gpu-next`),
+    /// so a dark scene fades as a whole. `brightness` only subtracted: a mid
+    /// grey stayed black until half the fade had gone.
+    fn set_level(&mut self, index: usize, value: f64) -> Result<(), BackendError> {
+        if self.levels[index] == Some(value) {
+            return Ok(());
+        }
+        let Some(player) = &self.players[index] else {
+            return Ok(());
+        };
+        player.set_property_f64("contrast", value).map_err(failed)?;
+        self.levels[index] = Some(value);
+        Ok(())
+    }
+
     fn each_player(&self, mut action: impl FnMut(&Mpv) -> Result<(), crate::VideoError>) -> Result<(), BackendError> {
         for player in self.players.iter().flatten() {
             action(player).map_err(failed)?;
@@ -255,6 +282,8 @@ impl MpvOutputBackend {
 impl OutputBackend for MpvOutputBackend {
     fn open(&mut self, plan: &SurfacePlan, settings: &VideoOutputSettings) -> Result<(), BackendError> {
         self.close();
+        self.visible = 0;
+        self.levels = [None, None];
 
         #[cfg(target_os = "macos")]
         if let Err(error) = self.open_macos(plan, settings) {
@@ -342,6 +371,7 @@ impl OutputBackend for MpvOutputBackend {
         }
         // Players first: mpv must let go of its child windows before they die.
         self.players = [None, None];
+        self.levels = [None, None];
         #[cfg(windows)]
         {
             self.surface = None;
@@ -392,6 +422,12 @@ impl OutputBackend for MpvOutputBackend {
     }
 
     fn show_slot(&mut self, slot: Slot) -> Result<(), BackendError> {
+        // Give the player the picture's level BEFORE it is on screen; when
+        // its preload was prepared (the usual case) it already has it.
+        let index = self.slot_index(slot);
+        self.visible = index;
+        let picture = self.picture;
+        let _ = self.set_level(index, picture);
         #[cfg(windows)]
         if let Some(surface) = &self.surface {
             surface.show_slot(self.slot_index(slot));
@@ -407,8 +443,20 @@ impl OutputBackend for MpvOutputBackend {
         Ok(())
     }
 
+    /// Only the player on screen: the hidden one keeps the level of the
+    /// frame it holds for the next swap (`prepare_brightness`).
     fn set_brightness(&mut self, value: f64) -> Result<(), BackendError> {
-        self.each_player(|player| player.set_property_f64("brightness", value))
+        self.picture = value;
+        self.set_level(self.visible, value)
+    }
+
+    fn prepare_brightness(&mut self, slot: Slot, value: f64) -> Result<(), BackendError> {
+        let index = self.slot_index(slot);
+        // One player for both slots (Linux): it is the one on screen.
+        if index == self.visible {
+            return Ok(());
+        }
+        self.set_level(index, value)
     }
 
     fn set_fit(&mut self, fit: VideoFit) -> Result<(), BackendError> {

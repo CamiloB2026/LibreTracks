@@ -127,6 +127,9 @@ pub struct RuntimeCore {
     /// (restarts seen when the load/seek was sent, when).
     pending_settle: Option<(u64, Instant)>,
     brightness: Option<f64>,
+    /// (surface opens, level) last prepared on the hidden player: the level
+    /// its preloaded frame must have when a swap shows it.
+    prepared: Option<(u32, f64)>,
     fit: Option<Option<VideoFit>>,
     stopped_idle_shown: bool,
     /// The idle screen last sent: choosing another image (or black) while
@@ -162,6 +165,7 @@ impl Default for RuntimeCore {
             last_generation: None,
             pending_settle: None,
             brightness: None,
+            prepared: None,
             fit: None,
             stopped_idle_shown: false,
             idle_screen: None,
@@ -221,6 +225,26 @@ impl RuntimeCore {
         }
     }
 
+    /// Give the hidden player the level its preload will be shown with: the
+    /// fade of the clip at the swap target, under the forced black.
+    fn prepare_hidden(&mut self, output: &dyn RuntimeOutput, opens: u32, hidden: Slot, black: f64) {
+        let Some(loaded) = &self.preload.loaded else {
+            self.prepared = None;
+            return;
+        };
+        let fade = active_clip_at(&self.timeline, loaded.target_position)
+            .map_or(0.0, |active| brightness_for_gain(active.fade_gain));
+        let value = apply_forced_black(fade, black);
+        if self
+            .prepared
+            .is_some_and(|(at, current)| at == opens && (current - value).abs() < 0.5)
+        {
+            return;
+        }
+        self.prepared = Some((opens, value));
+        output.send(OutputCommand::PrepareBrightness { slot: hidden, value });
+    }
+
     pub fn tick(
         &mut self,
         inputs: &mut dyn RuntimeInputs,
@@ -243,6 +267,7 @@ impl RuntimeCore {
             self.state = SyncState::default();
             self.pending_settle = None;
             self.brightness = None;
+            self.prepared = None;
             self.fit = None;
             self.idle_sent = false;
             self.preload = PreloadState::default();
@@ -376,6 +401,7 @@ impl RuntimeCore {
                         self.state.idle = false;
                         self.state.filtered_error = None;
                         self.pending_settle = None;
+                        self.prepared = None;
                         self.expected_visible = Some((hidden, now));
                         self.stats.swaps += 1;
                         return TickRate::Fast;
@@ -392,14 +418,18 @@ impl RuntimeCore {
                             })
                         })
                     });
-                for action in plan_preload(
+                let actions = plan_preload(
                     &mut self.preload,
                     &self.preload_params,
                     &self.timeline,
                     position,
                     true,
                     upcoming,
-                ) {
+                );
+                // Before the load: the hidden player draws its first frame
+                // with this level, and that frame is what a swap shows first.
+                self.prepare_hidden(output, status.opens, hidden, black);
+                for action in actions {
                     let command = match action {
                         PreloadAction::Preload { path, at } => PlayerCommand::Load {
                             path,
@@ -1162,6 +1192,40 @@ mod tests {
             })
             .expect("a brightness before the swap");
         assert!(brightness <= -99.0, "shown at brightness {brightness}");
+
+        // The brightness above only reaches the player on screen. The frame
+        // the swap shows was drawn by the hidden player when it preloaded, so
+        // that player must have been black BEFORE its load: otherwise the
+        // window comes up with a frame drawn at full picture (the white flash
+        // of a white clip fading in) and only then goes black.
+        let OutputCommand::ShowSlot(shown) = sent[show] else {
+            unreachable!()
+        };
+        let load = sent[..show]
+            .iter()
+            .rposition(|command| {
+                matches!(
+                    command,
+                    OutputCommand::Player { slot, command: PlayerCommand::Load { .. } } if *slot == shown
+                )
+            })
+            .expect("the preload of the shown slot");
+        let prepared = sent[..load]
+            .iter()
+            .rev()
+            .find_map(|command| match command {
+                OutputCommand::PrepareBrightness { slot, value } if *slot == shown => Some(*value),
+                _ => None,
+            })
+            .expect("a level prepared before the preload");
+        assert!(prepared <= -99.0, "preloaded at level {prepared}");
+        assert!(
+            !sent[load..show].iter().any(|command| matches!(
+                command,
+                OutputCommand::PrepareBrightness { slot, value } if *slot == shown && *value > -99.0
+            )),
+            "and kept black until shown"
+        );
     }
 
     #[test]
