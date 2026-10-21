@@ -13386,6 +13386,13 @@ body.lt-song-reordering .lt-compact-column-resize-slot {
   font-size: 16px;
 }
 
+/* The badge's right-click menu sits in `.lt-device-status-slot`, which lets
+   clicks through (pointer-events: none): take them back or nothing in it can
+   be clicked. */
+.lt-device-status-slot .lt-context-menu {
+  pointer-events: auto;
+}
+
 .lt-video-output-badge {
   display: inline-flex;
   align-items: center;
