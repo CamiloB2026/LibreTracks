@@ -121,7 +121,6 @@ const SM_CXDOUBLECLK: i32 = 36;
 const SM_CYDOUBLECLK: i32 = 37;
 const MA_NOACTIVATE: isize = 3;
 const WS_EX_TOPMOST: u32 = 0x0000_0008;
-const WS_EX_TOOLWINDOW: u32 = 0x0000_0080;
 const WS_EX_NOACTIVATE: u32 = 0x0800_0000;
 const WS_POPUP: u32 = 0x8000_0000;
 const WS_CHILD: u32 = 0x4000_0000;
@@ -148,9 +147,12 @@ const BLACK_BRUSH: i32 = 4;
 const IDC_ARROW: usize = 32512;
 
 /// Fullscreen is a bare popup; the window has a frame to move and resize.
-/// The extended style is the same for both (never activated, no taskbar
-/// button); being on top is the z-order, set with `SetWindowPos`.
-const EX_STYLE: u32 = WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE;
+/// The extended style is the same for both (never activated, and so no
+/// taskbar button without `WS_EX_APPWINDOW`); being on top is the z-order,
+/// set with `SetWindowPos`. Not `WS_EX_TOOLWINDOW`: OBS (and other capture
+/// apps) leave tool windows out of their window list, and the video window
+/// has to be pickable there to stream or record it.
+const EX_STYLE: u32 = WS_EX_NOACTIVATE;
 
 fn style_for(fullscreen: bool) -> u32 {
     if fullscreen {
