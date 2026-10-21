@@ -57,7 +57,10 @@ describe("sessionSetupNotice", () => {
       kind: "configure",
       sessionKey: "s1",
     });
-    expect(sessionSetupNotice({ ...base, settings: { ...configured, enabled: false } })?.kind).toBe("configure");
+  });
+
+  it("does not nag when the output was only switched off (window hidden or closed)", () => {
+    expect(sessionSetupNotice({ ...base, settings: { ...configured, enabled: false } })).toBeNull();
   });
 
   it("names the configured display when it is not connected", () => {
@@ -99,9 +102,12 @@ describe("first video clip", () => {
     expect(useVideoStore.getState().wizardOpen).toBe(false);
   });
 
-  it("an off output with a display counts as unconfigured", () => {
-    expect(outputIsUnconfigured({ ...configured, enabled: false })).toBe(true);
+  it("on the desktop only a missing display counts as unconfigured; on a phone, an off output", () => {
+    expect(outputIsUnconfigured({ ...configured, enabled: false })).toBe(false);
+    expect(outputIsUnconfigured({ ...configured, display: null })).toBe(true);
     expect(outputIsUnconfigured(configured)).toBe(false);
+    expect(outputIsUnconfigured({ ...configured, enabled: false, display: null }, true)).toBe(true);
+    expect(outputIsUnconfigured({ ...configured, display: null }, true)).toBe(false);
   });
 });
 

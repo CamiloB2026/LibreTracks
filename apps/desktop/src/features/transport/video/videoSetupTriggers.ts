@@ -14,11 +14,14 @@ import { useVideoStore, type VideoSetupNotice } from "./videoStore";
  * act on the video store.
  */
 
-/** No display chosen, or the output switched off: nothing would project.
- * A phone needs no display chosen (the first external one is used, plan
- * video-mobile paso 06), only the output on. */
+/** No display chosen: nothing would project. An output switched off with a
+ * display chosen is set up: hiding the window (the badge, its X) switches it
+ * off, and that must not bring the "set up video" notice back on the next
+ * session; the badge shows it off and one click turns it back on. A phone
+ * needs no display chosen (the first external one is used, plan video-mobile
+ * paso 06), so there only the output being on tells it was set up. */
 export function outputIsUnconfigured(settings: VideoOutputSettings, mobile = false) {
-  return !settings.enabled || (!mobile && settings.display == null);
+  return mobile ? !settings.enabled : settings.display == null;
 }
 
 /** "\\.\DISPLAY2" → "DISPLAY2". */
