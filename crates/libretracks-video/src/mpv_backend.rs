@@ -400,6 +400,27 @@ impl OutputBackend for MpvOutputBackend {
         Ok(())
     }
 
+    fn bring_to_front(&mut self, plan: &SurfacePlan) {
+        #[cfg(windows)]
+        if let Some(surface) = self.surface.as_ref() {
+            surface.bring_to_front(plan);
+            return;
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(surface) = self.surface.as_mut() {
+            surface.show();
+            return;
+        }
+        // Linux: mpv's own window. Putting it on top for a moment raises it;
+        // then it goes back to what the plan says.
+        #[cfg(not(any(windows, target_os = "macos")))]
+        if let Some(player) = &self.players[0] {
+            let _ = player.set_property_flag("ontop", true);
+            let _ = player.set_property_flag("ontop", plan.on_top);
+        }
+        let _ = plan;
+    }
+
     fn close(&mut self) {
         // macOS: stop drawing first — each render context must be freed
         // before its player is destroyed (render.h) — and keep the panel.

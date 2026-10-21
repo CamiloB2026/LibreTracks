@@ -94,6 +94,9 @@ pub enum OutputCommand {
     ShowIdle,
     /// Show an image (the test pattern) until `None`.
     Overlay(Option<String>),
+    /// Raise the open output above the windows covering it, without taking
+    /// the keyboard focus from the app.
+    BringToFront,
     Shutdown,
 }
 
@@ -197,6 +200,9 @@ pub trait OutputBackend: Send {
     }
     /// The session's video came or went (a phone's keep-awake follows it).
     fn content_changed(&mut self, _has_content: bool) {}
+    /// See [`OutputCommand::BringToFront`]. A phone's output is the whole
+    /// external display: nothing can cover it.
+    fn bring_to_front(&mut self, _plan: &SurfacePlan) {}
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -639,6 +645,11 @@ impl<B: OutputBackend> OutputController<B> {
                     self.fail(error);
                 }
             }
+            OutputCommand::BringToFront => {
+                if let Some(plan) = self.plan.as_ref().filter(|_| self.backend.is_open()) {
+                    self.backend.bring_to_front(plan);
+                }
+            }
             OutputCommand::Shutdown => {
                 if self.backend.is_open() {
                     self.backend.close();
@@ -913,6 +924,7 @@ pub(crate) mod fake {
         pub delay: Duration,
         pub pending_events: Vec<BackendEvent>,
         pub polls: Arc<AtomicU32>,
+        pub raises: u32,
     }
 
     impl OutputBackend for FakeBackend {
@@ -968,6 +980,9 @@ pub(crate) mod fake {
             self.polls.fetch_add(1, Ordering::Relaxed);
             std::thread::sleep(max_wait.min(Duration::from_millis(1)));
             std::mem::take(&mut self.pending_events)
+        }
+        fn bring_to_front(&mut self, _plan: &SurfacePlan) {
+            self.raises += 1;
         }
     }
 }
@@ -1198,6 +1213,23 @@ mod tests {
         controller.handle(OutputCommand::SetContent(false));
         assert_eq!(controller.status().state, OutputState::Standby);
         assert!(!controller.backend().open);
+    }
+
+    #[test]
+    fn bring_to_front_only_raises_an_open_output() {
+        let mut controller = OutputController::new(FakeBackend::default());
+        controller.handle(OutputCommand::Displays {
+            monitors: monitors(),
+            app_monitor: Some("M1".into()),
+        });
+        controller.handle(OutputCommand::ApplySettings(enabled_on_m2()));
+        controller.handle(OutputCommand::BringToFront);
+        assert_eq!(controller.backend().raises, 0);
+
+        controller.handle(OutputCommand::SetContent(true));
+        assert!(controller.backend().open);
+        controller.handle(OutputCommand::BringToFront);
+        assert_eq!(controller.backend().raises, 1);
     }
 
     /// The wizard's step 3 showed black: opening the output for the test

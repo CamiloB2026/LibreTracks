@@ -3212,6 +3212,10 @@ export async function showVideoTestPattern(on: boolean): Promise<void> {
   return invokeCommand<void>("video_test_pattern", { on });
 }
 
+export async function bringVideoOutputToFront(): Promise<void> {
+  return invokeCommand<void>("video_bring_to_front");
+}
+
 export async function listenToVideoOutputStatus(
   handler: (status: VideoOutputStatus) => void,
 ): Promise<() => void> {

@@ -1,9 +1,11 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const api = vi.hoisted(() => ({ bringVideoOutputToFront: vi.fn(async () => undefined) }));
 vi.mock("../desktopApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../desktopApi")>()),
   isTauriApp: false,
+  bringVideoOutputToFront: api.bringVideoOutputToFront,
 }));
 
 const live = vi.hoisted(() => ({ runVideoLiveAction: vi.fn(async () => undefined) }));
@@ -36,6 +38,7 @@ function songWithVideo(hasVideo: boolean) {
 
 beforeEach(async () => {
   live.runVideoLiveAction.mockClear();
+  api.bringVideoOutputToFront.mockClear();
   useVideoStore.setState(INITIAL_VIDEO_STATE);
   songWithVideo(true);
   await i18n.changeLanguage("en");
@@ -59,6 +62,23 @@ describe("VideoOutputBadge", () => {
     expect(button.getAttribute("title")).toContain("DISPLAY2 · OK");
     fireEvent.click(button);
     expect(live.runVideoLiveAction).toHaveBeenCalledWith("output");
+  });
+
+  it("a right-click on the open window's badge brings it to the front", () => {
+    render(<VideoOutputBadge />);
+    act(() => useVideoStore.getState().setOutputStatus(status({ state: "ready" })));
+    fireEvent.contextMenu(screen.getByRole("button"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Bring to front" }));
+    expect(api.bringVideoOutputToFront).toHaveBeenCalledTimes(1);
+    expect(live.runVideoLiveAction).not.toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("has no right-click menu while the output is off", () => {
+    render(<VideoOutputBadge />);
+    act(() => useVideoStore.getState().setOutputStatus(status({ state: "disabled" })));
+    fireEvent.contextMenu(screen.getByRole("button"));
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 
   it("after closing the window it stays, switched off, to bring it back", () => {
