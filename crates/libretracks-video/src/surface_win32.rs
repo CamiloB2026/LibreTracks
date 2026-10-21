@@ -422,6 +422,21 @@ impl Win32Surface {
         }
     }
 
+    /// Raise the window above every other without activating it. Topmost and
+    /// back is the way a window can do it from the background: a plain
+    /// `HWND_TOP` only reorders it within the app's own windows.
+    pub fn bring_to_front(&self, plan: &SurfacePlan) {
+        let window = self.window as Handle;
+        let flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS;
+        unsafe {
+            ShowWindow(window, SW_SHOWNA);
+            SetWindowPos(window, HWND_TOPMOST, 0, 0, 0, 0, flags);
+            if !plan.on_top {
+                SetWindowPos(window, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+            }
+        }
+    }
+
     /// Move to the plan and restyle if its mode changed (fullscreen <->
     /// window), keeping the slot children and so the players.
     pub fn apply(&mut self, plan: &SurfacePlan) {

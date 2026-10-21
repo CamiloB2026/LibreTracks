@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { useTranslation } from "react-i18next";
 
+import { clientToZoomedCoords } from "../../../shared/uiZoom";
 import {
+  bringVideoOutputToFront,
   getVideoOutputStatus,
   isMobileApp,
   isTauriApp,
   listenToVideoOutputStatus,
 } from "../desktopApi";
+import { useViewportClampedMenu } from "../hooks/useViewportClampedMenu";
 import { useSongStore } from "../songStore";
 import { VideoOutputBadgeMobile } from "./VideoOutputBadgeMobile";
 import { runVideoLiveAction } from "./videoLive";
@@ -44,7 +47,10 @@ function useVideoOutputStatusSync() {
  * the session has video. Clicking it shows or hides the output window (the
  * way back after closing it). When all is well it is just an icon; it spells
  * out only what the technician must see at once: the picture blacked out, or
- * what is wrong (display unplugged, libmpv missing).
+ * what is wrong (display unplugged, libmpv missing). A right-click while the
+ * window is open offers to bring it to the front: it has no taskbar button,
+ * so once another window covers it there is no other way back short of
+ * hiding and showing it.
  */
 export function VideoOutputBadge() {
   useVideoOutputStatusSync();
@@ -57,6 +63,7 @@ function VideoOutputBadgeDesktop() {
   const forcedBlack = useVideoStore((state) => state.forcedBlack);
   const openWizard = useVideoStore((state) => state.openWizard);
   const songHasVideo = useSongStore((state) => (state.song?.videoClips?.length ?? 0) > 0);
+  const menu = useBadgeMenu();
   if (!status || !songHasVideo) return null;
 
   // "\\.\DISPLAY2" → "DISPLAY2": the Windows device prefix means nothing to a user.
@@ -66,6 +73,7 @@ function VideoOutputBadgeDesktop() {
   let label: string | null = null;
   let title: string;
   let onClick: (() => void) | undefined = () => void runVideoLiveAction("output");
+  let windowOpen = false;
   switch (status.state.state) {
     case "disabled":
       tone = "is-off";
@@ -81,6 +89,7 @@ function VideoOutputBadgeDesktop() {
       } else if (status.sharesAppDisplay) {
         tone = "is-warning";
       }
+      windowOpen = status.state.state === "ready";
       title = [
         t("transport.video.badge.ready", { monitor }),
         status.sharesAppDisplay ? t("transport.video.badge.sharesApp") : null,
@@ -122,18 +131,84 @@ function VideoOutputBadgeDesktop() {
       break;
   }
   return (
-    <button
-      type="button"
-      className={`lt-video-output-badge ${tone}${label ? "" : " is-icon"}`}
-      title={title}
-      aria-label={label ?? title}
-      disabled={!onClick}
-      onClick={onClick}
-    >
-      <span className="material-symbols-outlined" aria-hidden="true">
-        {icon}
-      </span>
-      {label}
-    </button>
+    <>
+      <button
+        type="button"
+        className={`lt-video-output-badge ${tone}${label ? "" : " is-icon"}`}
+        title={title}
+        aria-label={label ?? title}
+        disabled={!onClick}
+        onClick={onClick}
+        onContextMenu={windowOpen ? menu.open : undefined}
+      >
+        <span className="material-symbols-outlined" aria-hidden="true">
+          {icon}
+        </span>
+        {label}
+      </button>
+      {menu.at && windowOpen ? (
+        <div
+          className="lt-context-menu"
+          ref={menu.ref}
+          role="menu"
+          style={{ left: menu.position.left, top: menu.position.top }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <strong>{t("transport.video.badge.statusTitle")}</strong>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              menu.close();
+              void bringVideoOutputToFront().catch(() => undefined);
+            }}
+          >
+            {t("transport.video.badge.bringToFront")}
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              menu.close();
+              void runVideoLiveAction("output");
+            }}
+          >
+            {t("transport.video.badge.hideWindow")}
+          </button>
+        </div>
+      ) : null}
+    </>
   );
+}
+
+/** The badge's right-click menu: where it opened, and closing it on any
+ * press outside it or when the app loses focus. */
+function useBadgeMenu() {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  const position = useViewportClampedMenu(ref, at, at?.x ?? 0, at?.y ?? 0);
+  useEffect(() => {
+    if (!at) return;
+    const close = (event: PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node | null)) setAt(null);
+    };
+    const blur = () => setAt(null);
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("blur", blur);
+    };
+  }, [at]);
+  return {
+    at,
+    ref,
+    position,
+    open: (event: MouseEvent<HTMLElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      setAt(clientToZoomedCoords(event.clientX, event.clientY));
+    },
+    close: () => setAt(null),
+  };
 }

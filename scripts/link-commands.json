@@ -74,6 +74,7 @@
     "take_audio_idle_wake",
     "take_pending_open_with_file",
     "video_apply_settings",
+    "video_bring_to_front",
     "video_calibration",
     "video_identify_displays",
     "video_list_displays",

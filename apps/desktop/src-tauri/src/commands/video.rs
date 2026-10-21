@@ -525,6 +525,13 @@ pub fn video_test_pattern(
     Ok(())
 }
 
+/// Raise the output window over whatever covers it (the badge's right-click
+/// menu), without taking the keyboard from the app.
+#[tauri::command(async)]
+pub fn video_bring_to_front(state: State<'_, DesktopState>) {
+    state.video.send(OutputCommand::BringToFront);
+}
+
 /// The playhead is being dragged (`Some`, view seconds) or was released or
 /// cancelled (`None`): the output shows the frame under it meanwhile.
 #[tauri::command(async)]
