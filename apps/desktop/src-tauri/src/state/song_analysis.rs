@@ -27,8 +27,7 @@ const SAME_POSITION_SECONDS: f64 = 0.0005;
 const SONG_ORIGIN_SECONDS: f64 = 0.0001;
 
 /// Replace the tempo and time signature markers inside `region_id` with the
-/// given ones. Markers outside the song are left alone, except the ones the
-/// proposal adds at the next song's start to keep its tempo.
+/// given ones. Markers outside the song are left alone.
 pub(super) fn apply_tempo_analysis_to_song(
     song: &mut Song,
     region_id: &str,

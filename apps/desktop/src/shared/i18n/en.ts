@@ -793,8 +793,6 @@ const en = {
       colValue: "Value",
       kindTempo: "Tempo (BPM)",
       kindSignature: "Meter",
-      nextSongStart: "Next song",
-      restoresNextSong: "Keeps the value the next song had",
       rampToNext: "Ramp: glides to the next marker's tempo",
       missingFiles_one: "{{count}} audio file could not be read.",
       missingFiles_other: "{{count}} audio files could not be read.",

@@ -808,8 +808,6 @@ const es = {
       colValue: "Valor",
       kindTempo: "Tempo (BPM)",
       kindSignature: "Compás",
-      nextSongStart: "Canción siguiente",
-      restoresNextSong: "Mantiene el valor que tenía la canción siguiente",
       rampToNext: "Rampa: llega poco a poco al tempo de la marca siguiente",
       missingFiles_one: "No se pudo leer {{count}} archivo de audio.",
       missingFiles_other: "No se pudieron leer {{count}} archivos de audio.",

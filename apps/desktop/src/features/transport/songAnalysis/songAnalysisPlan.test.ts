@@ -65,10 +65,9 @@ function song(): SongView {
 
 const proposal: TempoProposal = {
   tempoMarkers: [
-    { startSeconds: 100.5, bpm: 92, restoresNextSong: false },
-    { startSeconds: 200, bpm: 100, restoresNextSong: true },
+    { startSeconds: 100.5, bpm: 92 },
   ],
-  signatureMarkers: [{ startSeconds: 100.5, signature: "6/8", restoresNextSong: false }],
+  signatureMarkers: [{ startSeconds: 100.5, signature: "6/8" }],
   currentBpm: 100,
   currentSignature: "4/4",
   unchanged: false,
@@ -122,12 +121,9 @@ describe("tempo from the music", () => {
     expect(musicTempoTrackIds(song(), "b")).toEqual(["keys"]);
   });
 
-  it("scales the song's tempo markers, not the next song's", () => {
+  it("scales the song's tempo markers", () => {
     const scaled = scaleTempoRows(reviewRows(proposal), 2);
-    expect(scaled.filter((row) => row.kind === "tempo").map((row) => row.text)).toEqual([
-      "184",
-      "100",
-    ]);
+    expect(scaled.filter((row) => row.kind === "tempo").map((row) => row.text)).toEqual(["184"]);
     // Out of range stays.
     const tooFast = scaleTempoRows(scaled, 2);
     expect(tooFast.find((row) => row.kind === "tempo")?.text).toBe("184");
@@ -397,8 +393,8 @@ describe("guide", () => {
   it("follows the tempo the review is about to write", () => {
     const { analysis, markers } = oneAnnouncement(5.3, ["intro"]);
     const tempo = {
-      tempoMarkers: [{ startSeconds: 100, bpm: 60, restoresNextSong: false }],
-      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+      tempoMarkers: [{ startSeconds: 100, bpm: 60 }],
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4" }],
     };
     // 60 BPM: bars of 4 s from 100 → 108.
     expect(placeGuideSections(plain(), "b", 100, analysis, markers, tempo)[0].startSeconds).toBe(108);
@@ -410,10 +406,10 @@ describe("guide", () => {
     const { analysis, markers } = oneAnnouncement(3.0, ["intro"]);
     const tempo = {
       tempoMarkers: [
-        { startSeconds: 100, bpm: 60, restoresNextSong: false, ramp: true },
-        { startSeconds: 110, bpm: 120, restoresNextSong: false },
+        { startSeconds: 100, bpm: 60, ramp: true },
+        { startSeconds: 110, bpm: 120 },
       ],
-      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4" }],
     };
     const [placed] = placeGuideSections(plain(), "b", 100, analysis, markers, tempo);
     expect(placed.startSeconds).toBeCloseTo(100 + (-60 + Math.sqrt(3600 + 2880)) / 6, 3);
@@ -425,7 +421,7 @@ describe("guide", () => {
     // used to land on the 120 grid (8 s, 28 s…) instead of 98's (9.796…).
     const { analysis, markers } = oneAnnouncement(9.5, ["intro"]);
     const tempo = {
-      tempoMarkers: [{ startSeconds: 0, bpm: 98, restoresNextSong: false }],
+      tempoMarkers: [{ startSeconds: 0, bpm: 98 }],
       signatureMarkers: [],
     };
     const [placed] = placeGuideSections(plain(), "a", 0, analysis, markers, tempo);
@@ -461,10 +457,9 @@ describe("buildApplyPayload", () => {
     );
     expect(buildApplyPayload(song(), "b", rows, { tempo: true, signature: true })).toEqual({
       tempoMarkers: [
-        { startSeconds: 100.5, bpm: 93, restoresNextSong: false },
-        { startSeconds: 200, bpm: 100, restoresNextSong: true },
+        { startSeconds: 100.5, bpm: 93 },
       ],
-      signatureMarkers: [{ startSeconds: 100.5, signature: "6/8", restoresNextSong: false }],
+      signatureMarkers: [{ startSeconds: 100.5, signature: "6/8" }],
     });
   });
 
@@ -474,14 +469,14 @@ describe("buildApplyPayload", () => {
       signature: true,
     });
     expect(payload?.tempoMarkers).toEqual([
-      { startSeconds: 130, bpm: 88, restoresNextSong: false },
+      { startSeconds: 130, bpm: 88 },
     ]);
     const signatureOnly = buildApplyPayload(song(), "b", reviewRows(proposal), {
       tempo: true,
       signature: false,
     });
     expect(signatureOnly?.signatureMarkers).toEqual([
-      { startSeconds: 110, signature: "3/4", restoresNextSong: false },
+      { startSeconds: 110, signature: "3/4" },
     ]);
   });
 
@@ -516,8 +511,8 @@ describe("warped song", () => {
   it("places the proposed tempo map where it plays, BPM untouched", () => {
     const inView = tempoInView(
       {
-        tempoMarkers: [{ startSeconds: 110, bpm: 96, restoresNextSong: false }],
-        signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+        tempoMarkers: [{ startSeconds: 110, bpm: 96 }],
+        signatureMarkers: [{ startSeconds: 100, signature: "4/4" }],
       },
       timeline,
     );

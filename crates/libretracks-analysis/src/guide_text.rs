@@ -7,7 +7,9 @@
 //!
 //! - Words are compared loosely (one or two letters off, by length), because
 //!   recognition of a lone word slips: "Intro" comes back "Entro", "Coro"
-//!   "Cordo", "Refrain" "Re-frame".
+//!   "Cordo", "Refrain" "Re-frame". A phrase of several words is also
+//!   compared whole, its slips spread over it: "Bajel insensidad" is
+//!   "bajar intensidad". Of the phrases that match, the closest wins.
 //! - Small filler words between a phrase's words are skipped ("solo de
 //!   guitarra", "entra la batería", "toda la banda").
 //! - A number right after a section is its variant ("Coro dos", "Bridge 1"),
@@ -237,22 +239,53 @@ fn is_filler(token: &str) -> bool {
     token.chars().count() <= 3 && number_word(token).is_none()
 }
 
-/// The phrase at `start`, if it matches: the index after it.
-fn match_phrase(words: &[String], start: usize, phrase: &[&str]) -> Option<usize> {
-    let mut position = start;
-    for (index, expected) in phrase.iter().enumerate() {
-        if index > 0 && position < words.len() && !same_word(&words[position], expected) {
-            // One filler may sit between two words of a phrase.
-            if is_filler(&words[position]) {
-                position += 1;
+/// Letters a whole phrase may be off: one in five ("bajar intensidad", 15
+/// letters, takes 3; "bajar" and "subir" are 4 apart).
+fn phrase_slips(letters: usize) -> usize {
+    letters / 5
+}
+
+/// The phrase at `start`, if it matches: the index after it, and how many
+/// letters off it was heard (0 for a word-by-word match).
+fn match_phrase(words: &[String], start: usize, phrase: &[&str]) -> Option<(usize, usize)> {
+    let word_by_word = || {
+        let mut position = start;
+        for (index, expected) in phrase.iter().enumerate() {
+            if index > 0 && position < words.len() && !same_word(&words[position], expected) {
+                // One filler may sit between two words of a phrase.
+                if is_filler(&words[position]) {
+                    position += 1;
+                }
             }
+            if position >= words.len() || !same_word(&words[position], expected) {
+                return None;
+            }
+            position += 1;
         }
-        if position >= words.len() || !same_word(&words[position], expected) {
-            return None;
-        }
-        position += 1;
+        Some(position)
+    };
+    if let Some(end) = word_by_word() {
+        let heard: String = words[start..end]
+            .iter()
+            .filter(|word| !is_filler(word) || phrase.contains(&word.as_str()))
+            .map(String::as_str)
+            .collect();
+        return Some((end, edit_distance(&heard, &phrase.concat())));
     }
-    Some(position)
+    if phrase.len() < 2 || start + phrase.len() > words.len() {
+        return None;
+    }
+    let end = start + phrase.len();
+    if words[start..end]
+        .iter()
+        .any(|word| number_word(word).is_some())
+    {
+        return None;
+    }
+    let heard = words[start..end].concat();
+    let expected = phrase.concat();
+    let off = edit_distance(&heard, &expected);
+    (off <= phrase_slips(expected.chars().count())).then_some((end, off))
 }
 
 /// The announcement is only a count ("uno, dos, tres, cuatro", "5, 6").
@@ -306,17 +339,19 @@ pub fn read_announcement(
 /// The markers a transcribed announcement names, in order, without repeats.
 pub fn parse_announcement(text: &str) -> Vec<AnnouncedMarker> {
     let words = tokens(text);
-    // Longest phrases first: "solo guitarra" before "solo", "final grande"
-    // before "final".
-    let mut phrases: Vec<&(&[&str], &str)> = PHRASES.iter().collect();
-    phrases.sort_by_key(|(words, _)| std::cmp::Reverse(words.len()));
-
     let mut found: Vec<AnnouncedMarker> = Vec::new();
     let mut position = 0;
     while position < words.len() {
-        let matched = phrases.iter().find_map(|(phrase, kind)| {
-            match_phrase(&words, position, phrase).map(|end| (end, *kind))
-        });
+        // Longest phrase first ("solo guitarra" before "solo", "final
+        // grande" before "final"), then the one heard closest.
+        let matched = PHRASES
+            .iter()
+            .filter_map(|(phrase, kind)| {
+                match_phrase(&words, position, phrase)
+                    .map(|(end, off)| (end, off, phrase.len(), *kind))
+            })
+            .min_by_key(|&(_, off, length, _)| (std::cmp::Reverse(length), off))
+            .map(|(end, _, _, kind)| (end, kind));
         let Some((end, kind)) = matched else {
             position += 1;
             continue;
@@ -394,6 +429,9 @@ mod tests {
         assert_eq!(parsed("Cordo!"), vec![("chorus", None)]);
         assert_eq!(parsed("Re-frame."), vec![("refrain", None)]);
         assert_eq!(parsed("Solo ve guitarra."), vec![("guitar_solo", None)]);
+        // Real ("Rey de Reyes"): both words slip, too far each on its own.
+        assert_eq!(parsed("Bajel insensidad."), vec![("ease_down", None)]);
+        assert_eq!(parsed("Subir insensidad."), vec![("build", None)]);
         assert_eq!(
             parsed("Salida, dos, tres, cuatro, tin, dos, tres, cuatro."),
             vec![("outro", None)]

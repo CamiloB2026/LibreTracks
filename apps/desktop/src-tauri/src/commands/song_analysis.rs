@@ -375,15 +375,6 @@ fn prepare_job(
         &request.click_track_ids
     };
     let tempo = (!tempo_track_ids.is_empty()).then(|| {
-        let next_song_start_seconds = song
-            .regions
-            .iter()
-            .filter(|other| {
-                other.id != region.id
-                    && other.start_seconds >= region.end_seconds - SAME_BOUND_SECONDS
-            })
-            .map(|other| other.start_seconds)
-            .min_by(f64::total_cmp);
         let signature_at_start = song
             .time_signature_markers
             .iter()
@@ -397,7 +388,6 @@ fn prepare_job(
             span: SongSpan {
                 start_seconds: region.start_seconds,
                 end_seconds: region.end_seconds,
-                next_song_start_seconds,
             },
             existing: ExistingTiming {
                 bpm: song.bpm,
@@ -469,7 +459,7 @@ fn load_guide_templates(voices_dir: &std::path::Path) -> Vec<GuideTemplate> {
                     continue;
                 };
                 let label = if folder == "counts" {
-                    "count".to_string()
+                    format!("count_{stem}")
                 } else {
                     stem.to_string()
                 };
@@ -970,20 +960,13 @@ mod tests {
     }
 
     #[test]
-    fn job_knows_the_next_song_and_the_meter_in_force() {
+    fn job_knows_the_song_span_and_the_meter_in_force() {
         let dir = tempfile::tempdir().expect("dir");
         let job = prepare_job(dir.path(), &song(), &request("b")).expect("job");
         let tempo = job.tempo.expect("tempo job");
         assert_eq!(tempo.span.start_seconds, 64.0);
         assert_eq!(tempo.span.end_seconds, 140.0);
-        assert_eq!(tempo.span.next_song_start_seconds, Some(150.0));
         assert_eq!(tempo.fallback_beats_per_bar, 6);
-
-        let last = prepare_job(dir.path(), &song(), &request("c")).expect("job");
-        assert_eq!(
-            last.tempo.expect("tempo").span.next_song_start_seconds,
-            None
-        );
     }
 
     #[test]
@@ -1021,7 +1004,6 @@ mod tests {
             .proposal
             .tempo_markers
             .iter()
-            .filter(|marker| !marker.restores_next_song)
             .map(|marker| (marker.start_seconds, marker.bpm))
             .collect();
         // At the start, the tempo the song already plays at: the warp stays.
@@ -1108,6 +1090,113 @@ mod tests {
         assert!((announcement.end_seconds - 13.2).abs() < 1e-9);
         assert!((announcement.count_words[0].start_seconds - 12.6).abs() < 1e-9);
         assert!((played.groups[0].first_start_seconds - 12.0).abs() < 1e-9);
+    }
+
+    /// The analysis of every song of a real session, as `run_job` does it
+    /// (click, its ÷2 reading, the guide with speech recognition, the click
+    /// read again with the guide), to check a change on real multitracks.
+    /// The click and guide of song n (region order) are WAVs decoded
+    /// beforehand as `<audio>/<n>_click.wav` and `<n>_guide.wav`; each
+    /// song's result goes to `<audio>/<n>_result.json`, which
+    /// `realSessionHarness.test.ts` puts through the review's placement:
+    ///
+    /// ```text
+    /// LT_AN_SESSION=<file.ltsession> LT_AN_AUDIO=<dir> LT_AN_MODEL=<ggml-base-q5_1.bin>
+    ///   [LT_AN_ONLY=<n>] cargo test --release --lib -p libretracks-desktop
+    ///   --features libretracks-desktop/no-link dump_real_session_analysis -- --ignored
+    /// ```
+    #[test]
+    #[ignore]
+    fn dump_real_session_analysis() {
+        let (Ok(session), Ok(audio), Ok(model)) = (
+            std::env::var("LT_AN_SESSION"),
+            std::env::var("LT_AN_AUDIO"),
+            std::env::var("LT_AN_MODEL"),
+        ) else {
+            return;
+        };
+        let only: Option<usize> = std::env::var("LT_AN_ONLY")
+            .ok()
+            .and_then(|v| v.parse().ok());
+        let session = std::path::PathBuf::from(session);
+        let audio = std::path::PathBuf::from(audio);
+        let song = libretracks_project::load_song_from_file(&session).expect("session loads");
+        let voices = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/voices");
+        let templates = load_guide_templates(&voices);
+        for (index, region) in song.regions.iter().enumerate() {
+            if only.is_some_and(|only| only != index) {
+                continue;
+            }
+            let click_path = audio.join(format!("{index}_click.wav"));
+            let guide_path = audio.join(format!("{index}_guide.wav"));
+            let request = AnalyzeSongRequest {
+                region_id: region.id.clone(),
+                click_track_ids: vec!["click".into()],
+                music_tempo_track_ids: vec![],
+                key_track_ids: vec![],
+                guide_track_ids: vec!["guide".into()],
+            };
+            let song_dir = session.parent().expect("session folder");
+            let job = prepare_job(song_dir, &song, &request).expect("job");
+            let tempo = job.tempo.as_ref().unwrap();
+            let (samples, rate) = read_mono_wav(&click_path).unwrap();
+            let analysis = analyze_click(&samples, rate, tempo.fallback_beats_per_bar);
+            let downbeat_known = analysis.downbeat_known;
+            let as_eighths = (!downbeat_known)
+                .then(|| analyze_click_as_eighths(&samples, rate, tempo.fallback_beats_per_bar))
+                .flatten()
+                .filter(|e| !e.segments.is_empty())
+                .map(|a| TempoReading::new(a, tempo));
+            let mut tempo_result = TempoResult {
+                reading: TempoReading::new(analysis, tempo),
+                as_eighths,
+            };
+            let (guide_samples, guide_rate) = read_mono_wav(&guide_path).unwrap();
+            let mut whisper = crate::commands::speech::WhisperTranscriber::load(
+                std::path::Path::new(&model),
+                Box::new(|| false),
+            )
+            .expect("model");
+            let guide = analyze_guide(&guide_samples, guide_rate, &templates, Some(&mut whisper));
+            if !downbeat_known {
+                let reread = |as_eighths: bool| {
+                    analyze_click_with_guide(
+                        &samples,
+                        rate,
+                        tempo.fallback_beats_per_bar,
+                        as_eighths,
+                        &guide,
+                    )
+                    .filter(|r| !r.segments.is_empty())
+                    .map(|r| TempoReading::new(r, tempo))
+                };
+                if let Some(reading) = reread(false) {
+                    let had = tempo_result.as_eighths.is_some();
+                    tempo_result = TempoResult {
+                        reading,
+                        as_eighths: if had { reread(true) } else { None },
+                    };
+                }
+            }
+            let result = AnalyzeSongResult {
+                cancelled: false,
+                region_id: region.id.clone(),
+                region_start_seconds: region.start_seconds,
+                region_end_seconds: region.end_seconds,
+                render_start_seconds: job.render_start_seconds,
+                view_scale: job.view_scale,
+                tempo: Some(tempo_result),
+                key: None,
+                guide: Some(GuideResult {
+                    analysis: guide,
+                    speech_recognition: true,
+                }),
+                missing_files: vec![],
+            };
+            let out = audio.join(format!("{index}_result.json"));
+            std::fs::write(&out, serde_json::to_vec_pretty(&result).unwrap()).unwrap();
+            println!("{index} {} -> {}", region.name, out.display());
+        }
     }
 
     #[test]

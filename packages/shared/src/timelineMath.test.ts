@@ -115,6 +115,21 @@ describe("una marca de compás empieza compás, como el metrónomo", () => {
     expect(atMarker?.barNumber).toBe(5);
   });
 
+  it("el siguiente compás antes de una marca de compás es la marca", () => {
+    // La canción anterior acaba a mitad de compás (5 s a 120): su rejilla
+    // llegaría a 6 s, pero a 5 s la canción siguiente empieza el compás.
+    // Real: "Rey de Reyes" tras una canción a 72 BPM, 0,833 s de error.
+    const regions = [
+      { startSeconds: 0, endSeconds: 5, bpm: 120, timeSignature: "4/4" },
+      { startSeconds: 5, endSeconds: 40, bpm: 147, timeSignature: "4/4", startsBar: true },
+    ] as never;
+    expect(nextDownbeatAfter(4.9995, 120, "4/4", regions)).toBeCloseTo(5, 9);
+    expect(nextDownbeatAfter(4.2, 120, "4/4", regions)).toBeCloseTo(5, 9);
+    // Antes del último compás completo de la primera, su propia rejilla.
+    expect(nextDownbeatAfter(3.5, 120, "4/4", regions)).toBeCloseTo(4, 9);
+    expect(nextDownbeatAfter(5.1, 120, "4/4", regions)).toBeCloseTo(5 + 240 / 147, 4);
+  });
+
   it("buildSongTempoRegions marca las regiones que empiezan en una marca de compás", () => {
     const regions = buildSongTempoRegions({
       bpm: 120,

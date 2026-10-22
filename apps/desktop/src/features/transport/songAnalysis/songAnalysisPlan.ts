@@ -181,7 +181,7 @@ export function startsOnEighths(
  */
 export function scaleTempoRows(rows: ReviewRow[], factor: number): ReviewRow[] {
   return rows.map((row) => {
-    if (row.kind !== "tempo" || row.restoresNextSong) return row;
+    if (row.kind !== "tempo") return row;
     const bpm = parseBpm(row.text);
     if (bpm === null) return row;
     const scaled = Math.round(bpm * factor * 100) / 100;
@@ -441,9 +441,14 @@ export function placeGuideSections(
     const probe = downbeat - beatAt(downbeat) / 4;
     return downbeatFrom(downbeat - barAt(probe) - beatAt(probe) / 2);
   };
+  // Bars restart at the song's start: a beat near it is not found on the
+  // grid of the song before ("Conteo 1" landed 0.3 s before the song).
+  const songStart = downbeatFrom(renderStartSeconds - SAME_POSITION_SECONDS);
   const nearestBeat = (seconds: number) => {
     const beat = beatAt(seconds);
-    const barStart = downbeatFrom(seconds - barAt(seconds) - beat / 2);
+    const lookBack = seconds - barAt(seconds) - beat / 2;
+    const barStart =
+      seconds >= songStart && lookBack < songStart ? songStart : downbeatFrom(lookBack);
     return barStart + Math.round((seconds - barStart) / beat) * beat;
   };
   const placed: {
@@ -475,13 +480,30 @@ export function placeGuideSections(
       }
       endSeconds = next.endSeconds;
     }
-    const end = renderStartSeconds + endSeconds;
-    let startSeconds = nextDownbeatAfter(
-      end - ANNOUNCEMENT_TAIL_BEATS * beatAt(end),
-      grid.bpm,
-      grid.timeSignature,
-      regions,
-    );
+    let end = renderStartSeconds + endSeconds;
+    const sectionAfter = (seconds: number) =>
+      nextDownbeatAfter(
+        seconds - ANNOUNCEMENT_TAIL_BEATS * beatAt(seconds),
+        grid.bpm,
+        grid.timeSignature,
+        regions,
+      );
+    let startSeconds = sectionAfter(end);
+    // A count said on its own that starts by the time the section would is
+    // its count-in, a bar or more after the words ("Poema de salvación":
+    // "Intro." before the click, then a bar of "uno, dos, tres, cuatro"
+    // from that downbeat): the section starts after it. Its numbers still
+    // get their markers.
+    for (const next of analysis.announcements.slice(index + 1)) {
+      const nextMarkers = markers[next.group];
+      const spokenCount = nextMarkers && !nextMarkers.section && nextMarkers.cue === "count";
+      const nextStart = renderStartSeconds + next.startSeconds;
+      if (!spokenCount || nextStart > startSeconds + ON_DOWNBEAT_BEATS * beatAt(startSeconds)) {
+        break;
+      }
+      end = renderStartSeconds + next.endSeconds;
+      startSeconds = sectionAfter(end);
+    }
     const start = renderStartSeconds + announcement.startSeconds;
     const barStart = downbeatFrom(start - ON_DOWNBEAT_BEATS * beatAt(start));
     if (Math.abs(barStart - start) <= ON_DOWNBEAT_BEATS * beatAt(start)) {
@@ -504,8 +526,11 @@ export function placeGuideSections(
     ];
     // A cue alongside a section is chained into the section's lead-in by the
     // voice guide; on its own it is spoken on its marker, so it warns a bar
-    // ahead, where the guide said it.
-    const cueSpot = group.section ? startSeconds : barBefore(startSeconds);
+    // ahead, where the guide said it. Said apart but in the lead-in of a
+    // section announced just before ("Chorus." … "Drums in."), it is that
+    // section's.
+    const inSectionLead = onSpot(startSeconds).some((other) => inSectionLane(other));
+    const cueSpot = group.section || inSectionLead ? startSeconds : barBefore(startSeconds);
     for (const { marker, sectionSlot } of slots) {
       if (!marker) continue;
       const spot = sectionSlot ? startSeconds : cueSpot;
@@ -563,7 +588,6 @@ export type ReviewRow =
       kind: "tempo";
       index: number;
       startSeconds: number;
-      restoresNextSong: boolean;
       text: string;
       /** Ramps to the next tempo row. */
       ramp: boolean;
@@ -572,7 +596,6 @@ export type ReviewRow =
       kind: "signature";
       index: number;
       startSeconds: number;
-      restoresNextSong: boolean;
       text: string;
     };
 
@@ -582,7 +605,6 @@ export function reviewRows(proposal: TempoProposal): ReviewRow[] {
       kind: "tempo" as const,
       index,
       startSeconds: marker.startSeconds,
-      restoresNextSong: marker.restoresNextSong,
       text: String(marker.bpm),
       ramp: marker.ramp === true,
     })),
@@ -590,7 +612,6 @@ export function reviewRows(proposal: TempoProposal): ReviewRow[] {
       kind: "signature" as const,
       index,
       startSeconds: marker.startSeconds,
-      restoresNextSong: marker.restoresNextSong,
       text: marker.signature,
     })),
   ];
@@ -632,7 +653,6 @@ export function buildApplyPayload(
       tempoMarkers.push({
         startSeconds: row.startSeconds,
         bpm,
-        restoresNextSong: row.restoresNextSong,
         ...(row.ramp ? { ramp: true } : {}),
       });
     }
@@ -642,7 +662,6 @@ export function buildApplyPayload(
       .map((marker) => ({
         startSeconds: storedSeconds(timeline, marker.startSeconds),
         bpm: marker.bpm,
-        restoresNextSong: false,
         ...(marker.ramp ? { ramp: true } : {}),
       }));
   }
@@ -657,7 +676,6 @@ export function buildApplyPayload(
       signatureMarkers.push({
         startSeconds: row.startSeconds,
         signature,
-        restoresNextSong: row.restoresNextSong,
       });
     }
   } else {
@@ -666,7 +684,6 @@ export function buildApplyPayload(
       .map((marker) => ({
         startSeconds: storedSeconds(timeline, marker.startSeconds),
         signature: marker.signature,
-        restoresNextSong: false,
       }));
   }
   return { tempoMarkers, signatureMarkers };

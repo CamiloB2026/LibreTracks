@@ -45,7 +45,6 @@ fn proposed(start: f64, bpm: f64) -> ProposedTempoMarker {
     ProposedTempoMarker {
         start_seconds: start,
         bpm,
-        restores_next_song: false,
         ramp: false,
     }
 }
@@ -54,7 +53,6 @@ fn proposed_signature(start: f64, signature: &str) -> ProposedSignatureMarker {
     ProposedSignatureMarker {
         start_seconds: start,
         signature: signature.into(),
-        restores_next_song: false,
     }
 }
 
@@ -125,31 +123,6 @@ fn replaces_only_the_markers_inside_the_song() {
     assert_eq!(song.tempo_markers[3].id, "next");
     // New ones never collide.
     assert_ne!(song.tempo_markers[1].id, song.tempo_markers[2].id);
-}
-
-#[test]
-fn a_restoring_marker_at_the_next_song_start_is_written_there() {
-    let mut song = setlist();
-    song.tempo_markers.retain(|marker| marker.id != "next");
-    apply_tempo_analysis_to_song(
-        &mut song,
-        "r2",
-        &[
-            proposed(60.0, 92.0),
-            ProposedTempoMarker {
-                start_seconds: 120.0,
-                bpm: 64.0,
-                restores_next_song: true,
-                ramp: false,
-            },
-        ],
-        &[],
-    )
-    .expect("apply");
-    assert_eq!(
-        tempo_map(&song),
-        vec![(30.0, 100.0), (60.0, 92.0), (120.0, 64.0)]
-    );
 }
 
 #[test]

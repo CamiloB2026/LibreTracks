@@ -48,7 +48,7 @@ fn main() {
                     .and_then(|s| s.to_str())
                     .unwrap_or_default();
                 let label = if folder == "counts" {
-                    "count".to_string()
+                    format!("count_{stem}")
                 } else {
                     stem.to_string()
                 };

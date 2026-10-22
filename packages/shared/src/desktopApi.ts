@@ -1475,8 +1475,6 @@ export type ClickAnalysis = {
 export type ProposedTempoMarker = {
   startSeconds: number;
   bpm: number;
-  /** Puts back the tempo the next song had; not part of the analysis. */
-  restoresNextSong: boolean;
   /** Ramps to the next marker's bpm (a ritardando, an accelerando). */
   ramp?: boolean;
 };
@@ -1484,7 +1482,6 @@ export type ProposedTempoMarker = {
 export type ProposedSignatureMarker = {
   startSeconds: number;
   signature: string;
-  restoresNextSong: boolean;
 };
 
 export type TempoProposal = {

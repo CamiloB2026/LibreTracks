@@ -140,12 +140,10 @@ function result(overrides: Partial<AnalyzeSongResult> = {}): AnalyzeSongResult {
       },
       proposal: {
         tempoMarkers: [
-          { startSeconds: 100.5, bpm: 92, restoresNextSong: false },
-          { startSeconds: 200, bpm: 120, restoresNextSong: true },
+          { startSeconds: 100.5, bpm: 92 },
         ],
         signatureMarkers: [
-          { startSeconds: 100.5, signature: "6/8", restoresNextSong: false },
-          { startSeconds: 200, signature: "4/4", restoresNextSong: true },
+          { startSeconds: 100.5, signature: "6/8" },
         ],
         currentBpm: 120,
         currentSignature: "4/4",
@@ -199,11 +197,10 @@ function unaccentedTempo(): AnalyzeSongResult["tempo"] {
         downbeatKnown: false,
       },
       proposal: {
-        tempoMarkers: [{ startSeconds: 100, bpm, restoresNextSong: false }],
+        tempoMarkers: [{ startSeconds: 100, bpm }],
         signatureMarkers: at.map((startSeconds) => ({
           startSeconds,
           signature: "4/4",
-          restoresNextSong: false,
         })),
         currentBpm: 120,
         currentSignature: "4/4",
@@ -262,12 +259,10 @@ describe("SongAnalysisModal", () => {
       "b",
       {
         tempoMarkers: [
-          { startSeconds: 100.5, bpm: 92.5, restoresNextSong: false },
-          { startSeconds: 200, bpm: 120, restoresNextSong: true },
+          { startSeconds: 100.5, bpm: 92.5 },
         ],
         signatureMarkers: [
-          { startSeconds: 100.5, signature: "6/8", restoresNextSong: false },
-          { startSeconds: 200, signature: "4/4", restoresNextSong: true },
+          { startSeconds: 100.5, signature: "6/8" },
         ],
       },
       "Bm",
@@ -445,9 +440,8 @@ describe("SongAnalysisModal", () => {
       tempoMarkers: bpms.map((bpm, index) => ({
         startSeconds: 100 + index * 10,
         bpm,
-        restoresNextSong: false,
       })),
-      signatureMarkers: [{ startSeconds: 100, signature: "4/4", restoresNextSong: false }],
+      signatureMarkers: [{ startSeconds: 100, signature: "4/4" }],
       currentBpm: 120,
       currentSignature: "4/4",
       unchanged: false,

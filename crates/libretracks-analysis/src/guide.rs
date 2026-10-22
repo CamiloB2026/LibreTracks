@@ -89,11 +89,21 @@ const MIN_WORD_SECONDS: f64 = 0.12;
 const WORD_BODY_SECONDS: f64 = 0.08;
 
 /// A clip of the app's voice guide, named like the file it came from
-/// (`chorus_2`, `drums_in`, `count`).
+/// (`chorus_2`, `drums_in`), or `count_<n>` for the count clip of number n.
 pub struct GuideTemplate {
     pub label: String,
     pub samples: Vec<f32>,
     pub sample_rate: u32,
+}
+
+/// The number a count clip says (`count_3` is 3), or `Some(None)` for a
+/// count clip of no known number; `None` when the label is not a count.
+fn clip_count(label: &str) -> Option<Option<u8>> {
+    let rest = label.strip_prefix("count")?;
+    if rest.is_empty() {
+        return Some(None);
+    }
+    Some(Some(rest.strip_prefix('_')?.parse().ok()?))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -254,7 +264,14 @@ pub fn analyze_guide(
         let groups = pending
             .into_iter()
             .map(|group| GuideGroup {
-                labels: group.clip_label.into_iter().collect(),
+                labels: group
+                    .clip_label
+                    .map(|label| match clip_count(&label) {
+                        Some(_) => "count".to_string(),
+                        None => label,
+                    })
+                    .into_iter()
+                    .collect(),
                 transcript: None,
                 match_cost: group.match_cost,
                 counted_in: false,
@@ -289,9 +306,25 @@ pub fn analyze_guide(
     // announcement may not have been transcribed: a sure clip match. Any
     // other count is said on its own (a song's opening "uno, dos, uno, dos,
     // tres, cuatro"), and its numbers become markers.
+    // A sure clip match is not transcribed: a count clip says its number.
+    let clip_count_of = |index: usize| {
+        pending[groups_of[index]]
+            .clip_label
+            .as_deref()
+            .and_then(clip_count)
+    };
     let says_count = |index: usize| match heard[index].as_deref() {
         Some(text) => is_count(text),
-        None => pending[groups_of[index]].clip_label.as_deref() == Some("count"),
+        None => clip_count_of(index).is_some(),
+    };
+    // What a count says, as text: transcribed, or the clip's number.
+    let count_text = |index: usize| -> Option<String> {
+        match heard[index].as_deref() {
+            Some(text) => is_count(text).then(|| text.to_string()),
+            None => clip_count_of(index)
+                .flatten()
+                .map(|number| number.to_string()),
+        }
     };
     let mut count_in = vec![false; fragments.len()];
     for index in 1..fragments.len() {
@@ -310,10 +343,7 @@ pub fn analyze_guide(
                     .into_iter()
                     .collect()
             };
-            let Some(text) = heard[index].as_deref() else {
-                return (clip_label(), false);
-            };
-            if is_count(text) {
+            if says_count(index) {
                 let label = if count_in[index] {
                     "count"
                 } else {
@@ -321,10 +351,13 @@ pub fn analyze_guide(
                 };
                 return (vec![label.to_string()], false);
             }
+            let Some(text) = heard[index].as_deref() else {
+                return (clip_label(), false);
+            };
             // All of it: "Intro." + "Uno." alone reads as intro 1.
-            let following_count: Vec<&str> = (index + 1..fragments.len())
+            let following_count: Vec<String> = (index + 1..fragments.len())
                 .take_while(|&next| count_in[next])
-                .filter_map(|next| heard[next].as_deref())
+                .filter_map(&count_text)
                 .collect();
             let following_count = following_count.join(" ");
             let (markers, counted_in) = read_announcement(
@@ -363,9 +396,9 @@ pub fn analyze_guide(
         let key = if labels == ["count"] {
             Key::Count
         } else if labels == ["spoken_count"] {
-            let text = heard[index].as_deref().unwrap_or_default();
+            let text = count_text(index).unwrap_or_default();
             count_words[index] =
-                count_word_times(&signal, rate, fragments[index], &count_numbers(text));
+                count_word_times(&signal, rate, fragments[index], &count_numbers(&text));
             Key::SpokenCount
         } else {
             Key::Announcement(index)
@@ -1071,6 +1104,40 @@ mod tests {
             ],
             "{analysis:?}"
         );
+    }
+
+    #[test]
+    fn an_opening_count_matched_by_clip_places_its_numbers() {
+        // Real ("Goodness of God", "Quiero conocer a Jesús"): the opening
+        // "One . Two ." is the app's own count voice, a sure clip match that
+        // is not transcribed. It came back as the count-in of nothing and
+        // placed no marker, so "Conteo 1" was missing.
+        let audio = track(&[(0.0, 0, 0.4), (1.9, 1, 0.4), (3.8, 2, 0.6)], 8.0);
+        let templates = vec![
+            GuideTemplate {
+                label: "count_1".into(),
+                samples: word(0, 0.4),
+                sample_rate: RATE,
+            },
+            GuideTemplate {
+                label: "count_2".into(),
+                samples: word(1, 0.4),
+                sample_rate: RATE,
+            },
+        ];
+        let mut recogniser = ScriptedTranscriber {
+            lines: vec!["Intro."],
+            next: 0,
+        };
+        let analysis = analyze_guide(&audio, RATE, &templates, Some(&mut recogniser));
+        let numbers: Vec<u8> = analysis
+            .announcements
+            .iter()
+            .flat_map(|a| a.count_words.iter().map(|word| word.number))
+            .collect();
+        assert_eq!(numbers, vec![1, 2], "{analysis:?}");
+        let first = &analysis.groups[analysis.announcements[0].group];
+        assert_eq!(first.labels, vec!["spoken_count".to_string()]);
     }
 
     #[test]

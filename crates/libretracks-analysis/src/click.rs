@@ -14,7 +14,7 @@
 //! `metronome_renderer.cpp`), so a marker anywhere else would make the app's
 //! click disagree with the multitrack's.
 
-use crate::bar_phase::{pickup_from_guide, pickup_from_tempo_changes};
+use crate::bar_phase::{bar_restarts_from_guide, pickup_from_guide, pickup_from_tempo_changes};
 use crate::fft::fft;
 use crate::guide::GuideAnalysis;
 use serde::Serialize;
@@ -285,6 +285,7 @@ fn analyze_click_reading(
         });
     }
     let mut pickup = 0;
+    let mut bar_restarts = Vec::new();
     if !downbeat_known {
         warnings.push(ClickWarning {
             seconds: beats[0].seconds,
@@ -331,11 +332,22 @@ fn analyze_click_reading(
                 });
             }
         }
+        // Short bars the click cannot show, where the guide says.
+        if let Some(guide) = guide {
+            bar_restarts = bar_restarts_from_guide(&times, beats_per_bar, pickup, guide);
+            for &index in &bar_restarts {
+                warnings.push(ClickWarning {
+                    seconds: times[index],
+                    kind: ClickWarningKind::DownbeatFromGuide,
+                });
+            }
+        }
     }
     Some(tempo_map_from_beats(
         &beats,
         downbeat_known,
         pickup,
+        &bar_restarts,
         fallback_beats_per_bar,
         CLICK_TOLERANCES,
         warnings,
@@ -350,6 +362,7 @@ pub(crate) fn tempo_map_from_beats(
     beats: &[Beat],
     downbeat_known: bool,
     pickup: usize,
+    bar_restarts: &[usize],
     fallback_beats_per_bar: u32,
     tolerances: Tolerances,
     mut warnings: Vec<ClickWarning>,
@@ -358,6 +371,7 @@ pub(crate) fn tempo_map_from_beats(
         beats,
         downbeat_known,
         pickup,
+        bar_restarts,
         fallback_beats_per_bar.max(1),
         &mut warnings,
     );
@@ -799,10 +813,14 @@ fn is_gap(beats: &[Beat], index: usize) -> bool {
     }
 }
 
+/// Without known downbeats a bar is `fallback_beats_per_bar` beats, except
+/// that one also starts at each of `bar_restarts` (beat indices), leaving
+/// the bar before it short.
 fn build_bars(
     beats: &[Beat],
     downbeat_known: bool,
     pickup: usize,
+    bar_restarts: &[usize],
     fallback_beats_per_bar: u32,
     warnings: &mut Vec<ClickWarning>,
 ) -> Vec<Bar> {
@@ -830,6 +848,7 @@ fn build_bars(
                     beat.downbeat
                 } else {
                     bar.beats.len() as u32 >= fallback_beats_per_bar
+                        || bar_restarts.contains(&index)
                 }
             }
         };

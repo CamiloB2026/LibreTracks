@@ -843,10 +843,18 @@ export function nextDownbeatAfter(
       // position to the next one.
       const targetBars = Math.ceil(totalBars - MUSICAL_POSITION_EPSILON);
       const targetTotalBeats = targetBars * region.beatsPerBar;
-      return Math.max(
+      const downbeat = Math.max(
         region.startSeconds,
         regionSecondsAtBeats(region, targetTotalBeats - totalBeatsStart),
       );
+      // Past this region's end the next one rules: it may restart the bar
+      // before this region's grid gets there (a song after one that does
+      // not end on a whole bar).
+      const next = resolvedRegions[resolvedRegions.indexOf(region) + 1];
+      if (next && seconds < next.startSeconds && downbeat > next.startSeconds + MUSICAL_POSITION_EPSILON) {
+        return nextDownbeatAfter(next.startSeconds, bpm, timeSignature, regions);
+      }
+      return downbeat;
     }
   }
 

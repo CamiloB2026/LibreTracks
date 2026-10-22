@@ -1,13 +1,13 @@
 //! From a click analysis to the tempo and time signature markers of one song.
 //!
 //! The analysis speaks in seconds from the start of the song; the session
-//! keeps one tempo map for every song in it. This places the segments in that
-//! map without disturbing the songs around: applying replaces the markers
-//! inside the song and, when the next song relied on the tempo leaking into
-//! it, puts that tempo back at its start.
+//! keeps one tempo map for every song in it. Each song owns its stretch of
+//! that map from its very start: a tempo and a time signature marker always
+//! go on the song's start, so nothing of the song before leaks into it (the
+//! click may start a moment after the song, or on a pickup).
 //!
-//! Where the bar must restart (the song's first downbeat, the click coming
-//! back off the previous grid after a gap, the next song's start) the
+//! Where the bar must restart (the song's start, its first downbeat after a
+//! pickup, the click coming back off the previous grid after a gap) the
 //! proposal puts a TIME SIGNATURE marker, even with the same meter. A tempo
 //! change in a click that goes on is placed on the grid instead, so the meter
 //! only shows up again where it really changes. The engine's metronome
@@ -21,8 +21,14 @@ use crate::click::ClickAnalysis;
 
 /// Two positions this close are the same marker (the 1 ms the editors use).
 const SAME_POSITION_SECONDS: f64 = 0.0005;
-/// A first downbeat this close to the song start goes exactly on it.
-const SNAP_TO_SONG_START_SECONDS: f64 = 0.003;
+/// A first downbeat this close after the song start goes exactly on it: bar
+/// 1 is the song's start. Click stems often start a few ms in (12.6 ms in
+/// "Rey de Reyes"), and an MP3 adds its encoder delay (25.6 ms in "Digno",
+/// Yvonne): a pickup bar that short is only in the way, and the grid a few
+/// ms ahead of the click is not heard. Farther, the song starts on a pickup
+/// ("Es Él" starts two beats before its bar 1; "Fiesta en el desierto" 61
+/// ms in, enough for the voice guide's count to come in early).
+const SNAP_TO_SONG_START_SECONDS: f64 = 0.03;
 /// A segment that starts this close to where the previous one's bars end
 /// continues its grid; its marker goes on the grid. Only a few ms: moving
 /// a marker further off the click's downbeat is heard (20 ms offsets for
@@ -40,8 +46,6 @@ const SESSION_ORIGIN_SECONDS: f64 = 0.0001;
 pub struct SongSpan {
     pub start_seconds: f64,
     pub end_seconds: f64,
-    /// Start of the song after this one, if any.
-    pub next_song_start_seconds: Option<f64>,
 }
 
 /// The session's tempo map today.
@@ -60,9 +64,6 @@ pub struct ExistingTiming {
 pub struct ProposedTempoMarker {
     pub start_seconds: f64,
     pub bpm: f64,
-    /// Puts back the tempo the next song had (not part of the analysis).
-    #[serde(default)]
-    pub restores_next_song: bool,
     /// Ramps to the next marker's bpm (`TempoMarker::ramp`).
     #[serde(default)]
     pub ramp: bool,
@@ -73,8 +74,6 @@ pub struct ProposedTempoMarker {
 pub struct ProposedSignatureMarker {
     pub start_seconds: f64,
     pub signature: String,
-    #[serde(default)]
-    pub restores_next_song: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -104,6 +103,11 @@ fn value_at<T: Clone>(base: &T, markers: &[(f64, T)], at: f64) -> T {
 /// One segment of the analysis on the session's timeline.
 struct Placement {
     start: f64,
+    /// Where the click's grid really starts: `start`, but for a first
+    /// downbeat a few ms into the song, whose marker goes on the song's
+    /// start. The bars that follow are counted from here, so the tempo is
+    /// not stretched to make up those ms.
+    grid_start: f64,
     bpm: f64,
     /// A ramp from `bpm` to this across its bars.
     end_bpm: Option<f64>,
@@ -131,7 +135,7 @@ impl Placement {
             // on the next downbeat but for rounding, unless the click stopped.
             let quarters = f64::from(self.bars) * f64::from(self.beats_per_bar) * 4.0
                 / f64::from(self.beat_unit);
-            let end = self.start + 120.0 * quarters / (self.bpm + end_bpm);
+            let end = self.grid_start + 120.0 * quarters / (self.bpm + end_bpm);
             let beat = 240.0 / ((self.bpm + end_bpm) / 2.0 * f64::from(self.beat_unit));
             if (*start - end).abs() <= CONTIGUOUS_BEATS * beat {
                 *start = end;
@@ -143,8 +147,8 @@ impl Placement {
         if !(bar > 0.0) {
             return false;
         }
-        let bars = ((*start - self.start) / bar).round().max(1.0);
-        let grid_end = self.start + bars * bar;
+        let bars = ((*start - self.grid_start) / bar).round().max(1.0);
+        let grid_end = self.grid_start + bars * bar;
         let off = *start - grid_end;
         if off.abs() <= GRID_SNAP_SECONDS {
             *start = grid_end;
@@ -153,17 +157,18 @@ impl Placement {
         let beat = bar / f64::from(self.beats_per_bar.max(1));
         if bars as u32 == self.bars && off.abs() <= CONTIGUOUS_BEATS * beat {
             let beats = bars * f64::from(self.beats_per_bar);
-            let exact = 240.0 * beats / ((*start - self.start) * f64::from(self.beat_unit));
+            let exact = 240.0 * beats / ((*start - self.grid_start) * f64::from(self.beat_unit));
             // Two decimals when they still land on the grid (71.03, not
             // 71.031); three otherwise.
             let hundredths = (exact * 100.0).round() / 100.0;
-            let landing = self.start + 240.0 * beats / (hundredths * f64::from(self.beat_unit));
+            let landing =
+                self.grid_start + 240.0 * beats / (hundredths * f64::from(self.beat_unit));
             self.bpm = if (landing - *start).abs() <= GRID_SNAP_SECONDS {
                 hundredths
             } else {
                 (exact * 1000.0).round() / 1000.0
             };
-            *start = self.start + bars * self.bar_seconds();
+            *start = self.grid_start + bars * self.bar_seconds();
             return true;
         }
         false
@@ -207,25 +212,31 @@ pub fn propose_tempo_markers(
         let mut bars = segment.bars;
         if index == 0 && bar > 0.0 {
             // Carry the grid back to the song start, so the bars before the
-            // first click (a silent intro, a pickup) are on it too. A grid
-            // estimated a hair before the song (from the music) moves forward
-            // instead.
+            // first click (a silent intro) are on it too. A grid estimated a
+            // hair before the song (from the music) moves forward instead.
             let back = ((downbeat - span.start_seconds) / bar + 1.0e-3).floor();
             start -= back * bar;
             bars = (i64::from(bars) + back as i64).max(1) as u32;
         }
-        if (start - span.start_seconds).abs() < SNAP_TO_SONG_START_SECONDS {
+        let grid_start = start;
+        if index == 0 && start - span.start_seconds < SNAP_TO_SONG_START_SECONDS {
             start = span.start_seconds;
         }
+        let mut grid_start = grid_start;
         let mut continues = false;
         if let Some(previous) = placements.last_mut() {
-            continues = previous.continue_into(&mut start);
+            // A grid moved onto the song start is a few ms off the click's:
+            // the bar restarts where the click goes on.
+            continues = previous.continue_into(&mut start)
+                && (previous.start - previous.grid_start).abs() <= GRID_SNAP_SECONDS;
+            grid_start = start;
         }
         if !inside(start) {
             continue;
         }
         placements.push(Placement {
             start,
+            grid_start,
             bpm: segment.bpm,
             end_bpm: segment.end_bpm,
             beats_per_bar: segment.beats_per_bar,
@@ -239,19 +250,33 @@ pub fn propose_tempo_markers(
 
     let mut tempo_markers: Vec<ProposedTempoMarker> = Vec::new();
     let mut signature_markers: Vec<ProposedSignatureMarker> = Vec::new();
+    // The song's own start: its tempo and meter, whatever the song before
+    // ends on. After a pickup the bar restarts on the first downbeat.
+    if let Some(first) = placements.first() {
+        let signature = format!("{}/{}", first.beats_per_bar, first.beat_unit);
+        let pickup = first.start > span.start_seconds + SAME_POSITION_SECONDS;
+        if pickup || first.end_bpm.is_none() {
+            tempo_markers.push(ProposedTempoMarker {
+                start_seconds: span.start_seconds,
+                bpm: first.bpm,
+                ramp: false,
+            });
+            running_bpm = first.bpm;
+        }
+        signature_markers.push(ProposedSignatureMarker {
+            start_seconds: span.start_seconds,
+            signature: signature.clone(),
+        });
+        running_signature = signature;
+    }
     for (index, placement) in placements.iter().enumerate() {
         let signature = format!("{}/{}", placement.beats_per_bar, placement.beat_unit);
-        // The engine restarts the bar at the song start, so a first marker
-        // there that changes nothing is redundant.
-        let redundant_at_song_start = index == 0
-            && placement.start == span.start_seconds
-            && placement.bpm == running_bpm
-            && signature == running_signature;
+        let at_song_start = placement.start <= span.start_seconds + SAME_POSITION_SECONDS;
         // A ramp needs its marker, and so does the stretch after one: the
         // ramp glides to the next marker, wherever that is.
         let after_ramp = index > 0 && placements[index - 1].end_bpm.is_some();
         let needs_tempo = if index == 0 {
-            !redundant_at_song_start || placement.end_bpm.is_some()
+            placement.end_bpm.is_some()
         } else {
             placement.bpm != running_bpm
                 || placement.restarts_bar
@@ -262,18 +287,17 @@ pub fn propose_tempo_markers(
             tempo_markers.push(ProposedTempoMarker {
                 start_seconds: placement.start,
                 bpm: placement.bpm,
-                restores_next_song: false,
                 ramp: placement.end_bpm.is_some(),
             });
             running_bpm = placement.end_bpm.unwrap_or(placement.bpm);
         }
         // Same meter where the grid goes on is no marker: only a new meter,
         // or a bar that must restart.
-        if signature != running_signature || placement.restarts_bar {
+        let restarts = placement.restarts_bar && !(index == 0 && at_song_start);
+        if signature != running_signature || restarts {
             signature_markers.push(ProposedSignatureMarker {
                 start_seconds: placement.start,
                 signature: signature.clone(),
-                restores_next_song: false,
             });
             running_signature = signature;
         }
@@ -285,45 +309,13 @@ pub fn propose_tempo_markers(
         let end_bpm = last.end_bpm.unwrap_or(last.bpm);
         let quarters =
             f64::from(last.bars) * f64::from(last.beats_per_bar) * 4.0 / f64::from(last.beat_unit);
-        let end = (last.start + 120.0 * quarters / (last.bpm + end_bpm))
+        let end = (last.grid_start + 120.0 * quarters / (last.bpm + end_bpm))
             .min(span.end_seconds - 2.0 * SAME_POSITION_SECONDS);
         if end > last.start {
             tempo_markers.push(ProposedTempoMarker {
                 start_seconds: end,
                 bpm: end_bpm,
-                restores_next_song: false,
                 ramp: false,
-            });
-        }
-    }
-
-    // The next song keeps the tempo and meter it plays at today.
-    if let Some(next) = span.next_song_start_seconds {
-        let mut new_tempo = kept_tempo.clone();
-        new_tempo.extend(tempo_markers.iter().map(|m| (m.start_seconds, m.bpm)));
-        let before = value_at(&existing.bpm, &existing.tempo_markers, next);
-        if value_at(&existing.bpm, &new_tempo, next) != before {
-            tempo_markers.push(ProposedTempoMarker {
-                start_seconds: next,
-                bpm: before,
-                restores_next_song: true,
-                ramp: false,
-            });
-        }
-        let before = value_at(&existing.time_signature, &existing.signature_markers, next);
-        // A marker at the next song's start (unless it has one), whenever
-        // this song's map changes: the new tempo moves where the grid's bars
-        // fall by the time they get there.
-        let next_has_own = existing
-            .signature_markers
-            .iter()
-            .any(|(start, _)| (start - next).abs() < SAME_POSITION_SECONDS);
-        let changes_inside = !tempo_markers.is_empty() || !signature_markers.is_empty();
-        if changes_inside && !next_has_own {
-            signature_markers.push(ProposedSignatureMarker {
-                start_seconds: next,
-                signature: before,
-                restores_next_song: true,
             });
         }
     }
@@ -341,25 +333,41 @@ pub fn propose_tempo_markers(
         .cloned()
         .collect();
     let same_positions = |a: f64, b: f64| (a - b).abs() < SAME_POSITION_SECONDS * 2.0;
-    let unchanged = tempo_markers.len() == existing_inside_tempo.len()
-        && signature_markers.len() == existing_inside_signatures.len()
-        && tempo_markers
+    // At the session's start a marker is the song's own tempo and meter
+    // (applying writes it there).
+    let at_origin = |start: f64| start <= SESSION_ORIGIN_SECONDS;
+    let origin_tempo_kept = tempo_markers
+        .iter()
+        .filter(|m| at_origin(m.start_seconds) && !m.ramp)
+        .all(|m| (m.bpm - existing.bpm).abs() < 0.005);
+    let origin_signature_kept = signature_markers
+        .iter()
+        .filter(|m| at_origin(m.start_seconds))
+        .all(|m| m.signature == existing.time_signature);
+    let tempo_markers_off_origin: Vec<&ProposedTempoMarker> = tempo_markers
+        .iter()
+        .filter(|m| !at_origin(m.start_seconds) || m.ramp)
+        .collect();
+    let signature_markers_off_origin: Vec<&ProposedSignatureMarker> = signature_markers
+        .iter()
+        .filter(|m| !at_origin(m.start_seconds))
+        .collect();
+    let unchanged = origin_tempo_kept
+        && origin_signature_kept
+        && tempo_markers_off_origin.len() == existing_inside_tempo.len()
+        && signature_markers_off_origin.len() == existing_inside_signatures.len()
+        && tempo_markers_off_origin
             .iter()
             .zip(&existing_inside_tempo)
             .all(|(new, old)| {
-                !new.restores_next_song
-                    && !new.ramp
+                !new.ramp
                     && same_positions(new.start_seconds, old.0)
                     && (new.bpm - old.1).abs() < 0.005
             })
-        && signature_markers
+        && signature_markers_off_origin
             .iter()
             .zip(&existing_inside_signatures)
-            .all(|(new, old)| {
-                !new.restores_next_song
-                    && same_positions(new.start_seconds, old.0)
-                    && new.signature == old.1
-            });
+            .all(|(new, old)| same_positions(new.start_seconds, old.0) && new.signature == old.1);
 
     TempoProposal {
         tempo_markers,
@@ -408,11 +416,10 @@ mod tests {
         }
     }
 
-    fn span(start: f64, end: f64, next: Option<f64>) -> SongSpan {
+    fn span(start: f64, end: f64) -> SongSpan {
         SongSpan {
             start_seconds: start,
             end_seconds: end,
-            next_song_start_seconds: next,
         }
     }
 
@@ -420,7 +427,7 @@ mod tests {
     fn first_downbeat_on_the_song_start_is_a_marker_there() {
         let proposal = propose_tempo_markers(
             &analysis(vec![segment(0.001, 90.0, 4, 40)]),
-            span(100.0, 220.0, None),
+            span(100.0, 220.0),
             &timing(),
         );
         assert_eq!(
@@ -428,7 +435,6 @@ mod tests {
             vec![ProposedTempoMarker {
                 start_seconds: 100.0,
                 bpm: 90.0,
-                restores_next_song: false,
                 ramp: false
             }]
         );
@@ -439,11 +445,14 @@ mod tests {
             vec![ProposedSignatureMarker {
                 start_seconds: 100.0,
                 signature: "4/4".into(),
-                restores_next_song: false
             }]
         );
         assert_eq!(proposal.current_bpm, 120.0);
         assert!(!proposal.unchanged);
+    }
+
+    fn positions(markers: &[ProposedSignatureMarker]) -> Vec<f64> {
+        markers.iter().map(|m| m.start_seconds).collect()
     }
 
     #[test]
@@ -451,61 +460,105 @@ mod tests {
         // Estimated from the music: first downbeat 80 ms before the song.
         let proposal = propose_tempo_markers(
             &analysis(vec![segment(-0.08, 127.0, 4, 40)]),
-            span(100.0, 220.0, None),
+            span(100.0, 220.0),
             &timing(),
         );
         let bar = 4.0 * 60.0 / 127.0;
         assert_eq!(proposal.tempo_markers.len(), 1, "{proposal:?}");
-        assert!((proposal.tempo_markers[0].start_seconds - (99.92 + bar)).abs() < 1e-9);
+        assert_eq!(proposal.tempo_markers[0].start_seconds, 100.0);
+        let restarts = positions(&proposal.signature_markers);
+        assert_eq!(restarts.len(), 2, "{proposal:?}");
+        assert!((restarts[1] - (99.92 + bar)).abs() < 1e-9);
     }
 
     #[test]
     fn grid_is_carried_back_to_the_song_start() {
-        // 90 BPM 4/4: a bar is 2.666 s. A downbeat 6 s in → 2 bars back.
+        // 90 BPM 4/4: a bar is 2.666 s. A downbeat 6 s in → 2 bars back,
+        // and the 0.67 s before that are a pickup.
         let proposal = propose_tempo_markers(
             &analysis(vec![segment(6.0, 90.0, 4, 40)]),
-            span(100.0, 220.0, None),
+            span(100.0, 220.0),
             &timing(),
         );
         let bar = 4.0 * 60.0 / 90.0;
-        assert!((proposal.tempo_markers[0].start_seconds - (106.0 - 2.0 * bar)).abs() < 1e-9);
+        assert_eq!(proposal.tempo_markers.len(), 1, "{proposal:?}");
+        assert_eq!(proposal.tempo_markers[0].start_seconds, 100.0);
+        let restarts = positions(&proposal.signature_markers);
+        assert_eq!(restarts[0], 100.0);
+        assert!((restarts[1] - (106.0 - 2.0 * bar)).abs() < 1e-9);
     }
 
     #[test]
-    fn the_next_song_gets_its_tempo_and_meter_back() {
+    fn a_click_a_few_ms_into_the_song_starts_bar_one_on_the_song() {
+        // "Rey de Reyes": the click stem starts 15 ms in; an MP3's encoder
+        // delay is ~26 ms.
+        for offset in [0.015, 0.028] {
+            let proposal = propose_tempo_markers(
+                &analysis(vec![segment(offset, 147.0, 4, 40)]),
+                span(100.0, 220.0),
+                &timing(),
+            );
+            assert_eq!(proposal.tempo_markers.len(), 1, "{proposal:?}");
+            assert_eq!(proposal.tempo_markers[0].start_seconds, 100.0);
+            assert_eq!(positions(&proposal.signature_markers), vec![100.0]);
+        }
+    }
+
+    #[test]
+    fn bar_one_on_the_song_start_does_not_stretch_the_tempo() {
+        // The click starts 25 ms in, at 125, and goes to 140 on bar 17.
+        // Counted from the song start the 125 came out 124.84 to land there
+        // ("Fiesta en el desierto", 61 ms in: 124.75); the grid restarts
+        // the bar on the click instead.
+        let bar = 240.0 / 125.0;
+        let first = segment(0.025, 125.0, 4, 16);
+        let second = segment(0.025 + 16.0 * bar, 140.0, 4, 8);
         let proposal = propose_tempo_markers(
-            &analysis(vec![TempoSegment {
-                beat_unit: 8,
-                ..segment(0.0, 70.0, 6, 40)
-            }]),
-            span(100.0, 220.0, Some(224.0)),
+            &analysis(vec![first, second]),
+            span(100.0, 220.0),
             &timing(),
         );
-        assert_eq!(proposal.tempo_markers.len(), 2);
-        assert_eq!(
-            proposal.tempo_markers[1],
-            ProposedTempoMarker {
-                start_seconds: 224.0,
-                bpm: 120.0,
-                restores_next_song: true,
-                ramp: false
-            }
+        let markers: Vec<(f64, f64)> = proposal
+            .tempo_markers
+            .iter()
+            .map(|m| (m.start_seconds, m.bpm))
+            .collect();
+        assert_eq!(markers.len(), 2, "{proposal:?}");
+        assert_eq!(markers[0], (100.0, 125.0));
+        assert!(
+            (markers[1].0 - (100.025 + 16.0 * bar)).abs() < 1e-9,
+            "{markers:?}"
         );
-        assert_eq!(proposal.signature_markers[0].signature, "6/8");
-        assert_eq!(proposal.signature_markers[1].signature, "4/4");
-        assert!(proposal.signature_markers[1].restores_next_song);
+        assert_eq!(markers[1].1, 140.0);
+        assert_eq!(
+            positions(&proposal.signature_markers),
+            vec![100.0, markers[1].0],
+            "{proposal:?}"
+        );
     }
 
     #[test]
-    fn a_next_song_with_its_own_marker_needs_nothing() {
-        let mut existing = timing();
-        existing.tempo_markers.push((224.0, 128.0));
+    fn a_song_on_a_pickup_has_its_tempo_from_its_start() {
+        // "Es Él": the click starts two beats before bar 1. The song before
+        // (120 BPM) must not rule those two beats.
+        let beat = 60.0 / 70.0;
         let proposal = propose_tempo_markers(
-            &analysis(vec![segment(0.0, 70.0, 4, 40)]),
-            span(100.0, 220.0, Some(224.0)),
-            &existing,
+            &analysis(vec![segment(2.0 * beat, 70.0, 4, 40)]),
+            span(100.0, 260.0),
+            &timing(),
         );
-        assert_eq!(proposal.tempo_markers.len(), 1);
+        assert_eq!(
+            proposal.tempo_markers,
+            vec![ProposedTempoMarker {
+                start_seconds: 100.0,
+                bpm: 70.0,
+                ramp: false
+            }]
+        );
+        let restarts = positions(&proposal.signature_markers);
+        assert_eq!(restarts.len(), 2, "{proposal:?}");
+        assert_eq!(restarts[0], 100.0);
+        assert!((restarts[1] - (100.0 + 2.0 * beat)).abs() < 1e-9);
     }
 
     #[test]
@@ -515,36 +568,48 @@ mod tests {
         existing.signature_markers = vec![(100.0, "4/4".into()), (224.0, "4/4".into())];
         let proposal = propose_tempo_markers(
             &analysis(vec![segment(0.0, 90.0, 4, 40)]),
-            span(100.0, 220.0, Some(224.0)),
+            span(100.0, 220.0),
             &existing,
         );
         assert!(proposal.unchanged, "{proposal:?}");
     }
 
     #[test]
-    fn same_tempo_at_the_song_start_needs_no_marker() {
+    fn same_tempo_at_the_session_start_is_unchanged() {
+        // At 0 the markers are the song's own tempo and meter.
         let proposal = propose_tempo_markers(
             &analysis(vec![segment(0.0, 120.0, 4, 40)]),
-            span(0.0, 120.0, None),
+            span(0.0, 120.0),
             &timing(),
         );
-        assert!(proposal.tempo_markers.is_empty());
-        assert!(proposal.unchanged);
+        assert_eq!(proposal.tempo_markers.len(), 1);
+        assert!(proposal.unchanged, "{proposal:?}");
+    }
+
+    #[test]
+    fn a_song_always_starts_with_its_own_tempo_and_meter() {
+        // Even when the song before ends on the same tempo: editing that one
+        // later must not move this one.
+        let proposal = propose_tempo_markers(
+            &analysis(vec![segment(0.0, 120.0, 4, 40)]),
+            span(100.0, 220.0),
+            &timing(),
+        );
+        assert_eq!(proposal.tempo_markers.len(), 1);
+        assert_eq!(proposal.tempo_markers[0].start_seconds, 100.0);
+        assert_eq!(positions(&proposal.signature_markers), vec![100.0]);
     }
 
     #[test]
     fn a_tempo_change_mid_song_is_a_second_marker() {
         let first = segment(0.0, 120.0, 4, 8);
         let second = segment(16.0, 90.0, 4, 8);
-        let proposal = propose_tempo_markers(
-            &analysis(vec![first, second]),
-            span(10.0, 60.0, None),
-            &timing(),
-        );
-        // 120 at the start is what already rules: only the change.
-        assert_eq!(proposal.tempo_markers.len(), 1);
-        assert_eq!(proposal.tempo_markers[0].start_seconds, 26.0);
-        assert_eq!(proposal.tempo_markers[0].bpm, 90.0);
+        let proposal =
+            propose_tempo_markers(&analysis(vec![first, second]), span(10.0, 60.0), &timing());
+        assert_eq!(proposal.tempo_markers.len(), 2);
+        assert_eq!(proposal.tempo_markers[0].start_seconds, 10.0);
+        assert_eq!(proposal.tempo_markers[1].start_seconds, 26.0);
+        assert_eq!(proposal.tempo_markers[1].bpm, 90.0);
     }
 
     #[test]
@@ -553,48 +618,25 @@ mod tests {
         // the grid must restart there.
         let first = segment(0.0, 120.0, 4, 8);
         let second = segment(20.25, 120.0, 4, 8);
-        let proposal = propose_tempo_markers(
-            &analysis(vec![first, second]),
-            span(0.0, 60.0, None),
-            &timing(),
-        );
-        assert_eq!(proposal.tempo_markers.len(), 1);
-        assert_eq!(proposal.tempo_markers[0].start_seconds, 20.25);
+        let proposal =
+            propose_tempo_markers(&analysis(vec![first, second]), span(0.0, 60.0), &timing());
+        assert_eq!(proposal.tempo_markers.len(), 2);
+        assert_eq!(proposal.tempo_markers[1].start_seconds, 20.25);
         // …and the grid only restarts at a time signature marker.
-        let restarts: Vec<f64> = proposal
-            .signature_markers
-            .iter()
-            .map(|m| m.start_seconds)
-            .collect();
-        assert_eq!(restarts, vec![20.25]);
+        assert_eq!(positions(&proposal.signature_markers), vec![0.0, 20.25]);
     }
 
     #[test]
     fn a_tempo_change_on_the_grid_needs_no_signature_marker() {
         let first = segment(0.0, 120.0, 4, 8);
         let second = segment(16.0, 90.0, 4, 8);
-        let proposal = propose_tempo_markers(
-            &analysis(vec![first, second]),
-            span(0.0, 60.0, None),
-            &timing(),
+        let proposal =
+            propose_tempo_markers(&analysis(vec![first, second]), span(0.0, 60.0), &timing());
+        assert_eq!(
+            positions(&proposal.signature_markers),
+            vec![0.0],
+            "{proposal:?}"
         );
-        assert!(proposal.signature_markers.is_empty(), "{proposal:?}");
-    }
-
-    #[test]
-    fn the_next_song_start_gets_a_signature_marker_when_this_one_changes() {
-        let proposal = propose_tempo_markers(
-            &analysis(vec![segment(0.0, 90.0, 4, 40)]),
-            span(100.0, 220.0, Some(224.0)),
-            &timing(),
-        );
-        let next = proposal
-            .signature_markers
-            .iter()
-            .find(|m| m.start_seconds == 224.0)
-            .expect("marker at the next song");
-        assert_eq!(next.signature, "4/4");
-        assert!(next.restores_next_song);
     }
 
     #[test]
@@ -608,8 +650,7 @@ mod tests {
             at += real_bar;
         }
         segments.push(segment(at, 71.0, 4, 16));
-        let proposal =
-            propose_tempo_markers(&analysis(segments), span(100.0, 220.0, None), &timing());
+        let proposal = propose_tempo_markers(&analysis(segments), span(100.0, 220.0), &timing());
         let mid_song: Vec<_> = proposal
             .signature_markers
             .iter()
@@ -632,11 +673,8 @@ mod tests {
         // on the click's downbeat and the 120 before it lands on it instead.
         let first = segment(0.0, 120.0, 4, 8);
         let second = segment(16.012, 90.0, 4, 8);
-        let proposal = propose_tempo_markers(
-            &analysis(vec![first, second]),
-            span(0.0, 60.0, None),
-            &timing(),
-        );
+        let proposal =
+            propose_tempo_markers(&analysis(vec![first, second]), span(0.0, 60.0), &timing());
         let markers: Vec<(f64, f64)> = proposal
             .tempo_markers
             .iter()
@@ -646,7 +684,11 @@ mod tests {
         assert!((markers[1].0 - 16.012).abs() < 0.001 && markers[1].1 == 90.0);
         let landing = 32.0 * 60.0 / markers[0].1;
         assert!((landing - 16.012).abs() < 0.003, "{proposal:?}");
-        assert!(proposal.signature_markers.is_empty(), "{proposal:?}");
+        assert_eq!(
+            positions(&proposal.signature_markers),
+            vec![0.0],
+            "{proposal:?}"
+        );
     }
 
     #[test]
@@ -658,15 +700,11 @@ mod tests {
             end_bpm: Some(56.0),
             ..segment(start, 72.0, 4, 2)
         };
-        let proposal = propose_tempo_markers(
-            &analysis(vec![steady, ramp]),
-            span(100.0, 200.0, Some(210.0)),
-            &timing(),
-        );
+        let proposal =
+            propose_tempo_markers(&analysis(vec![steady, ramp]), span(100.0, 200.0), &timing());
         let markers: Vec<(f64, f64, bool)> = proposal
             .tempo_markers
             .iter()
-            .filter(|m| !m.restores_next_song)
             .map(|m| (m.start_seconds, m.bpm, m.ramp))
             .collect();
         let ramp_end = 100.0 + start + 120.0 * 8.0 / (72.0 + 56.0);
@@ -679,18 +717,14 @@ mod tests {
             proposal
                 .signature_markers
                 .iter()
-                .all(|m| m.start_seconds == 100.0 || m.restores_next_song),
+                .all(|m| m.start_seconds == 100.0),
             "{proposal:#?}"
         );
     }
 
     #[test]
     fn nothing_found_proposes_nothing() {
-        let proposal = propose_tempo_markers(
-            &analysis(vec![]),
-            span(100.0, 220.0, Some(224.0)),
-            &timing(),
-        );
+        let proposal = propose_tempo_markers(&analysis(vec![]), span(100.0, 220.0), &timing());
         assert!(proposal.tempo_markers.is_empty());
         assert!(proposal.signature_markers.is_empty());
     }

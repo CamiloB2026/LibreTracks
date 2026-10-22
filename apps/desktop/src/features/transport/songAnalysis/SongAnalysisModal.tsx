@@ -1073,9 +1073,8 @@ function TempoReview({
   const { segments, proposal } = tempoLevel(reading, detail);
   const { regionStartSeconds } = result;
 
-  const songRows = rows.filter((row) => !row.restoresNextSong);
-  const firstTempo = songRows.find((row) => row.kind === "tempo");
-  const firstSignature = songRows.find((row) => row.kind === "signature");
+  const firstTempo = rows.find((row) => row.kind === "tempo");
+  const firstSignature = rows.find((row) => row.kind === "signature");
   const detected = segments[0];
   const hasTempoRows = rows.some((row) => row.kind === "tempo");
   const hasSignatureRows = rows.some((row) => row.kind === "signature");
@@ -1208,9 +1207,7 @@ function TempoReview({
                           className="lt-link-button"
                           onClick={() => onSeek(row.startSeconds)}
                         >
-                          {row.restoresNextSong
-                            ? t("transport.songAnalysis.nextSongStart")
-                            : position}
+                          {position}
                         </button>
                       </td>
                       <td>
@@ -1220,11 +1217,6 @@ function TempoReview({
                             {t("transport.songAnalysis.rampToNext")}
                           </small>
                         ) : null}
-                        {row.restoresNextSong ? (
-                          <small className="lt-level-songs-note">
-                            {t("transport.songAnalysis.restoresNextSong")}
-                          </small>
-                        ) : null}
                       </td>
                       <td>
                         <input
@@ -1232,7 +1224,7 @@ function TempoReview({
                           inputMode={row.kind === "tempo" ? "decimal" : "text"}
                           aria-label={`${label} ${position}`}
                           aria-invalid={!rowIsValid(row)}
-                          disabled={!enabled || row.restoresNextSong}
+                          disabled={!enabled}
                           value={row.text}
                           onChange={(event) => onEdit(row, event.target.value)}
                           size={6}
