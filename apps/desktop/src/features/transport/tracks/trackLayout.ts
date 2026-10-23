@@ -215,3 +215,29 @@ export function spacersFor(
 function clampIndex(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * A layout of `ids.length` rows of exactly `size` px each — no rounding, no
+ * clamping. For lists of fixed-size items that are not track rows (the compact
+ * mixer's strips) but want the same window and spacer arithmetic.
+ */
+export function buildUniformRowLayout(ids: readonly string[], size: number): TrackRowLayout {
+  const safeSize = size > 0 ? size : 1;
+  const indexById = new Map(ids.map((id, index) => [id, index]));
+  const heights = ids.map(() => safeSize);
+  const tops = ids.map((_, index) => index * safeSize);
+  return {
+    heights,
+    tops,
+    totalHeight: ids.length * safeSize,
+    baseHeight: safeSize,
+    isUniform: true,
+    heightOf: () => safeSize,
+    topOf: (id) => {
+      const index = indexById.get(id);
+      return index === undefined ? null : tops[index];
+    },
+    rowAt: (y) =>
+      ids.length === 0 ? 0 : Math.min(ids.length - 1, Math.max(0, Math.floor(y / safeSize))),
+  };
+}

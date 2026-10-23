@@ -8384,6 +8384,16 @@ body.lt-song-reordering .lt-compact-column-resize-slot {
   cursor: context-menu;
 }
 
+/* Stands in for the strips a big session does not mount
+   (compact/useMixerStripWindow). Its width is exact and must never flex, or
+   the mixer's scroll width drifts. */
+.lt-compact-mixer-spacer {
+  flex-grow: 0;
+  flex-shrink: 0;
+  min-width: 0;
+  height: 100%;
+}
+
 /* Folder strips: subtly darker background + slightly thicker left accent so
    the eye can tell them apart from leaf audio strips even before any user
    colour is applied. */

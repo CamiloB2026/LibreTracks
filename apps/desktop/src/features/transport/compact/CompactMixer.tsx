@@ -28,6 +28,8 @@ const TRACK_FADER_TICKS = faderTicks(TRACK_FADER_SCALE);
 
 import type { TrackSummary } from "../desktopApi";
 import { TrackMeter } from "../tracks/TrackMeter";
+import { trackRowSegments } from "../tracks/trackRowWindowing";
+import { useMixerStripWindow } from "./useMixerStripWindow";
 import { useTransportStore, type OptimisticMixState } from "../store";
 import { useTimelineUIStore } from "../uiStore";
 
@@ -250,12 +252,17 @@ function CompactMixerComponent({
     [collapsedFolders, filterActiveSong, activeSongTrackIds, tracks],
   );
 
-  return (
-    <div
-      className={`lt-compact-mixer ${trackReorderMode ? "is-track-reorder-mode" : ""}`}
-    >
-      <div className="lt-compact-mixer-strips">
-        {visibleTracks.map((track) => (
+  // A big session mounts only the strips near the visible band. See
+  // ./useMixerStripWindow.
+  const stripsRef = useRef<HTMLDivElement | null>(null);
+  const stripIds = useMemo(() => visibleTracks.map((track) => track.id), [visibleTracks]);
+  const { rowWindow, layout, geometry } = useMixerStripWindow(stripsRef, stripIds);
+  const segments =
+    rowWindow.isWindowed && layout && geometry
+      ? trackRowSegments(layout, rowWindow)
+      : null;
+
+  const renderStrip = (track: TrackSummary) => (
           <CompactMixerStrip
             key={track.id}
             track={track}
@@ -270,13 +277,46 @@ function CompactMixerComponent({
             hiddenChildCount={hiddenCountByFolderId.get(track.id) ?? 0}
             onToggleFolder={onToggleFolder}
           />
-        ))}
+  );
+
+  return (
+    <div
+      className={`lt-compact-mixer ${trackReorderMode ? "is-track-reorder-mode" : ""}`}
+    >
+      <div className="lt-compact-mixer-strips" ref={stripsRef}>
+        {segments && geometry
+          ? segments.map((segment) =>
+              segment.kind === "row" ? (
+                renderStrip(visibleTracks[segment.index])
+              ) : (
+                <CompactMixerSpacer
+                  key={segment.key}
+                  strips={Math.round(segment.height / geometry.pitch)}
+                  pitch={geometry.pitch}
+                  gap={geometry.gap}
+                />
+              ),
+            )
+          : visibleTracks.map(renderStrip)}
       </div>
     </div>
   );
 }
 
 export const CompactMixer = memo(CompactMixerComponent);
+
+/** Stands in for `strips` unmounted strips. The flex gap also wraps the
+ * spacer, so k strips are k pitches minus one gap. */
+function CompactMixerSpacer({ strips, pitch, gap }: { strips: number; pitch: number; gap: number }) {
+  const width = Math.max(0, strips * pitch - gap);
+  return (
+    <div
+      className="lt-compact-mixer-spacer"
+      aria-hidden="true"
+      style={{ flexBasis: width, width }}
+    />
+  );
+}
 
 type CompactMixerProps_DragSelection = {
   /** Track ids the user has selected. Mirrors the project-wide

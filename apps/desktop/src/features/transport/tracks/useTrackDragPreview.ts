@@ -2,6 +2,7 @@ import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 
 import type { SongView } from "@libretracks/shared/models";
 
+import { getCompactStripLayout, type CompactStripLayout } from "../compact/useMixerStripWindow";
 import { isMobileApp } from "../desktopApi";
 import { findTrack, isTrackDescendant } from "../helpers";
 import {
@@ -76,6 +77,43 @@ function draggedTracks(song: SongView, draggedTrackId: string) {
 
 const HEADER_ROW_SELECTOR = ".lt-track-header-row[data-track-id]";
 const LANE_ROW_SELECTOR = ".lt-track-lane-row[data-track-id]";
+const COMPACT_STRIP_SELECTOR = ".lt-compact-mixer-strip[data-track-id]";
+
+/** Tiras del mezclador MONTADAS, por pista. */
+function mountedCompactStrips(root: ParentNode) {
+  const strips = new Map<string, HTMLElement>();
+  root.querySelectorAll<HTMLElement>(COMPACT_STRIP_SELECTOR).forEach((strip) => {
+    strips.set(strip.dataset.trackId ?? "", strip);
+  });
+  return strips;
+}
+
+/**
+ * Items del mezclador desde su geometría: con las tiras virtualizadas
+ * (compact/useMixerStripWindow) las de fuera no existen en el DOM. Todas
+ * miden lo mismo, así que la tira `i` empieza en `i · paso`. Ancla: la tira
+ * arrastrada, que está bajo el puntero.
+ */
+export function compactStripItems(
+  root: ParentNode,
+  layout: CompactStripLayout,
+  draggedTrackId: string,
+): { items: ReorderPreviewItem[]; anchor: ReorderLayoutAnchor; source: HTMLElement } | null {
+  const strips = mountedCompactStrips(root);
+  const source = strips.get(draggedTrackId);
+  const draggedIndex = layout.ids.indexOf(draggedTrackId);
+  if (!source || draggedIndex < 0) return null;
+  return {
+    items: layout.ids.map((id, index) => ({
+      id,
+      element: strips.get(id) ?? null,
+      offset: index * layout.pitch,
+      size: layout.width,
+    })),
+    anchor: { element: source, offset: draggedIndex * layout.pitch },
+    source,
+  };
+}
 
 /** Cabeceras y carriles MONTADOS, por pista. */
 function mountedTrackRows(root: ParentNode) {
@@ -189,8 +227,11 @@ export function useTrackDragPreview({
         ? document
         : (timelineShellRef.current ?? document);
       const dragged = draggedTracks(currentSong, drag.trackId);
+      const compactLayout = isCompact ? getCompactStripLayout() : null;
       const fromLayout = isCompact
-        ? null
+        ? compactLayout
+          ? compactStripItems(root, compactLayout, drag.trackId)
+          : null
         : layoutTrackItems(root, trackLayoutRef.current(), visibleIdsRef.current(), drag.trackId);
       let items: ReorderPreviewItem[];
       let source: HTMLElement | null;
@@ -198,8 +239,8 @@ export function useTrackDragPreview({
         items = fromLayout.items;
         source = fromLayout.source;
       } else {
-        // El mezclador (sin layout) y el caso raro de una fila arrastrada que
-        // no está montada: se mide lo que hay en el DOM.
+        // El mezclador con todas sus tiras montadas y el caso raro de una fila
+        // arrastrada que no está montada: se mide lo que hay en el DOM.
         const rows = Array.from(
           root.querySelectorAll<HTMLElement>(
             isCompact ? ".lt-compact-mixer-strip[data-track-id]" : HEADER_ROW_SELECTOR,
@@ -345,6 +386,12 @@ export function useTrackDragPreview({
   const attachMountedTrackRows = useCallback(() => {
     const session = sessionRef.current;
     if (!session?.fromLayout) return;
+    if (session.key.startsWith("compact|")) {
+      mountedCompactStrips(session.root).forEach((element, id) => {
+        session.preview.attach(id, element);
+      });
+      return;
+    }
     const { headers, lanes } = mountedTrackRows(session.root);
     headers.forEach((element, id) => {
       session.preview.attach(id, element, lanes.get(id) ?? []);

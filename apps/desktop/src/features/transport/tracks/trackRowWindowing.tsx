@@ -33,17 +33,21 @@ export function trackRowSegments(
   }
   const mounted = [...indices].sort((left, right) => left - right);
 
+  // Track rows are whole pixels; a uniform layout of fractional items (the
+  // compact mixer's strips) is not, and `i * size` leaves crumbs of 1e-13 px
+  // between neighbours. Those are not gaps.
+  const minGap = 1e-6;
   const segments: TrackRowSegment[] = [];
   let cursor = 0;
   for (const index of mounted) {
     const gap = layout.tops[index] - cursor;
-    if (gap > 0) {
+    if (gap > minGap) {
       segments.push({ kind: "spacer", key: `spacer-before-${index}`, height: gap });
     }
     segments.push({ kind: "row", index });
     cursor = layout.tops[index] + layout.heights[index];
   }
-  if (layout.totalHeight - cursor > 0) {
+  if (layout.totalHeight - cursor > minGap) {
     segments.push({ kind: "spacer", key: "spacer-end", height: layout.totalHeight - cursor });
   }
   return segments;
