@@ -131,6 +131,40 @@ describe("createTrackHandlers", () => {
     expect(deps.optimisticallyAppliedRevisionsRef.current.has(3)).toBe(true);
   });
 
+  // The release used to wait for every moveTrack and the refresh before the
+  // floating copy went away: the drop looked frozen.
+  it("accepts the drop preview before waiting on the backend", async () => {
+    let resolveMove: (value: TransportSnapshot) => void = () => {};
+    const { handlers, deps } = setup({
+      moveTrack: vi.fn(
+        () => new Promise<TransportSnapshot>((resolve) => (resolveMove = resolve)),
+      ),
+    });
+    const drop = handlers.handleTrackDrop("dragged", {
+      targetTrackId: "target",
+      mode: "before",
+    });
+
+    expect(deps.clearTrackDragVisuals).toHaveBeenCalledWith({ settle: true });
+    resolveMove(snapshot(3));
+    await drop;
+    expect(deps.clearTrackDragVisuals).toHaveBeenCalledTimes(1);
+  });
+
+  it("puts the rows back when the backend refuses the move", async () => {
+    const { handlers, deps } = setup({
+      moveTrack: vi.fn(async () => {
+        throw new Error("nope");
+      }),
+      runAction: vi.fn(async (action) => {
+        await action().catch(() => {});
+      }),
+    });
+    await handlers.handleTrackDrop("dragged", { targetTrackId: "target", mode: "before" });
+
+    expect(deps.clearTrackDragVisuals).toHaveBeenLastCalledWith({ revert: true });
+  });
+
   it("create track is cancelled when the name prompt is empty", async () => {
     const { handlers, deps } = setup({ prompt: vi.fn(async () =>"   ") });
     await handlers.handleCreateTrack("audio", null);

@@ -26,7 +26,7 @@ export type TrackHandlerDeps = {
   applyPlaybackSnapshot: (snapshot: TransportSnapshot | null) => void;
   /** `settle` after a drop that will change the order: the preview stays
    * until the new order renders. See ./useTrackDragPreview. */
-  clearTrackDragVisuals: (options?: { settle?: boolean }) => void;
+  clearTrackDragVisuals: (options?: { settle?: boolean; revert?: boolean }) => void;
   optimisticallyAppliedRevisionsRef: { current: Set<number> };
   setStatus: (message: string) => void;
   t: (key: string, options?: Record<string, unknown>) => string;
@@ -102,6 +102,10 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
         return;
       }
 
+      // The preview already shows the result: accept it now, so the release
+      // does not wait on the backend (every move rebuilds the audio structure
+      // and saves, which takes a while in a big session).
+      clearTrackDragVisuals({ settle: true });
       await runAction(async () => {
         try {
           let lastSnapshot: TransportSnapshot | null = null;
@@ -125,8 +129,9 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
               count: plan.moves.length,
             }),
           );
-        } finally {
-          clearTrackDragVisuals({ settle: true });
+        } catch (error) {
+          clearTrackDragVisuals({ revert: true });
+          throw error;
         }
       });
     },

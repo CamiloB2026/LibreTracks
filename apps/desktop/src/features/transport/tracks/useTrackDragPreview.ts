@@ -75,6 +75,9 @@ function draggedTracks(song: SongView, draggedTrackId: string) {
   return { roots, rowIds };
 }
 
+/** Lo que una vista previa asentada espera al orden nuevo antes de rendirse. */
+const SETTLE_TIMEOUT_MS = 10_000;
+
 const HEADER_ROW_SELECTOR = ".lt-track-header-row[data-track-id]";
 const LANE_ROW_SELECTOR = ".lt-track-lane-row[data-track-id]";
 const COMPACT_STRIP_SELECTOR = ".lt-compact-mixer-strip[data-track-id]";
@@ -344,13 +347,30 @@ export function useTrackDragPreview({
   );
 
   /**
-   * `settle: true` tras un soltar que va a cambiar el orden: la vista previa
-   * se queda puesta hasta que React pinte el orden nuevo (y entonces se quita
-   * de golpe, ver el efecto de abajo). Sin él —arrastre cancelado o soltar en
-   * ningún sitio— la lista vuelve a su sitio deslizándose.
+   * `settle: true` en cuanto se acepta un soltar, ANTES de esperar al backend:
+   * la lista ya está colocada como quedará, así que se quita la copia
+   * flotante y lo arrastrado deja de ser translúcido, y todo se queda quieto
+   * hasta que React pinte el orden nuevo (entonces se quita de golpe, ver el
+   * efecto de abajo).
+   *
+   * Antes esto se llamaba al terminar el `moveTrack` y el refresco, y además
+   * deshacía la vista previa a los 250 ms: con un backend lento (cada
+   * movimiento reconstruye la estructura de audio y guarda), la copia se
+   * quedaba clavada donde se soltó, las filas volvían deslizándose a su sitio
+   * antiguo y luego saltaban al nuevo.
+   *
+   * `revert: true` deshace un soltar ya asentado que el backend rechazó. Sin
+   * ninguna de las dos —arrastre cancelado o soltar en ningún sitio— la lista
+   * vuelve a su sitio deslizándose.
    */
   const clearTrackDragVisuals = useCallback(
-    (options?: { settle?: boolean }) => {
+    (options?: { settle?: boolean; revert?: boolean }) => {
+      if (options?.revert) {
+        const settling = settlingRef.current;
+        settlingRef.current = null;
+        destroy(settling, true);
+        return;
+      }
       const session = sessionRef.current;
       sessionRef.current = null;
       if (!session) return;
@@ -359,13 +379,16 @@ export function useTrackDragPreview({
         return;
       }
       session.preview.dropLift();
+      session.preview.clearGhosts();
       setInsideFolder(session, null);
       settlingRef.current = session;
+      // Red de seguridad: un soltar que al final no cambió el orden nunca
+      // dispara el efecto de abajo.
       window.setTimeout(() => {
         if (settlingRef.current !== session) return;
         settlingRef.current = null;
         destroy(session, true);
-      }, 250);
+      }, SETTLE_TIMEOUT_MS);
     },
     [destroy, setInsideFolder],
   );

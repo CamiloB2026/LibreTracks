@@ -464,6 +464,7 @@ import {
 import { createTrackHandlers } from "./tracks/trackHandlers";
 import { useTrackDragPreview } from "./tracks/useTrackDragPreview";
 import { useTrackRowWindowController } from "./tracks/useTrackRowWindow";
+import { mergeSongView } from "./songs/mergeSongView";
 import { createTrackHeaderHandlers } from "./tracks/trackHeaderHandlers";
 import { useTrackHeights } from "./tracks/useTrackHeights";
 import { createCompactSongHandlers } from "./compact/compactSongHandlers";
@@ -1921,7 +1922,8 @@ export function TransportPanelContent() {
           setSong((previous) => {
             if (!nextSong) return null;
             if (!previous) return nextSong;
-            return { ...nextSong, waveforms: previous.waveforms };
+            // Untouched tracks/clips keep their identity, as in the revision loader.
+            return mergeSongView(previous, { ...nextSong, waveforms: previous.waveforms });
           });
         }
       };

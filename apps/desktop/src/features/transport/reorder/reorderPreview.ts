@@ -303,6 +303,15 @@ export function createReorderPreview({
       lift?.element.remove();
     },
 
+    /** Lo arrastrado deja de verse translúcido: el soltar está aceptado y la
+     * lista ya enseña el resultado. */
+    clearGhosts() {
+      lastGhostIds = new Set();
+      for (const item of measured) {
+        for (const element of elementsOf(item)) element.classList.remove(GHOST_CLASS);
+      }
+    },
+
     /**
      * Deja la lista como estaba.
      *
