@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, type MutableRefObject, type RefObject } from "react";
 import type { ClipSummary } from "../desktopApi";
 import { isMobileApp } from "../desktopApi";
+import type { TimelineTrackSummary } from "../library/pendingAudioImports";
+import type { TrackRowLayout } from "../tracks/trackLayout";
 import { useTimelineUIStore } from "../uiStore";
-import { AreaSelectionDrag } from "./areaSelection";
+import { AreaSelectionDrag, type AreaRowSource } from "./areaSelection";
 import type { AreaSelectGesture } from "./MobileTimelineNavigation";
 
 /** El visor que desplaza en vertical cabeceras y carriles a la vez. */
@@ -10,6 +12,30 @@ const SCROLL_VIEWPORT_SELECTOR = ".lt-timeline-scroll-viewport";
 
 function isAreaSelectActive() {
   return isMobileApp && useTimelineUIStore.getState().areaSelectMode;
+}
+
+/** Filas del recuadro: las pistas visibles con su layout. */
+export type AreaTrackRows = {
+  layout: TrackRowLayout;
+  tracks: readonly TimelineTrackSummary[];
+};
+
+/**
+ * `AreaRowSource` desde las pistas: el ancla es la primera fila montada que
+ * encuentre `anchorSelector` dentro de `surface` (una busqueda, no N).
+ */
+function rowSourceFor(
+  surface: HTMLElement,
+  anchorSelector: string,
+  rows: AreaTrackRows | null,
+  skip: (track: TimelineTrackSummary) => boolean,
+): AreaRowSource | null {
+  if (!rows) return null;
+  return {
+    layout: rows.layout,
+    rows: rows.tracks.map((track) => ({ id: track.id, skip: skip(track) })),
+    anchor: surface.querySelector<HTMLElement>(anchorSelector),
+  };
 }
 
 /**
@@ -21,6 +47,7 @@ function isAreaSelectActive() {
  */
 export function useLaneAreaSelection(deps: {
   surfaceRef: RefObject<HTMLElement | null>;
+  rows: AreaTrackRows;
   clipsByTrack: Record<string, ClipSummary[]>;
   cameraXRef: MutableRefObject<number>;
   pixelsPerSecondRef: MutableRefObject<number>;
@@ -43,7 +70,15 @@ export function useLaneAreaSelection(deps: {
         drag = new AreaSelectionDrag(
           {
             surface,
-            rowSelector: ".lt-track-lane-row[data-track-id]",
+            // En los carriles no se salta ninguna fila: las que no son pistas
+            // no tienen clips que coger.
+            getRows: () =>
+              rowSourceFor(
+                surface,
+                ".lt-track-lane-row[data-track-id]",
+                live.current.rows,
+                () => false,
+              ),
             getViewport: () => surface.closest<HTMLElement>(SCROLL_VIEWPORT_SELECTOR),
             getSelection: () => useTimelineUIStore.getState().selectedClipIds,
             setSelection: (ids) =>
@@ -91,9 +126,12 @@ export function useHeaderAreaSelection(
   paneRef: RefObject<HTMLElement | null>,
   /** Al empezar a dibujar: cancela la pulsacion larga, que ya no lo es. */
   onBegin: () => void,
+  rows: AreaTrackRows | null = null,
 ) {
   const onBeginRef = useRef(onBegin);
   onBeginRef.current = onBegin;
+  const rowsRef = useRef(rows);
+  rowsRef.current = rows;
 
   useEffect(() => {
     const pane = paneRef.current;
@@ -116,7 +154,14 @@ export function useHeaderAreaSelection(
         drag = new AreaSelectionDrag(
           {
             surface: pane,
-            rowSelector: ".lt-track-header-row[data-track-id]",
+            getRows: () =>
+              rowSourceFor(
+                pane,
+                ".lt-track-header-row[data-track-id]",
+                rowsRef.current,
+                // Filas que no son pistas de verdad (automatizacion, importando).
+                (track) => Boolean(track.isAutomation || track.isPending),
+              ),
             getViewport: () => pane.closest<HTMLElement>(SCROLL_VIEWPORT_SELECTOR),
             getSelection: () => useTimelineUIStore.getState().selectedTrackIds,
             setSelection: (ids) => useTimelineUIStore.getState().selectTrack(ids),

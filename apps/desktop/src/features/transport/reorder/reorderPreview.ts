@@ -20,16 +20,34 @@ import "./reorderPreview.css";
  * El destino se calcula contra la disposición capturada al EMPEZAR, no contra
  * lo que hay bajo el puntero: las filas se mueven para abrir el hueco, y si el
  * destino dependiese de su posición en pantalla oscilaría al moverlas.
+ *
+ * Esa disposición puede venir del DOM (se mide cada elemento) o de un layout
+ * (`offset`/`size` por elemento más un ancla montada que lo clava en
+ * pantalla). Con el layout, un elemento puede no existir todavía: las pistas
+ * fuera de pantalla no se montan (`docs/plans/track-virtualization`). Se
+ * desplaza en cuanto aparece, con `attach`.
  */
 
 export type ReorderAxis = "x" | "y";
 
 export type ReorderPreviewItem = {
   id: string;
-  /** Lo que se mide y se desplaza. */
-  element: HTMLElement;
+  /** Lo que se mide (sin `offset`) y se desplaza. Puede faltar si el item
+   * trae su posición del layout y aún no está montado. */
+  element?: HTMLElement | null;
   /** Se desplazan igual que `element` (el carril de una pista, por ejemplo). */
   companions?: HTMLElement[];
+  /** Posición y tamaño a lo largo del eje, en px del layout, relativos al
+   * mismo origen que `layoutAnchor.offset`. */
+  offset?: number;
+  size?: number;
+};
+
+/** Un elemento montado cuya posición en el layout se conoce: clava el layout
+ * en pantalla con una sola medida. */
+export type ReorderLayoutAnchor = {
+  element: HTMLElement;
+  offset: number;
 };
 
 type MeasuredItem = ReorderPreviewItem & {
@@ -105,9 +123,12 @@ export function createReorderPreview({
   liftSource,
   liftCount = 1,
   pointer,
+  layoutAnchor,
 }: {
   /** En el orden en que se ven. */
   items: ReorderPreviewItem[];
+  /** Obligatorio si algún item trae `offset`/`size` en vez de medirse. */
+  layoutAnchor?: ReorderLayoutAnchor;
   axis: ReorderAxis;
   /** El elemento que se copia para seguir al puntero. */
   liftSource: HTMLElement | null;
@@ -116,7 +137,7 @@ export function createReorderPreview({
   /** Dónde estaba el puntero al empezar (px de pantalla). */
   pointer: { x: number; y: number };
 }) {
-  const first = items[0]?.element ?? liftSource;
+  const first = layoutAnchor?.element ?? items[0]?.element ?? liftSource;
   const scroller = first ? findScrollContainer(first, axis) : null;
   const scale = first ? screenScale(first, axis) : 1;
 
@@ -130,17 +151,53 @@ export function createReorderPreview({
   };
 
   const origin = scrollOrigin();
+  let layoutOrigin = 0;
+  if (layoutAnchor) {
+    const rect = layoutAnchor.element.getBoundingClientRect();
+    layoutOrigin = (axis === "x" ? rect.left : rect.top) + origin - layoutAnchor.offset * scale;
+  }
   const measured: MeasuredItem[] = items.map((item) => {
-    const rect = item.element.getBoundingClientRect();
+    if (layoutAnchor && item.offset !== undefined && item.size !== undefined) {
+      return {
+        ...item,
+        start: layoutOrigin + item.offset * scale,
+        size: item.size * scale,
+      };
+    }
+    const rect = item.element?.getBoundingClientRect();
     return {
       ...item,
-      start: (axis === "x" ? rect.left : rect.top) + origin,
-      size: axis === "x" ? rect.width : rect.height,
+      start: (rect ? (axis === "x" ? rect.left : rect.top) : 0) + origin,
+      size: rect ? (axis === "x" ? rect.width : rect.height) : 0,
     };
   });
+  const measuredById = new Map(measured.map((item) => [item.id, item]));
 
   const lift = liftSource ? createLift(liftSource, liftCount) : null;
   let lastOrderKey = "";
+  /** Lo último pintado, para aplicarlo a un elemento que llega tarde. */
+  let lastOffsets: Map<string, number> | null = null;
+  let lastGhostIds: ReadonlySet<string> = new Set();
+
+  const elementsOf = (item: MeasuredItem) =>
+    item.element ? [item.element, ...(item.companions ?? [])] : (item.companions ?? []);
+
+  function applyItem(item: MeasuredItem) {
+    if (!lastOffsets) return;
+    const offset = (lastOffsets.get(item.id) ?? 0) / scale;
+    const transform =
+      offset === 0
+        ? ""
+        : axis === "x"
+          ? `translate3d(${offset}px, 0, 0)`
+          : `translate3d(0, ${offset}px, 0)`;
+    for (const element of elementsOf(item)) {
+      element.classList.add(SHIFTING_CLASS);
+      element.style.transform = transform;
+      element.classList.toggle(GHOST_CLASS, lastGhostIds.has(item.id));
+      element.classList.toggle(HIDDEN_CLASS, !lastOffsets.has(item.id));
+    }
+  }
 
   function createLift(source: HTMLElement, count: number) {
     const clone = source.cloneNode(true) as HTMLElement;
@@ -210,22 +267,27 @@ export function createReorderPreview({
       const key = finalOrder.join("\u0000");
       if (key === lastOrderKey) return;
       lastOrderKey = key;
-      const offsets = reflowOffsets(measured, finalOrder);
+      lastOffsets = reflowOffsets(measured, finalOrder);
+      lastGhostIds = ghostIds;
       for (const item of measured) {
-        const offset = (offsets.get(item.id) ?? 0) / scale;
-        const transform =
-          offset === 0
-            ? ""
-            : axis === "x"
-              ? `translate3d(${offset}px, 0, 0)`
-              : `translate3d(0, ${offset}px, 0)`;
-        for (const element of [item.element, ...(item.companions ?? [])]) {
-          element.classList.add(SHIFTING_CLASS);
-          element.style.transform = transform;
-          element.classList.toggle(GHOST_CLASS, ghostIds.has(item.id));
-          element.classList.toggle(HIDDEN_CLASS, !offsets.has(item.id));
-        }
+        applyItem(item);
       }
+    },
+
+    /**
+     * Un elemento que se ha montado DESPUÉS de empezar (una fila que entra por
+     * el auto-scroll): recibe al instante el desplazamiento que ya le toca.
+     * Sustituye al que hubiese, por si React volvió a montar la fila.
+     */
+    attach(id: string, element: HTMLElement, companions: HTMLElement[] = []) {
+      const item = measuredById.get(id);
+      if (!item) return;
+      if (item.element === element && sameElements(item.companions ?? [], companions)) {
+        return;
+      }
+      item.element = element;
+      item.companions = companions;
+      applyItem(item);
     },
 
     /** Mueve la copia flotante con el puntero, sólo sobre el eje de la lista. */
@@ -251,7 +313,7 @@ export function createReorderPreview({
      */
     destroy({ animate }: { animate: boolean }) {
       lift?.element.remove();
-      const elements = measured.flatMap((item) => [item.element, ...(item.companions ?? [])]);
+      const elements = measured.flatMap(elementsOf);
       if (!animate) {
         for (const element of elements) {
           element.classList.remove(SHIFTING_CLASS);
@@ -272,6 +334,10 @@ export function createReorderPreview({
       }, SETTLE_MS);
     },
   };
+}
+
+function sameElements(left: readonly HTMLElement[], right: readonly HTMLElement[]) {
+  return left.length === right.length && left.every((element, index) => element === right[index]);
 }
 
 export type ReorderPreview = ReturnType<typeof createReorderPreview>;

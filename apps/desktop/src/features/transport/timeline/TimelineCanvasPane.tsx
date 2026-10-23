@@ -472,6 +472,7 @@ export function TimelineCanvasPane({
   );
   const touchAreaSelect = useLaneAreaSelection({
     surfaceRef: laneAreaRef,
+    rows: { layout: trackLayout, tracks: visibleTracks },
     clipsByTrack,
     cameraXRef,
     pixelsPerSecondRef: livePixelsPerSecondRef,

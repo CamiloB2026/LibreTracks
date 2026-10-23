@@ -1,4 +1,5 @@
 import type { ClipSummary } from "../desktopApi";
+import type { TrackRowLayout } from "../tracks/trackLayout";
 import {
   clientXToLocalX,
   getElementScaleY,
@@ -21,6 +22,40 @@ import {
 
 /** Fila tal y como esta en pantalla, en coordenadas de cliente. */
 export type AreaRow = { id: string; top: number; bottom: number };
+
+/**
+ * Las filas como DATOS: el layout dice donde esta cada una y una fila montada
+ * cualquiera (`anchor`) lo clava en pantalla. Antes se buscaban todas en el DOM
+ * y se median una a una; con las filas virtualizadas
+ * (`docs/plans/track-virtualization`) las que no estan montadas no existen en
+ * el DOM, y un recuadro con auto-scroll las dejaba sin seleccionar sin ningun
+ * error.
+ */
+export type AreaRowSource = {
+  layout: TrackRowLayout;
+  /** En el orden del layout. `skip`: tiene fila pero no es una pista de
+   * verdad (automatizacion, importandose). */
+  rows: ReadonlyArray<{ id: string; skip?: boolean }>;
+  /** Una fila montada (`data-track-id`), la que sea. */
+  anchor: HTMLElement | null;
+};
+
+/** Filas en coordenadas de cliente, sin medir mas elemento que el ancla. */
+export function areaRowsFromLayout({ layout, rows, anchor }: AreaRowSource): AreaRow[] {
+  const anchorTop = anchor?.dataset.trackId ? layout.topOf(anchor.dataset.trackId) : null;
+  if (!anchor || anchorTop === null) return [];
+  const rect = anchor.getBoundingClientRect();
+  // El zoom de la interfaz: px de pantalla por px del layout.
+  const scaleY = getElementScaleY(rect, anchor.offsetHeight);
+  const origin = rect.top - anchorTop * scaleY;
+  const result: AreaRow[] = [];
+  rows.forEach((row, index) => {
+    if (row.skip || index >= layout.tops.length) return;
+    const top = origin + layout.tops[index] * scaleY;
+    result.push({ id: row.id, top, bottom: top + layout.heights[index] * scaleY });
+  });
+  return result;
+}
 
 /** Lo que toca una banda vertical. Tocar cuenta, aunque sea en parte: exigir
  * que la fila quede entera dentro es dificil con el dedo. */
@@ -105,8 +140,8 @@ function edgeStep(position: number, start: number, end: number): number {
 export type AreaSelectionDeps = {
   /** Contenedor posicionado donde se pinta el recuadro y viven las filas. */
   surface: HTMLElement;
-  /** Selector de las filas de `surface`, cada una con `data-track-id`. */
-  rowSelector: string;
+  /** Las filas, en el momento de pintar. Ver `AreaRowSource`. */
+  getRows: () => AreaRowSource | null;
   /** Quien desplaza en vertical: el visor que comparten cabeceras y carriles. */
   getViewport: () => HTMLElement | null;
   getSelection: () => string[];
@@ -228,7 +263,7 @@ export class AreaSelectionDrag {
   };
 
   private render() {
-    const { surface, rowSelector, clips } = this.deps;
+    const { surface, getRows, clips } = this.deps;
     const surfaceBounds = surface.getBoundingClientRect();
     const scaleY = getElementScaleY(surfaceBounds, surface.offsetHeight);
 
@@ -260,14 +295,8 @@ export class AreaSelectionDrag {
     style.width = `${width}px`;
     style.height = `${height}px`;
 
-    const rows: AreaRow[] = [];
-    surface.querySelectorAll<HTMLElement>(rowSelector).forEach((row) => {
-      const id = row.dataset.trackId;
-      // Filas que no son pistas de verdad (automatizacion, importando).
-      if (!id || row.hasAttribute("data-area-skip")) return;
-      const rect = row.getBoundingClientRect();
-      rows.push({ id, top: rect.top, bottom: rect.bottom });
-    });
+    const source = getRows();
+    const rows = source ? areaRowsFromLayout(source) : [];
     const hits = clips
       ? clipsInArea(
           rows,

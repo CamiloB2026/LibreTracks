@@ -6,10 +6,13 @@ import { isMobileApp } from "../desktopApi";
 import { findTrack, isTrackDescendant } from "../helpers";
 import {
   createReorderPreview,
+  type ReorderLayoutAnchor,
   type ReorderPreview,
+  type ReorderPreviewItem,
 } from "../reorder/reorderPreview";
 import type { TrackDragState, TrackDropState } from "../types";
 import { useTimelineUIStore } from "../uiStore";
+import type { TrackRowLayout } from "./trackLayout";
 import { planTrackDrop, previewRowOrder } from "./trackMovePlan";
 
 /**
@@ -35,6 +38,8 @@ type Session = {
   preview: ReorderPreview;
   /** Donde viven las filas: el shell de la DAW o el documento (mezclador). */
   root: ParentNode;
+  /** Las filas salen del layout: las que se monten luego se adjuntan. */
+  fromLayout: boolean;
   ghostIds: Set<string>;
   insideFolderId: string | null;
 };
@@ -69,22 +74,74 @@ function draggedTracks(song: SongView, draggedTrackId: string) {
   return { roots, rowIds };
 }
 
+const HEADER_ROW_SELECTOR = ".lt-track-header-row[data-track-id]";
+const LANE_ROW_SELECTOR = ".lt-track-lane-row[data-track-id]";
+
+/** Cabeceras y carriles MONTADOS, por pista. */
+function mountedTrackRows(root: ParentNode) {
+  const headers = new Map<string, HTMLElement>();
+  root.querySelectorAll<HTMLElement>(HEADER_ROW_SELECTOR).forEach((row) => {
+    headers.set(row.dataset.trackId ?? "", row);
+  });
+  const lanes = new Map<string, HTMLElement[]>();
+  root.querySelectorAll<HTMLElement>(LANE_ROW_SELECTOR).forEach((lane) => {
+    const id = lane.dataset.trackId ?? "";
+    lanes.set(id, [...(lanes.get(id) ?? []), lane]);
+  });
+  return { headers, lanes };
+}
+
+/**
+ * Items de la DAW desde el layout: una fila por pista visible, monte o no.
+ * Con las filas virtualizadas las de fuera de pantalla no existen en el DOM;
+ * medirlas dejaba la lista sin desplazar justo donde el auto-scroll la
+ * descubre. El ancla es la fila arrastrada (bajo el puntero, montada).
+ */
+function layoutTrackItems(
+  root: ParentNode,
+  layout: TrackRowLayout,
+  visibleIds: readonly string[],
+  draggedTrackId: string,
+): { items: ReorderPreviewItem[]; anchor: ReorderLayoutAnchor; source: HTMLElement } | null {
+  if (layout.heights.length !== visibleIds.length) return null;
+  const { headers, lanes } = mountedTrackRows(root);
+  const source = headers.get(draggedTrackId);
+  const anchorOffset = layout.topOf(draggedTrackId);
+  if (!source || anchorOffset === null) return null;
+  return {
+    items: visibleIds.map((id, index) => ({
+      id,
+      element: headers.get(id) ?? null,
+      companions: lanes.get(id) ?? [],
+      offset: layout.tops[index],
+      size: layout.heights[index],
+    })),
+    anchor: { element: source, offset: anchorOffset },
+    source,
+  };
+}
+
 export function useTrackDragPreview({
   song,
   songRef,
   timelineShellRef,
   getVisibleTrackIds,
+  getTrackLayout,
 }: {
   song: SongView | null;
   songRef: { current: SongView | null };
   timelineShellRef: { current: HTMLElement | null };
   getVisibleTrackIds: () => string[];
+  /** El layout de las filas visibles, en su orden. */
+  getTrackLayout: () => TrackRowLayout;
 }) {
   const sessionRef = useRef<Session | null>(null);
   /** Un soltar que espera a que llegue el orden nuevo. */
   const settlingRef = useRef<Session | null>(null);
   const visibleIdsRef = useRef(getVisibleTrackIds);
   visibleIdsRef.current = getVisibleTrackIds;
+  const trackLayoutRef = useRef(getTrackLayout);
+  trackLayoutRef.current = getTrackLayout;
 
   // Soltar DENTRO de una carpeta no abre hueco junto a ella (las pistas van
   // al final de su contenido), así que la carpeta se ilumina entera con el
@@ -131,44 +188,46 @@ export function useTrackDragPreview({
       const root: ParentNode = isCompact
         ? document
         : (timelineShellRef.current ?? document);
-      const rows = Array.from(
-        root.querySelectorAll<HTMLElement>(
-          isCompact
-            ? ".lt-compact-mixer-strip[data-track-id]"
-            : ".lt-track-header-row[data-track-id]",
-        ),
-      );
       const dragged = draggedTracks(currentSong, drag.trackId);
-      // El carril de cada pista se desplaza con su cabecera.
-      const lanesById = new Map<string, HTMLElement[]>();
-      if (!isCompact) {
-        root
-          .querySelectorAll<HTMLElement>(".lt-track-lane-row[data-track-id]")
-          .forEach((lane) => {
-            const id = lane.dataset.trackId ?? "";
-            lanesById.set(id, [...(lanesById.get(id) ?? []), lane]);
-          });
-      }
-      const source =
-        rows.find((row) => row.dataset.trackId === drag.trackId) ?? null;
-      const preview = createReorderPreview({
-        items: rows.map((row) => {
+      const fromLayout = isCompact
+        ? null
+        : layoutTrackItems(root, trackLayoutRef.current(), visibleIdsRef.current(), drag.trackId);
+      let items: ReorderPreviewItem[];
+      let source: HTMLElement | null;
+      if (fromLayout) {
+        items = fromLayout.items;
+        source = fromLayout.source;
+      } else {
+        // El mezclador (sin layout) y el caso raro de una fila arrastrada que
+        // no está montada: se mide lo que hay en el DOM.
+        const rows = Array.from(
+          root.querySelectorAll<HTMLElement>(
+            isCompact ? ".lt-compact-mixer-strip[data-track-id]" : HEADER_ROW_SELECTOR,
+          ),
+        );
+        // El carril de cada pista se desplaza con su cabecera.
+        const lanesById = isCompact
+          ? new Map<string, HTMLElement[]>()
+          : mountedTrackRows(root).lanes;
+        source = rows.find((row) => row.dataset.trackId === drag.trackId) ?? null;
+        items = rows.map((row) => {
           const id = row.dataset.trackId ?? "";
-          return {
-            id,
-            element: row,
-            companions: lanesById.get(id) ?? [],
-          };
-        }),
+          return { id, element: row, companions: lanesById.get(id) ?? [] };
+        });
+      }
+      const preview = createReorderPreview({
+        items,
         axis: isCompact ? "x" : "y",
         liftSource: source,
         liftCount: dragged.roots.length,
         pointer: { x: drag.startClientX, y: drag.startClientY },
+        layoutAnchor: fromLayout?.anchor,
       });
       const session: Session = {
         key,
         preview,
         root,
+        fromLayout: fromLayout !== null,
         ghostIds: dragged.rowIds,
         insideFolderId: null,
       };
@@ -278,5 +337,24 @@ export function useTrackDragPreview({
     settlingRef.current = null;
   }, [orderKey, destroy]);
 
-  return { applyTrackDragVisuals, clearTrackDragVisuals, resolveTrackDrop };
+  /**
+   * Adjunta a la vista previa en curso las filas montadas después de empezar
+   * (las trae el auto-scroll cuando las filas están virtualizadas). Se llama
+   * tras pintar una ventana de filas nueva; sin arrastre no hace nada.
+   */
+  const attachMountedTrackRows = useCallback(() => {
+    const session = sessionRef.current;
+    if (!session?.fromLayout) return;
+    const { headers, lanes } = mountedTrackRows(session.root);
+    headers.forEach((element, id) => {
+      session.preview.attach(id, element, lanes.get(id) ?? []);
+    });
+  }, []);
+
+  return {
+    applyTrackDragVisuals,
+    attachMountedTrackRows,
+    clearTrackDragVisuals,
+    resolveTrackDrop,
+  };
 }

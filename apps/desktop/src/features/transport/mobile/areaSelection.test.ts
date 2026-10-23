@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClipSummary } from "../desktopApi";
+import { buildTrackRowLayout } from "../tracks/trackLayout";
 import {
   AreaSelectionDrag,
   clipsInArea,
@@ -91,7 +92,14 @@ describe("el recuadro sobre las cabeceras", () => {
     const drag = new AreaSelectionDrag(
       {
         surface,
-        rowSelector: ".row",
+        getRows: () => ({
+          layout: buildTrackRowLayout(
+            [...rows, { id: "automation" }].map((row) => ({ id: row.id })),
+            50,
+          ),
+          rows: [...rows.map((row) => ({ id: row.id })), { id: "automation", skip: true }],
+          anchor: surface.querySelector<HTMLElement>(".row"),
+        }),
         getViewport: () => null,
         getSelection: () => state.selection,
         setSelection: vi.fn((ids: string[]) => {

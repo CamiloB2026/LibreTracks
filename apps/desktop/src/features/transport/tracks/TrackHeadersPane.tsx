@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useMemo,
   useRef,
   type CSSProperties,
   type MouseEvent as ReactMouseEvent,
@@ -131,7 +132,11 @@ export function TrackHeadersPane({
       target instanceof Element &&
       target.closest(TRACK_HEADER_CONTROL_SELECTOR) !== null,
   });
-  useHeaderAreaSelection(paneRef, touchContextMenu.cancel);
+  const areaRows = useMemo(
+    () => ({ layout: trackLayout, tracks: visibleTracks }),
+    [trackLayout, visibleTracks],
+  );
+  useHeaderAreaSelection(paneRef, touchContextMenu.cancel, areaRows);
 
   useEffect(() => {
     const headersList = headersListRef.current;

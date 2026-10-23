@@ -2925,6 +2925,7 @@ export function TransportPanelContent() {
       songRef,
       timelineShellRef,
       getVisibleTrackIds: () => visibleTracksRef.current.map((track) => track.id),
+      getTrackLayout: () => trackRowLayoutRef.current,
     });
 
   // Track create / reorder handlers. See ./tracks/trackHandlers. Reactive state
