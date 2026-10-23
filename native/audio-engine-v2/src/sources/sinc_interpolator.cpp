@@ -70,8 +70,8 @@ float dot_strided(const float* x, std::size_t stride, const float* h, int length
 }
 
 // Stereo interleaved: `hd` holds each tap twice (h0 h0 h1 h1 ...) so the
-// window is read as one contiguous run, four frames (8 floats) per step into
-// two vector accumulators. Even lanes are left, odd lanes right. Written with
+// window is read as one contiguous run, eight frames (16 floats) per step into
+// four vector accumulators (one would stall on the add/FMA latency). Even lanes are left, odd lanes right. Written with
 // intrinsics because a float sum is not reassociated by the compiler on its
 // own (no -ffast-math), so the plain loop stays scalar.
 #if defined(_MSC_VER)
@@ -82,31 +82,35 @@ __attribute__((noinline))
 void dot_stereo(const float* x, const float* hd, int length, float* y) {
     const int n = length * 2;
 #if LT_SINC_NEON
-    float32x4_t a = vdupq_n_f32(0.0f), b = vdupq_n_f32(0.0f);
-    for (int i = 0; i < n; i += 8) {
+    float32x4_t a = vdupq_n_f32(0.0f), b = a, c = a, d = a;
+    for (int i = 0; i < n; i += 16) {
         a = vfmaq_f32(a, vld1q_f32(x + i), vld1q_f32(hd + i));
         b = vfmaq_f32(b, vld1q_f32(x + i + 4), vld1q_f32(hd + i + 4));
+        c = vfmaq_f32(c, vld1q_f32(x + i + 8), vld1q_f32(hd + i + 8));
+        d = vfmaq_f32(d, vld1q_f32(x + i + 12), vld1q_f32(hd + i + 12));
     }
-    const float32x4_t s = vaddq_f32(a, b);            // L R L R
+    const float32x4_t s = vaddq_f32(vaddq_f32(a, b), vaddq_f32(c, d));  // L R L R
     const float32x2_t lr = vadd_f32(vget_low_f32(s), vget_high_f32(s));
     y[0] = vget_lane_f32(lr, 0);
     y[1] = vget_lane_f32(lr, 1);
 #elif LT_SINC_SSE
-    __m128 a = _mm_setzero_ps(), b = _mm_setzero_ps();
-    for (int i = 0; i < n; i += 8) {
+    __m128 a = _mm_setzero_ps(), b = a, c = a, d = a;
+    for (int i = 0; i < n; i += 16) {
         a = _mm_add_ps(a, _mm_mul_ps(_mm_loadu_ps(x + i), _mm_loadu_ps(hd + i)));
         b = _mm_add_ps(b, _mm_mul_ps(_mm_loadu_ps(x + i + 4), _mm_loadu_ps(hd + i + 4)));
+        c = _mm_add_ps(c, _mm_mul_ps(_mm_loadu_ps(x + i + 8), _mm_loadu_ps(hd + i + 8)));
+        d = _mm_add_ps(d, _mm_mul_ps(_mm_loadu_ps(x + i + 12), _mm_loadu_ps(hd + i + 12)));
     }
-    const __m128 s = _mm_add_ps(a, b);                 // L R L R
+    const __m128 s = _mm_add_ps(_mm_add_ps(a, b), _mm_add_ps(c, d));  // L R L R
     const __m128 lr = _mm_add_ps(s, _mm_movehl_ps(s, s));
     y[0] = _mm_cvtss_f32(lr);
     y[1] = _mm_cvtss_f32(_mm_shuffle_ps(lr, lr, 1));
 #else
-    float a[8] = {0, 0, 0, 0, 0, 0, 0, 0};
-    for (int i = 0; i < n; i += 8)
-        for (int k = 0; k < 8; ++k) a[k] += x[i + k] * hd[i + k];
-    y[0] = (a[0] + a[4]) + (a[2] + a[6]);
-    y[1] = (a[1] + a[5]) + (a[3] + a[7]);
+    float a[16] = {};
+    for (int i = 0; i < n; i += 16)
+        for (int k = 0; k < 16; ++k) a[k] += x[i + k] * hd[i + k];
+    y[0] = ((a[0] + a[4]) + (a[8] + a[12])) + ((a[2] + a[6]) + (a[10] + a[14]));
+    y[1] = ((a[1] + a[5]) + (a[9] + a[13])) + ((a[3] + a[7]) + (a[11] + a[15]));
 #endif
 }
 
@@ -127,9 +131,9 @@ SincInterpolator::SincInterpolator(int source_sample_rate, int target_sample_rat
     const int lower = std::min(source_sample_rate, target_sample_rate);
     const double stretch = static_cast<double>(source_sample_rate) / lower;
     const int base_taps = std::max(2, taps);
-    // Multiple of 4 so the stereo kernel's 8 lanes divide the taps evenly.
+    // Multiple of 8 so the stereo kernel's 16 lanes divide the taps evenly.
     length_ = std::min(kMaxKernel, static_cast<int>(std::ceil(base_taps * stretch)));
-    length_ = (length_ + 3) & ~3;
+    length_ = (length_ + 7) & ~7;
     lead_ = length_ / 2 - 1;
 
     // Attenuation the window can reach across the transition band with this

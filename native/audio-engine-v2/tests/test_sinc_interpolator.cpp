@@ -127,7 +127,7 @@ TEST_CASE("sinc interpolator reduces the ratio to an exact fraction") {
     SincInterpolator down(48000, 44100, 64);
     CHECK(down.ratio_num() == 160);
     CHECK(down.ratio_den() == 147);
-    CHECK(down.kernel_length() == 72);  // 64 * 48/44.1, rounded up to a multiple of 4
+    CHECK(down.kernel_length() == 72);  // 64 * 48/44.1, rounded up to a multiple of 8
 }
 
 TEST_CASE("E1: a stream started mid-file is bit-identical to one started at 0") {
