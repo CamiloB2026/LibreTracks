@@ -3,6 +3,7 @@ target_sources(lt_audio_engine_v2 PRIVATE
     source_manager.cpp
     audio_decoder.cpp
     resampler.cpp
+    sinc_interpolator.cpp
     worker_pool.cpp
     preparation_queue.cpp
     block_cache.cpp
