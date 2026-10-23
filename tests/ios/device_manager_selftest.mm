@@ -258,6 +258,28 @@ int main() {
             check(running_again, "hardware callbacks resume after the recovery");
         }
 
+        std::printf("── 44.1 kHz on a 48 kHz route (unit converts) ──────────\n");
+        // The engine runs at the session's rate even when the route will not:
+        // RemoteIO converts, so 44.1 kHz stems never need a cached 48 kHz copy.
+        // Before, the engine followed the hardware and converted every file.
+        lt::DeviceOpenRequest at_44k = request;
+        at_44k.sample_rate = 44100;
+        const auto opened_44k = manager.open_device(at_44k, &callback);
+        check(opened_44k.is_ok(), "open_device accepts 44.1 kHz");
+        if (opened_44k.is_ok()) {
+            const auto info_44k = manager.device_info();
+            std::printf("  sr=%d hardware_sr=%.0f buffer=%d\n", info_44k.sample_rate,
+                        AVAudioSession.sharedInstance.sampleRate, info_44k.buffer_size);
+            check(info_44k.sample_rate == 44100,
+                  "the engine runs at the requested 44.1 kHz whatever the hardware rate");
+            const int calls_at_44k = callback.calls();
+            check(wait_until([&] { return callback.calls() > calls_at_44k + 10; }, 3000),
+                  "hardware callbacks run at the converted rate");
+            check(callback.last_sample_rate() == 44100.0,
+                  "the render callback is told 44.1 kHz");
+            check(callback.peak() > 0.1f, "converted samples still reach the output buffers");
+        }
+
         std::printf("── Closing ─────────────────────────────────────────────\n");
         check(manager.close_device().is_ok(), "close_device succeeds");
         sleep_ms(300);

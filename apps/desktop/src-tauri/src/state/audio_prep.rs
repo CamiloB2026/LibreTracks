@@ -67,8 +67,25 @@ impl DesktopSession {
             SampleRatePlan::SwitchDevice {
                 target_rate,
                 bytes_saved,
-            } => match audio.set_output_sample_rate(target_rate) {
-                Ok(()) => {
+            } => match audio
+                .set_output_sample_rate(target_rate)
+                .map(|()| audio.current_sample_rate_capabilities().0)
+            {
+                // A driver can open fine at a rate other than the one asked
+                // for. Reporting that as "adjusted" told the user nothing would
+                // be converted while every file was. 0 means the snapshot was
+                // contended, not a rate: no reason to doubt the switch then.
+                Ok(actual_rate) if actual_rate != 0 && actual_rate != target_rate => {
+                    crate::infra::error_log::write_error(&format!(
+                        "asked for {target_rate} Hz for this session, device opened at {actual_rate} Hz"
+                    ));
+                    Some(format!(
+                        "El dispositivo no admite {} Hz; se preparara una copia \
+                         del audio (puede tardar).",
+                        target_rate
+                    ))
+                }
+                Ok(_) => {
                     let saved_mb = bytes_saved / (1024 * 1024);
                     Some(format!(
                         "Frecuencia ajustada a {} Hz para coincidir con el audio \

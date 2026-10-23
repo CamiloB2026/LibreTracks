@@ -64,6 +64,13 @@ constexpr int kMaxOutputChannels = 32;
 // unit we can handle in one slice.
 constexpr UInt32 kMaxFramesPerSlice = 4096;
 
+// Rates the engine may run at regardless of the hardware's: the ones
+// supported_sample_rates advertises. Anything else (0 = "no preference")
+// follows the hardware.
+bool is_supported_engine_rate(int rate) {
+    return rate == 44100 || rate == 48000;
+}
+
 std::string osstatus_message(const char* what, OSStatus status) {
     char buffer[128]{};
     std::snprintf(buffer, sizeof(buffer), "%s failed (OSStatus %d)", what,
@@ -552,6 +559,17 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
 
     AVAudioSession* session = AVAudioSession.sharedInstance;
     const double negotiated_rate = session.sampleRate > 0 ? session.sampleRate : 48000.0;
+    // The rate the ENGINE runs at, which need not be the hardware's. iPhones
+    // keep the built-in route at 48 kHz whatever we prefer, and following the
+    // hardware there meant every 44.1 kHz stem was decoded, resampled and
+    // written to the source cache — a full second copy of a session on a
+    // device with little room. RemoteIO converts between its client format and
+    // the hardware on its own, as one continuous converter over the final mix,
+    // so it has none of the seek seams that ruled out resampling per source.
+    // This is what Oboe already does on Android.
+    const double engine_rate = is_supported_engine_rate(request.sample_rate)
+        ? static_cast<double>(request.sample_rate)
+        : negotiated_rate;
     const int channels = std::clamp(current_ios_output_channel_count(), 1, kMaxOutputChannels);
 
     AudioComponentDescription description{};
@@ -586,7 +604,7 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
     // layout the engine's render() already wants. mBytesPerFrame is per
     // channel precisely because the buffers are separate.
     AudioStreamBasicDescription format{};
-    format.mSampleRate       = negotiated_rate;
+    format.mSampleRate       = engine_rate;
     format.mFormatID         = kAudioFormatLinearPCM;
     format.mFormatFlags      = kAudioFormatFlagIsFloat
                              | kAudioFormatFlagIsPacked
@@ -610,7 +628,7 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
         return abort_with(osstatus_message("SetMaximumFramesPerSlice", status));
 
     impl_->adaptor = std::make_unique<IosCallbackAdaptor>(callback);
-    impl_->adaptor->set_sample_rate(negotiated_rate);
+    impl_->adaptor->set_sample_rate(engine_rate);
 
     AURenderCallbackStruct render_callback{};
     render_callback.inputProc = &remote_io_render_trampoline;
@@ -641,15 +659,18 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
 
     const auto route = current_ios_output_route();
     impl_->device_name = route.display_name;
-    impl_->sample_rate = static_cast<int>(std::lround(negotiated_rate));
+    impl_->sample_rate = static_cast<int>(std::lround(engine_rate));
+    // In engine frames: with a converter in the unit, the callback asks for
+    // the IO duration at the CLIENT rate (470-471 frames for a 512-frame
+    // hardware buffer at 44.1 over 48 kHz).
     impl_->buffer_size = std::max(
-        1, static_cast<int>(std::lround(session.IOBufferDuration * negotiated_rate)));
+        1, static_cast<int>(std::lround(session.IOBufferDuration * engine_rate)));
     // What the listener actually waits through: the frames already handed to
     // the hardware keep playing before anything new is heard. This is the
     // floor on how instant a jump can feel, and the engine compensates the UI
     // playhead with it.
     impl_->output_latency_samples =
-        static_cast<int>(std::lround(session.outputLatency * negotiated_rate));
+        static_cast<int>(std::lround(session.outputLatency * engine_rate));
     impl_->output_channel_count = channels;
     impl_->output_channel_names = route.channel_names;
     if (static_cast<int>(impl_->output_channel_names.size()) != channels) {
@@ -658,10 +679,10 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
         for (int i = 0; i < channels; ++i)
             impl_->output_channel_names.push_back("Out " + std::to_string(i + 1));
     }
-    // iOS resamples anything it is handed, and the session honours a preferred
-    // rate when the route can take it, so both are safe to advertise. The
-    // engine uses this to decide whether to align itself with a session's audio
-    // instead of decoding and resampling every file.
+    // Both are always honoured — natively when the route can take the
+    // preferred rate, through the unit's converter when it cannot (see
+    // engine_rate above) — so the engine can align itself with a session's
+    // audio instead of decoding and resampling every file.
     impl_->supported_sample_rates = {44100, 48000};
 
     // The hardware stream is about to go live: retire the pump first so the
@@ -683,13 +704,13 @@ Result<void> AudioDeviceManager::open_device(const DeviceOpenRequest& request,
 
     lt_debug_log("[LT_IOS_AUDIO] session %s\n",
                  describe_ios_playback_session().c_str());
-    lt_debug_log("[LT_IOS_AUDIO] opened name=\"%s\" backend=%s sr=%d buffer=%d "
-                 "(%.1f ms) output_latency=%d samples (%.1f ms) channels=%d\n",
+    lt_debug_log("[LT_IOS_AUDIO] opened name=\"%s\" backend=%s sr=%d hardware_sr=%.0f "
+                 "buffer=%d (%.1f ms) output_latency=%d samples (%.1f ms) channels=%d\n",
                  impl_->device_name.c_str(), kBackend, impl_->sample_rate,
-                 impl_->buffer_size,
-                 1000.0 * impl_->buffer_size / negotiated_rate,
+                 negotiated_rate, impl_->buffer_size,
+                 1000.0 * impl_->buffer_size / engine_rate,
                  impl_->output_latency_samples,
-                 1000.0 * impl_->output_latency_samples / negotiated_rate,
+                 1000.0 * impl_->output_latency_samples / engine_rate,
                  impl_->output_channel_count);
     return Result<void>::ok();
 }
