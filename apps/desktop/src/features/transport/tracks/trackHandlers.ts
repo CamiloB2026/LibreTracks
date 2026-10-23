@@ -110,9 +110,16 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
           }
 
           if (lastSnapshot) {
+            // refreshSongView below already pulls the new order: without this
+            // the revision effect fetched the whole song a second time.
+            optimisticallyAppliedRevisionsRef.current.add(lastSnapshot.projectRevision);
             applyPlaybackSnapshot(lastSnapshot);
           }
-          await refreshSongView();
+          // Reordering moves tracks, never clips: the waveform cache is still
+          // valid. Fetching it again was a multi-MB payload, and replacing
+          // the song wholesale re-rendered every row — with 138 tracks the
+          // drop took seconds to land.
+          await refreshSongView({ includeWaveforms: false });
           setStatus(
             t("transport.status.tracksReordered", {
               count: plan.moves.length,

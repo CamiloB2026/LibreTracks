@@ -117,6 +117,20 @@ describe("createTrackHandlers", () => {
     expect(moved).toEqual(["other", "dragged"]);
   });
 
+  // With 138 tracks the drop took seconds: it refetched every waveform and
+  // then the revision effect fetched the song again.
+  it("reordering skips the waveform payload and records the revision", async () => {
+    const { handlers, deps } = setup();
+    await handlers.handleTrackDrop("dragged", {
+      targetTrackId: "target",
+      mode: "before",
+    });
+    expect(deps.refreshSongView).toHaveBeenCalledWith({
+      includeWaveforms: false,
+    });
+    expect(deps.optimisticallyAppliedRevisionsRef.current.has(3)).toBe(true);
+  });
+
   it("create track is cancelled when the name prompt is empty", async () => {
     const { handlers, deps } = setup({ prompt: vi.fn(async () =>"   ") });
     await handlers.handleCreateTrack("audio", null);
