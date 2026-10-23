@@ -546,6 +546,29 @@ describe("SongAnalysisModal", () => {
     expect(keyChanges).toEqual([{ startSeconds: 160, key: "F" }]);
   });
 
+  it("applies the key changes of a song that already has its starting key", async () => {
+    // Eres Todopoderoso: already in D, so the key itself is unchanged, but the
+    // last chorus in E was missing. The key part must come ticked anyway.
+    const current = song();
+    useSongStore.setState({
+      song: {
+        ...current,
+        regions: current.regions.map((r) => (r.id === "b" ? { ...r, key: "D" } : r)),
+      },
+    });
+    const analysed = modulating();
+    analysed.key = { ...analysed.key!, currentKey: "D", analysis: { ...analysed.key!.analysis, key: "D" } };
+    analyzeSong.mockResolvedValue(analysed);
+    applySongAnalysis.mockResolvedValue({} as TransportSnapshot);
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+    await screen.findByLabelText(/transport\.songAnalysis\.keyAt.*1:00\.0/);
+    fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
+    expect(applySongAnalysis.mock.calls[0][2]).toBe("D");
+    expect(applySongAnalysis.mock.calls[0][4]).toEqual([{ startSeconds: 160, key: "E" }]);
+  });
+
   it("without the key changes, says where it modulates and proposes the longest key", async () => {
     analyzeSong.mockResolvedValue(modulating());
     applySongAnalysis.mockResolvedValue({} as TransportSnapshot);

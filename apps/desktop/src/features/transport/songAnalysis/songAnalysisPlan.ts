@@ -11,6 +11,7 @@ import type {
   MarkerKind,
   ProposedSignatureMarker,
   ProposedTempoMarker,
+  SongRegionSummary,
   SongView,
   TempoLevel,
   TempoProposal,
@@ -825,5 +826,30 @@ export function snapKeyChangesToSections<T extends { startSeconds: number }>(
       }
     }
     return nearest === null ? change : { ...change, startSeconds: nearest };
+  });
+}
+
+/**
+ * Whether the detected key stretches say something new about the song: a
+ * song already in D whose last chorus goes up to E has its key right, but
+ * not its change. Same keys in the same order, each change within
+ * `KEY_CHANGE_SNAP_SECONDS` of the one it already has, is nothing new.
+ * `sections` are seconds from the song start; the song's key changes are on
+ * the timeline.
+ */
+export function keyStretchesAreNew(
+  region: Pick<SongRegionSummary, "key" | "startSeconds" | "keyChanges"> | undefined,
+  sections: { startSeconds: number; key: string }[],
+): boolean {
+  if (sections.length < 2 || !region) return sections.length > 1;
+  const current = region.keyChanges ?? [];
+  if (region.key !== sections[0].key || current.length !== sections.length - 1) return true;
+  return sections.slice(1).some((section, index) => {
+    const change = current[index];
+    return (
+      change.key !== section.key ||
+      Math.abs(change.startSeconds - (region.startSeconds + section.startSeconds)) >
+        KEY_CHANGE_SNAP_SECONDS
+    );
   });
 }

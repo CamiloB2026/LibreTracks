@@ -15,6 +15,7 @@ import {
   placeGuideSections,
   musicTempoTrackIds,
   scaleTempoRows,
+  keyStretchesAreNew,
   snapKeyChangesToSections,
   parseBpm,
   parseSignature,
@@ -626,5 +627,29 @@ describe("snapKeyChangesToSections", () => {
     expect(
       snapKeyChangesToSections([{ startSeconds: 178, key: "E" }], [120, 183]),
     ).toEqual([{ startSeconds: 178, key: "E" }]);
+  });
+});
+
+describe("keyStretchesAreNew", () => {
+  const stretches = [
+    { startSeconds: 0, key: "D" },
+    { startSeconds: 178, key: "E" },
+  ];
+  const song = (keyChanges: { id: string; startSeconds: number; key: string }[]) => ({
+    key: "D",
+    startSeconds: 100,
+    keyChanges,
+  });
+
+  it("a song already in its key but without the change has something new", () => {
+    expect(keyStretchesAreNew(song([]), stretches)).toBe(true);
+  });
+
+  it("the same change already there (give or take a few seconds) is nothing new", () => {
+    expect(keyStretchesAreNew(song([{ id: "up", startSeconds: 276.4, key: "E" }]), stretches)).toBe(false);
+  });
+
+  it("a song that does not modulate never asks for key changes", () => {
+    expect(keyStretchesAreNew(song([]), [{ startSeconds: 0, key: "D" }])).toBe(false);
   });
 });

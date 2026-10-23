@@ -38,6 +38,7 @@ import {
   isUnrecognised,
   keyTrackOptions,
   markersForLabels,
+  keyStretchesAreNew,
   placeGuideSections,
   snapKeyChangesToSections,
   type GroupMarkers,
@@ -260,7 +261,14 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         tempo: proposalRows.some((row) => row.kind === "tempo"),
         // Without a click the meter is a guess: the user opts in.
         signature: !estimated && proposalRows.some((row) => row.kind === "signature"),
-        key: detectedKey !== null && detectedKey !== result.key?.currentKey,
+        // A song already in its key can still be missing its key changes.
+        key:
+          detectedKey !== null &&
+          (detectedKey !== result.key?.currentKey ||
+            keyStretchesAreNew(
+              song.regions.find((r) => r.id === regionId),
+              result.key?.analysis.sections ?? [],
+            )),
         keyChanges: true,
         sections: groups.length > 0,
       });
