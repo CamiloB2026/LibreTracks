@@ -23,6 +23,7 @@ fn session() -> DesktopSession {
         tempo_markers: vec![],
         time_signature_markers: vec![],
         regions: vec![SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "Song".into(),
             start_seconds: 0.0,

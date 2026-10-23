@@ -21,7 +21,9 @@ use tauri::State;
 use crate::audio::automation::{AutomationCue, MixScene};
 use crate::infra::error::DesktopError;
 use crate::models::{SongStructureResult, TransportSnapshot};
-use crate::state::{ClipMoveRequest, DesktopState, RulerMarkerPlacement, RulerMarkerRef};
+use crate::state::{
+    ClipMoveRequest, DesktopState, KeyChangeInput, RulerMarkerPlacement, RulerMarkerRef,
+};
 use libretracks_core::{Arrangement, MarkerCategory, MarkerKind, MidiClip, TrackKind};
 use serde::Deserialize;
 
@@ -1043,6 +1045,23 @@ pub fn update_song_region_key(
 
     session
         .update_song_region_key(&region_id, key, &state.audio)
+        .map_err(|error| error.to_string())
+}
+
+/// Replaces the song's key changes (modulations); the initial key stays.
+#[tauri::command(async)]
+pub fn set_song_region_key_changes(
+    region_id: String,
+    changes: Vec<KeyChangeInput>,
+    state: State<'_, DesktopState>,
+) -> Result<TransportSnapshot, String> {
+    let mut session = state
+        .session
+        .lock()
+        .map_err(|_| DesktopError::StatePoisoned.to_string())?;
+
+    session
+        .set_song_region_key_changes(&region_id, changes, &state.audio)
         .map_err(|error| error.to_string())
 }
 

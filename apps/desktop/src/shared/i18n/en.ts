@@ -752,6 +752,12 @@ const en = {
       applyKey: "Apply key",
       noKey: "No clear key found in these tracks.",
       keyUnchanged: "The song already has this key.",
+      applyKeyChanges_one: "Apply the key change ({{count}})",
+      applyKeyChanges_other: "Apply the key changes ({{count}})",
+      keyStart: "Start",
+      keyAt: "Key from {{time}}",
+      keyChangesHint:
+        "Each stretch keeps its key and the change shows on the song band. The times are approximate: move them on the timeline if needed.",
       keyModulates:
         "The song changes key: {{sections}}. The one that lasts longest is proposed; the stored key is the song's, not the last chorus's.",
       keyDoubt: "Close call: it could also be {{key}}.",
@@ -953,6 +959,19 @@ const en = {
         "Carries no audio: references your files by path. The smallest, but it only opens on this machine, where the files still are.",
       cancel: "Cancel",
       confirm: "Export",
+    },
+    keyChanges: {
+      addAtCursor: "Key change at cursor",
+      addAtCursorTitle: "Key from {{time}}",
+      menuTitle: "Key change · {{time}}",
+      remove: "Remove key change",
+      added: "Change to {{key}} at {{time}}.",
+      updated: "The change at {{time}} is now to {{key}}.",
+      removed: "Key change at {{time}} removed.",
+      moved: "Key change moved to {{time}}.",
+      upcoming: "→ {{key}}",
+      upcomingTitle: "Changes to {{key}} at {{time}}",
+      summaryTitle: "Keys of the song, in order",
     },
     menu: {
       tracksMenuTitle: "Tracks",

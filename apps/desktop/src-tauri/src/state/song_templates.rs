@@ -1022,6 +1022,7 @@ mod tests {
 
     fn region(id: &str, name: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: id.into(),
             name: name.into(),
             start_seconds: start,

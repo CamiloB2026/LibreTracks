@@ -4,10 +4,13 @@
 //! loaded `Song` and persists it; the pure geometry lives in `timeline_math`.
 
 use libretracks_core::{
-    effective_bpm_at, source_seconds_at_view, Marker, MarkerCategory, MarkerKind, SongRegion,
+    effective_bpm_at, source_seconds_at_view, KeyChange, KeyMap, Marker, MarkerCategory,
+    MarkerKind, Song, SongRegion,
     TempoMarker, TimeSignatureMarker, MAX_COMPACT_COLUMN_WIDTH_REM, MAX_TRANSPOSE_SEMITONES,
     MIN_COMPACT_COLUMN_WIDTH_REM, MIN_TRANSPOSE_SEMITONES,
 };
+
+use serde::Deserialize;
 
 use crate::audio::engine::{jump_debug_logging_enabled, AudioController};
 use crate::infra::error::DesktopError;
@@ -23,6 +26,52 @@ use super::{
     ui_locale, validate_time_signature, AudioChangeImpact, DesktopSession, TransposeHistoryTarget,
     UpdatePhase,
 };
+
+/// Sustituye los cambios de nota de la región por `changes` (segundos de vista
+/// del timeline de `song`), normalizados a la nota inicial que ya tiene.
+pub(super) fn set_region_key_changes(
+    song: &mut Song,
+    region_id: &str,
+    changes: Vec<KeyChangeInput>,
+) -> Result<(), DesktopError> {
+    let start = song
+        .regions
+        .iter()
+        .find(|region| region.id == region_id)
+        .map(|region| region.start_seconds)
+        .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
+    let changes: Vec<KeyChange> = changes
+        .into_iter()
+        .enumerate()
+        .map(|(index, change)| KeyChange {
+            id: change
+                .id
+                .filter(|id| !id.trim().is_empty())
+                .unwrap_or_else(|| format!("key_change_{}_{index}", timestamp_suffix())),
+            // View-time → source-time conversion, see create_section_marker.
+            offset_seconds: source_seconds_at_view(song, change.start_seconds) - start,
+            key: change.key.trim().to_string(),
+        })
+        .collect();
+    if let Some(region) = song.regions.iter_mut().find(|region| region.id == region_id) {
+        region.set_key_map(KeyMap {
+            key: region.key.clone(),
+            changes,
+        });
+    }
+    Ok(())
+}
+
+/// Un cambio de nota tal como lo manda la UI: posición en segundos de vista
+/// del timeline; sin `id` es uno nuevo.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyChangeInput {
+    #[serde(default)]
+    pub id: Option<String>,
+    pub start_seconds: f64,
+    pub key: String,
+}
 
 impl DesktopSession {
     pub fn create_section_marker(
@@ -193,6 +242,7 @@ impl DesktopSession {
         let region_index = song.regions.len();
         let region_name = default_region_name(ui_locale(audio).as_deref(), region_index);
         let region = SongRegion {
+            key_changes: Vec::new(),
             id: format!("region_{}_{}", timestamp_suffix(), region_index),
             name: region_name,
             start_seconds,
@@ -291,6 +341,7 @@ impl DesktopSession {
             .unwrap_or_else(|| default_region_name(ui_locale(audio).as_deref(), region_index));
 
         let region = SongRegion {
+            key_changes: Vec::new(),
             id: format!("region_{}_{}", timestamp_suffix(), region_index),
             name: region_name,
             start_seconds,
@@ -379,7 +430,7 @@ impl DesktopSession {
         let end_seconds = source_seconds_at_view(&song, end_seconds);
         let (start_seconds, end_seconds) =
             sanitize_region_bounds(&song, start_seconds, end_seconds)?;
-        let updated_region = SongRegion {
+        let mut updated_region = SongRegion {
             id: existing_region.id.clone(),
             name: trimmed_name.to_string(),
             start_seconds,
@@ -393,7 +444,11 @@ impl DesktopSession {
             structure: existing_region.structure.clone(),
             chart: existing_region.chart.clone(),
             voice_guide_count_style: existing_region.voice_guide_count_style,
+            key_changes: existing_region.key_changes.clone(),
         };
+        // Los cambios de nota son relativos al inicio: al redimensionar se
+        // quedan donde suenan, como el resto del contenido.
+        updated_region.rebase_key_changes(existing_region.start_seconds);
 
         // Resizing a region NEVER moves its contents — the region is
         // just the named span that contains the clips and markers, not
@@ -646,6 +701,8 @@ impl DesktopSession {
             structure: existing_region.structure.clone(),
             chart: existing_region.chart.clone(),
             voice_guide_count_style: existing_region.voice_guide_count_style,
+            // Relativos al inicio: viajan con la canción sin tocarlos.
+            key_changes: existing_region.key_changes.clone(),
         };
 
         // Same rebuild flow as update_song_region: drop the old copy
@@ -1346,13 +1403,15 @@ impl DesktopSession {
         // its song — exactly what split_clips does at the cursor.
         split_clips_crossing_point(&mut song, split_seconds);
 
+        let right_keys = region.key_map_between(split_seconds, region.end_seconds);
         let right = SongRegion {
             id: format!("region_{}_{}", timestamp_suffix(), song.regions.len()),
             name: format!("{} (2)", region.name),
             start_seconds: split_seconds,
             end_seconds: region.end_seconds,
             transpose_semitones: region.transpose_semitones,
-            key: region.key.clone(),
+            key: right_keys.key,
+            key_changes: right_keys.changes,
             warp_enabled: region.warp_enabled,
             warp_source_bpm: region.warp_source_bpm,
             master: region.master.clone(),
@@ -1369,6 +1428,7 @@ impl DesktopSession {
         // Left half: shrink the original region's end to the cut.
         song.regions[region_index].end_seconds = split_seconds;
         song.regions[region_index].structure = None;
+        song.regions[region_index].rebase_key_changes(region.start_seconds);
         song.regions.push(right);
         sort_song_regions(&mut song.regions);
 
@@ -1529,9 +1589,36 @@ impl DesktopSession {
             .iter_mut()
             .find(|region| region.id == region_id)
             .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
-        region.key = key
+        let key = key
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty());
+        // Normalizar: un primer cambio a la nota nueva ya no cambia nada.
+        region.set_key_map(KeyMap {
+            key,
+            changes: region.key_changes.clone(),
+        });
+
+        self.persist_song_update(song, audio, AudioChangeImpact::TransportOnly, true)?;
+
+        Ok(self.snapshot())
+    }
+
+    /// Sustituye los cambios de nota de la canción (la nota inicial no se
+    /// toca). Posiciones en segundos de vista del timeline; un cambio sin id
+    /// es nuevo. Los que caen fuera de la canción o repiten la nota que ya
+    /// regía se descartan. Un solo paso de deshacer.
+    pub fn set_song_region_key_changes(
+        &mut self,
+        region_id: &str,
+        changes: Vec<KeyChangeInput>,
+        audio: &AudioController,
+    ) -> Result<TransportSnapshot, DesktopError> {
+        let mut song = self
+            .engine
+            .song()
+            .cloned()
+            .ok_or(DesktopError::NoSongLoaded)?;
+        set_region_key_changes(&mut song, region_id, changes)?;
 
         self.persist_song_update(song, audio, AudioChangeImpact::TransportOnly, true)?;
 

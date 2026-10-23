@@ -1,4 +1,5 @@
 pub mod automation;
+pub mod key_changes;
 pub mod midi_port_names;
 pub mod midi_schedule;
 pub mod midi_wire;
@@ -18,7 +19,7 @@ pub use automation::{
 pub use model::{
     default_audio_to, implicit_start_section_id, Arrangement, ArrangementBlock, OriginalSection,
     OriginalSnapshot, SongStructure, SongChart, ChartLink, chart_link_marker_id, parse_audio_output_route, Clip, Marker, MarkerCategory, MarkerKind, MidiClip,
-    MidiEvent, MidiEventKind, Project, Song, SongMaster, SongRegion, TempoMarker, TempoMetadata,
+    KeyChange, KeyMap, MidiEvent, MidiEventKind, Project, Song, SongMaster, SongRegion, TempoMarker, TempoMetadata,
     is_video_file_path, TempoSource, TimeSignatureMarker, Track, TrackKind, VideoAssetInfo, VideoClip,
     VideoFit, VoiceGuideCountStyle, MAX_MIDI_CHANNEL, MAX_MIDI_DATA_VALUE, MIN_MIDI_CHANNEL,
     SLOW_SEEK_KEYFRAME_INTERVAL_SECONDS, VIDEO_FILE_EXTENSIONS,
@@ -53,6 +54,7 @@ mod tests {
             tempo_markers: vec![],
             time_signature_markers: vec![],
             regions: vec![SongRegion {
+                key_changes: Vec::new(),
                 id: "region_intro".into(),
                 name: "Cancion".into(),
                 start_seconds: 0.0,
@@ -150,6 +152,7 @@ mod tests {
     fn allows_regions_beyond_song_duration() {
         let mut song = valid_song();
         song.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "region_outro".into(),
             name: "Outro".into(),
             start_seconds: 240.0,
@@ -207,6 +210,7 @@ mod tests {
         // so the boundary is real, then make the clip extend across it.
         let mut song = valid_song();
         song.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "region_outro".into(),
             name: "Outro".into(),
             start_seconds: 240.0,
@@ -237,6 +241,7 @@ mod tests {
         let mut song = valid_song();
         song.regions[0].end_seconds = 10.0;
         song.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "region_outro".into(),
             name: "Outro".into(),
             start_seconds: 10.5,

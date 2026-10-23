@@ -143,3 +143,56 @@ describe("drawRulerRegion warp badge", () => {
     expect(texts).not.toContain("warped");
   });
 });
+
+describe("drawRulerRegion key changes", () => {
+  function spyWithLines() {
+    const spy = createContextSpy();
+    const rects: number[][] = [];
+    const lines: number[] = [];
+    Object.assign(spy.ctx, {
+      moveTo: vi.fn((x: number) => lines.push(x)),
+      lineTo: vi.fn(),
+      rect: vi.fn((...args: number[]) => rects.push(args)),
+    });
+    return { ...spy, rects, lines };
+  }
+
+  const modulating = (overrides: Partial<SongRegionSummary> = {}) =>
+    region({
+      startSeconds: 0,
+      endSeconds: 60,
+      key: "D",
+      keyChanges: [{ id: "up", startSeconds: 4, key: "E" }],
+      ...overrides,
+    });
+
+  it("marks the change at its exact spot with the new key next to it", () => {
+    const { ctx, texts, lines } = spyWithLines();
+    drawRulerRegion(ctx, modulating(), WIDTH, CAMERA_X, PPS, false);
+    // 4 s at 100 px/s: the notch sits on x = 400.
+    expect(lines).toContain(400.5);
+    expect(texts).toEqual(["Coro", "D", "E"]);
+  });
+
+  it("cuts the pinned name at the next change so they never overlap", () => {
+    const { ctx, rects } = spyWithLines();
+    drawRulerRegion(ctx, modulating(), WIDTH, CAMERA_X, PPS, false);
+    const clip = rects[0];
+    expect(clip[0] + clip[2]).toBeLessThanOrEqual(400 - 3);
+  });
+
+  it("follows the key at the left edge once the change has scrolled past", () => {
+    // Camera 1000 px in: the view starts at 10 s, after the change at 4 s.
+    const { ctx, texts } = spyWithLines();
+    drawRulerRegion(ctx, modulating(), WIDTH, 1000, PPS, false);
+    expect(texts).toEqual(["Coro", "E"]);
+  });
+
+  it("drops the new key's pill when it does not fit, keeping the notch", () => {
+    const { ctx, texts, lines } = spyWithLines();
+    // The song ends 5 px after the change: no room for the pill.
+    drawRulerRegion(ctx, modulating({ endSeconds: 4.05 }), WIDTH, CAMERA_X, PPS, false);
+    expect(lines).toContain(400.5);
+    expect(texts).not.toContain("E");
+  });
+});

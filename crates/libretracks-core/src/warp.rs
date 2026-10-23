@@ -247,6 +247,7 @@ mod tests {
 
     fn region(enabled: bool, source_bpm: Option<f64>) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: "r".into(),
             name: "r".into(),
             start_seconds: 0.0,
@@ -397,6 +398,7 @@ mod tests {
         );
         // Region starting at 5.0 inherits 140 BPM from the marker.
         let r = SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 5.0,
@@ -423,6 +425,7 @@ mod tests {
     fn warp_timeline_seconds_shortens_positions_after_faster_region() {
         let mut s = song(120.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 10.0,
@@ -450,6 +453,7 @@ mod tests {
     ) -> Song {
         let mut s = song(120.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 0.0,
@@ -519,6 +523,7 @@ mod tests {
     fn source_seconds_at_view_is_inverse_of_warp_for_warp_region() {
         let mut s = song(120.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 10.0,
@@ -550,6 +555,7 @@ mod tests {
     fn source_seconds_at_view_is_inverse_of_warp_for_varispeed_region() {
         let mut s = song(120.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 10.0,
@@ -579,6 +585,7 @@ mod tests {
         // (5s instead of 10s). A marker at 30s should slide left by 5s.
         let mut s = song(120.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 10.0,
@@ -602,6 +609,7 @@ mod tests {
     fn warp_timeline_duration_expands_slower_region_span() {
         let mut s = song(90.0, vec![]);
         s.regions.push(SongRegion {
+            key_changes: Vec::new(),
             id: "r1".into(),
             name: "r1".into(),
             start_seconds: 0.0,

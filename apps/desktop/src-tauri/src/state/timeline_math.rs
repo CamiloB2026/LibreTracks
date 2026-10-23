@@ -687,6 +687,7 @@ pub(super) fn replace_song_region_range(song: &mut Song, replacement: SongRegion
 
         if region.start_seconds < replacement.start_seconds {
             fragment_index += 1;
+            let keys = region.key_map_between(region.start_seconds, replacement.start_seconds);
             next_regions.push(SongRegion {
                 id: format!(
                     "{}_fragment_{}_{}",
@@ -698,7 +699,8 @@ pub(super) fn replace_song_region_range(song: &mut Song, replacement: SongRegion
                 start_seconds: region.start_seconds,
                 end_seconds: replacement.start_seconds,
                 transpose_semitones: region.transpose_semitones,
-                key: region.key.clone(),
+                key: keys.key,
+                key_changes: keys.changes,
                 warp_enabled: region.warp_enabled,
                 warp_source_bpm: region.warp_source_bpm,
                 master: region.master.clone(),
@@ -711,6 +713,7 @@ pub(super) fn replace_song_region_range(song: &mut Song, replacement: SongRegion
 
         if region.end_seconds > replacement.end_seconds {
             fragment_index += 1;
+            let keys = region.key_map_between(replacement.end_seconds, region.end_seconds);
             next_regions.push(SongRegion {
                 id: format!(
                     "{}_fragment_{}_{}",
@@ -722,7 +725,8 @@ pub(super) fn replace_song_region_range(song: &mut Song, replacement: SongRegion
                 start_seconds: replacement.end_seconds,
                 end_seconds: region.end_seconds,
                 transpose_semitones: region.transpose_semitones,
-                key: region.key.clone(),
+                key: keys.key,
+                key_changes: keys.changes,
                 warp_enabled: region.warp_enabled,
                 warp_source_bpm: region.warp_source_bpm,
                 master: region.master.clone(),
@@ -875,6 +879,7 @@ mod snap_regions_after_to_downbeats_tests {
 
     fn region(id: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: id.into(),
             name: id.into(),
             start_seconds: start,

@@ -7,6 +7,7 @@ import type {
   AnalyzeSongResult,
   ProposedSignatureMarker,
   ProposedTempoMarker,
+  KeyChangeInput,
   SectionChange,
   TempoReading,
 } from "@libretracks/shared/desktopApi";
@@ -29,6 +30,7 @@ const applySongAnalysis =
       tempo: TempoChange | null,
       key: string | null,
       sections?: SectionChange[] | null,
+      keyChanges?: KeyChangeInput[] | null,
     ) => Promise<TransportSnapshot>
   >();
 
@@ -55,7 +57,8 @@ vi.mock("@libretracks/shared/desktopApi", async (importOriginal) => ({
     tempo: TempoChange | null,
     key: string | null,
     sections: SectionChange[] | null,
-  ) => applySongAnalysis(regionId, tempo, key, sections),
+    keyChanges: KeyChangeInput[] | null,
+  ) => applySongAnalysis(regionId, tempo, key, sections, keyChanges),
   seekTransport: async () => ({}) as TransportSnapshot,
   speechModelStatus: async () => ({ supported: true, downloaded: false, sizeBytes: 59_707_625 }),
   downloadSpeechModel: () => downloadSpeechModel(),
@@ -267,6 +270,7 @@ describe("SongAnalysisModal", () => {
       },
       "Bm",
       null,
+      null,
     );
     expect(onApplied).toHaveBeenCalledWith(snapshot);
     await screen.findByText("transport.songAnalysis.applied");
@@ -284,7 +288,7 @@ describe("SongAnalysisModal", () => {
 
     await screen.findByLabelText("transport.songAnalysis.key");
     fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
-    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledWith("b", null, "D", null));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledWith("b", null, "D", null, null));
   });
 
   it("leaves the key alone when it is unticked", async () => {
@@ -502,34 +506,60 @@ describe("SongAnalysisModal", () => {
     ).toBe(true);
   });
 
-  it("says where the song modulates and proposes the key that lasts longest", async () => {
-    analyzeSong.mockResolvedValue(
-      result({
-        key: {
-          analysis: {
-            key: "D",
-            confidence: 0.12,
-            alternative: null,
-            relativeDoubt: false,
-            tuningCents: 0,
-            candidates: [],
-            sections: [
-              { startSeconds: 0, key: "D" },
-              { startSeconds: 180, key: "E" },
-            ],
-          },
-          currentKey: "A",
-          transposeSemitones: 0,
+  const modulating = () =>
+    result({
+      tempo: null,
+      key: {
+        analysis: {
+          key: "E",
+          confidence: 0.12,
+          alternative: null,
+          relativeDoubt: false,
+          tuningCents: 0,
+          candidates: [],
+          sections: [
+            { startSeconds: 0, key: "D" },
+            { startSeconds: 60, key: "E" },
+          ],
         },
-      }),
-    );
+        currentKey: "A",
+        transposeSemitones: 0,
+      },
+    });
+
+  it("applies each key stretch of a song that modulates as its key changes", async () => {
+    analyzeSong.mockResolvedValue(modulating());
+    applySongAnalysis.mockResolvedValue({} as TransportSnapshot);
     render(<SongAnalysisModal onApplied={() => {}} />);
     await analyzeAndReview();
-    // 180 s from the song start is 3:00.0, whatever the song's position.
-    await screen.findByText(/transport\.songAnalysis\.keyModulates.*D · 0:00\.0 → E · 3:00\.0/);
+    // One select per stretch; the first is the key the song starts in.
+    const later = (await screen.findByLabelText(
+      /transport\.songAnalysis\.keyAt.*1:00\.0/,
+    )) as HTMLSelectElement;
+    expect(later.value).toBe("E");
+    fireEvent.change(later, { target: { value: "F" } });
+    fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
+    const [, , key, , keyChanges] = applySongAnalysis.mock.calls[0];
+    expect(key).toBe("D");
+    // 60 s from the start of song "b", which starts at 100 s on the timeline.
+    expect(keyChanges).toEqual([{ startSeconds: 160, key: "F" }]);
+  });
+
+  it("without the key changes, says where it modulates and proposes the longest key", async () => {
+    analyzeSong.mockResolvedValue(modulating());
+    applySongAnalysis.mockResolvedValue({} as TransportSnapshot);
+    render(<SongAnalysisModal onApplied={() => {}} />);
+    await analyzeAndReview();
+    fireEvent.click(await screen.findByText(/transport\.songAnalysis\.applyKeyChanges/));
+    await screen.findByText(/transport\.songAnalysis\.keyModulates.*D · 0:00\.0 → E · 1:00\.0/);
     expect(
       (screen.getByLabelText("transport.songAnalysis.key") as HTMLSelectElement).value,
-    ).toBe("D");
+    ).toBe("E");
+    fireEvent.click(screen.getByText("transport.songAnalysis.apply"));
+    await waitFor(() => expect(applySongAnalysis).toHaveBeenCalledTimes(1));
+    expect(applySongAnalysis.mock.calls[0][2]).toBe("E");
+    expect(applySongAnalysis.mock.calls[0][4]).toBeNull();
   });
 
   it("offers the relative key when the call is close", async () => {

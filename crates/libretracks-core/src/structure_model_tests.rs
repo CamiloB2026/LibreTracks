@@ -21,6 +21,7 @@ fn marker(id: &str, start: f64, kind: MarkerKind) -> Marker {
 fn full_structure() -> SongStructure {
     SongStructure {
         original: OriginalSnapshot {
+            keys: None,
             origin_seconds: 0.0,
             duration_seconds: 16.0,
             base_bpm: 120.0,
@@ -129,6 +130,7 @@ fn full_structure() -> SongStructure {
 
 fn region_with(structure: Option<SongStructure>) -> SongRegion {
     SongRegion {
+        key_changes: Vec::new(),
         id: "r1".into(),
         name: "Canción".into(),
         start_seconds: 10.0,

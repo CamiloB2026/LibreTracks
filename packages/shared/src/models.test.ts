@@ -19,6 +19,10 @@ import {
   DEFAULT_VIDEO_OUTPUT_SETTINGS,
   parseSongKey,
   regionEffectiveKey,
+  regionEffectiveKeyAt,
+  regionKeySequence,
+  regionKeySummary,
+  regionNextKeyChange,
   regionPadKey,
   transposeKey,
   type AppSettings,
@@ -767,5 +771,55 @@ describe("markerCategory", () => {
     expect(markerCategory({ kind: "build", categoryOverride: null })).toBe(
       "cue",
     );
+  });
+});
+
+describe("key changes", () => {
+  const modulating = () =>
+    makeRegion({
+      startSeconds: 100,
+      endSeconds: 400,
+      key: "D",
+      transposeSemitones: 0,
+      keyChanges: [
+        { id: "up", startSeconds: 280, key: "E" },
+        { id: "back", startSeconds: 350, key: "D" },
+      ],
+    });
+
+  it("lists the starting key and each change in order", () => {
+    expect(regionKeySequence(modulating())).toEqual([
+      { startSeconds: 100, key: "D" },
+      { startSeconds: 280, key: "E" },
+      { startSeconds: 350, key: "D" },
+    ]);
+    expect(regionKeySummary(modulating())).toBe("D → E → D");
+  });
+
+  it("reads the key sounding at a position, the starting one before the song", () => {
+    const region = modulating();
+    expect(regionEffectiveKeyAt(region, 50)).toBe("D");
+    expect(regionEffectiveKeyAt(region, 279.9)).toBe("D");
+    expect(regionEffectiveKeyAt(region, 280)).toBe("E");
+    expect(regionEffectiveKeyAt(region, 360)).toBe("D");
+  });
+
+  it("transposes every change with the song", () => {
+    const region = { ...modulating(), transposeSemitones: 2 };
+    expect(regionKeySummary(region)).toBe("E → F# → E");
+    expect(regionEffectiveKeyAt(region, 300)).toBe("F#");
+  });
+
+  it("finds the next change strictly after a position", () => {
+    expect(regionNextKeyChange(modulating(), 280)).toEqual({ startSeconds: 350, key: "D" });
+    expect(regionNextKeyChange(modulating(), 360)).toBeNull();
+  });
+
+  it("is just the key for a song that never modulates (or a host without the field)", () => {
+    const region = makeRegion({ key: "Am" });
+    expect(regionKeySummary(region)).toBe("Am");
+    expect(regionEffectiveKeyAt(region, 5)).toBe("Am");
+    expect(regionNextKeyChange(region, 0)).toBeNull();
+    expect(regionKeySummary(makeRegion({ key: null }))).toBeNull();
   });
 });

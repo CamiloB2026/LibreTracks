@@ -73,6 +73,8 @@ import {
   LANE_REGIONS,
   LANE_SECTIONS,
 } from "../Renderer/drawBackground";
+import { KeyChangeHotspots } from "../keyChanges/KeyChangeHotspots";
+import type { KeyChangeCallbacks } from "../keyChanges/keyChangeMenus";
 import {
   BASE_PIXELS_PER_SECOND,
   getElementScaleX,
@@ -203,6 +205,8 @@ type TimelineCanvasPaneProps = {
     event: ReactMouseEvent<HTMLButtonElement>,
     regionId: string,
   ) => void;
+  /** Tocar o arrastrar las muescas de cambio de nota (keyChanges/). */
+  keyChangeCallbacks?: KeyChangeCallbacks;
   onAutomationCueContextMenu: (
     event: ReactMouseEvent<HTMLButtonElement>,
     cueId: string,
@@ -382,6 +386,7 @@ export function TimelineCanvasPane({
   onRulerMarkersContextMenu,
   onRulerMarkersMoveCommit,
   onRegionContextMenu,
+  keyChangeCallbacks,
   onAutomationCueContextMenu,
   onAutomationCueEdit,
   onAutomationLaneContextMenu,
@@ -1003,6 +1008,15 @@ export function TimelineCanvasPane({
               onTimeSignatureMarkerContextMenu={onTimeSignatureMarkerContextMenu}
               onRulerMarkersContextMenu={onRulerMarkersContextMenu}
             />
+            {keyChangeCallbacks ? (
+              <KeyChangeHotspots
+                song={song}
+                pixelsPerSecond={pixelsPerSecond}
+                livePixelsPerSecondRef={livePixelsPerSecondRef}
+                snapEnabled={snapEnabled}
+                callbacks={keyChangeCallbacks}
+              />
+            ) : null}
 
             {/* Snap guide showing where the dragged marker will land. Lives
                 INSIDE the ruler canvas so it inherits the same

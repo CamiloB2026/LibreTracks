@@ -412,7 +412,7 @@ export function TimelineRulerCanvas({
       regions
         .map(
           (region) =>
-            `${region.id}:${region.name}:${region.startSeconds}:${region.endSeconds}:${region.warpEnabled ? 1 : 0}:${region.warpSourceBpm ?? 0}:${region.transposeSemitones}:${region.key ?? ""}`,
+            `${region.id}:${region.name}:${region.startSeconds}:${region.endSeconds}:${region.warpEnabled ? 1 : 0}:${region.warpSourceBpm ?? 0}:${region.transposeSemitones}:${region.key ?? ""}:${(region.keyChanges ?? []).map((change) => `${change.startSeconds}=${change.key}`).join(",")}`,
         )
         .join("|"),
     [regions],

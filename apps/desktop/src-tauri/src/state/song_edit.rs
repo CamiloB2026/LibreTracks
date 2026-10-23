@@ -287,6 +287,7 @@ pub(super) fn ensure_region_covers_clip_for_file(
     }
     let region_index = song.regions.len();
     song.regions.push(SongRegion {
+        key_changes: Vec::new(),
         id: format!("region_{}_{}", timestamp_suffix(), region_index),
         name: default_region_name(locale, region_index),
         start_seconds: clip_start,
@@ -429,6 +430,7 @@ mod region_message_tests {
 
     fn region(name: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: format!("region_{name}"),
             name: name.to_string(),
             start_seconds: start,

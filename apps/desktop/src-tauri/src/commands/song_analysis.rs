@@ -832,13 +832,15 @@ pub struct TempoChange {
 }
 
 /// Apply what the user ticked in the review, as ONE undo step: the tempo map
-/// (when `tempo` is given), the key (when `key` is given) and the section
-/// markers (when `sections` is given: they replace the song's own).
+/// (when `tempo` is given), the key (when `key` is given), the key changes
+/// (when `key_changes` is given, in view seconds) and the section markers
+/// (when `sections` is given: they replace the song's own).
 #[tauri::command(async)]
 pub fn apply_song_analysis(
     region_id: String,
     tempo: Option<TempoChange>,
     key: Option<String>,
+    key_changes: Option<Vec<crate::state::KeyChangeInput>>,
     sections: Option<Vec<SectionChange>>,
     state: State<'_, DesktopState>,
 ) -> Result<TransportSnapshot, String> {
@@ -864,7 +866,14 @@ pub fn apply_song_analysis(
             .collect::<Vec<_>>()
     });
     session
-        .apply_song_analysis(&region_id, tempo, key, sections.as_deref(), &state.audio)
+        .apply_song_analysis(
+            &region_id,
+            tempo,
+            key,
+            key_changes,
+            sections.as_deref(),
+            &state.audio,
+        )
         .map_err(|error| error.to_string())
 }
 
@@ -875,6 +884,7 @@ mod tests {
 
     fn region(id: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: id.into(),
             name: id.into(),
             start_seconds: start,

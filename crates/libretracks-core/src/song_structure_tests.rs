@@ -75,6 +75,7 @@ fn track(id: &str, kind: TrackKind) -> Track {
 
 fn region(id: &str, start: f64, end: f64) -> SongRegion {
     SongRegion {
+        key_changes: Vec::new(),
         id: id.into(),
         name: id.into(),
         start_seconds: start,
@@ -265,6 +266,7 @@ fn as_snapshot_lists(built: &BuiltRegion) -> OriginalSnapshot {
         time_signature_markers: built.time_signature_markers.clone(),
         section_markers: built.section_markers.clone(),
         automation_cues: built.automation_cues.clone(),
+        keys: built.keys.clone(),
         ..OriginalSnapshot::default()
     }
 }
@@ -1153,4 +1155,58 @@ fn bars_and_governing_values_read_the_snapshot_relative_to_its_origin() {
     assert_eq!(beats_per_bar("7/8"), 7.0);
     assert_eq!(beats_per_bar("raro"), 4.0);
     assert!(section_marker(&fixture.snapshot, "coro").is_some());
+}
+
+// ── Cambios de nota ────────────────────────────────────────────────────────
+
+fn modulating_fixture() -> Fixture {
+    let mut song = base_song();
+    let region = song.regions.iter_mut().find(|r| r.id == "r").unwrap();
+    region.key = Some("D".into());
+    region.key_changes = vec![KeyChange {
+        id: "up".into(),
+        offset_seconds: 24.0,
+        key: "E".into(),
+    }];
+    capture(&song, &base_cues())
+}
+
+fn keys_of(built: &BuiltRegion) -> (Option<String>, Vec<(f64, String)>) {
+    let keys = built.keys.clone().expect("keys");
+    (
+        keys.key,
+        keys.changes
+            .into_iter()
+            .map(|change| (change.offset_seconds, change.key))
+            .collect(),
+    )
+}
+
+#[test]
+fn each_section_keeps_the_key_it_had_in_the_original() {
+    let fixture = modulating_fixture();
+    // Intro(8) Verso(16) Coro(16) Verso(16) Final(8): el verso que vuelve tras
+    // el coro baja a Re, y el final sigue en Mi como en el original.
+    let built = build(&fixture, &["intro", "verso", "coro", "verso", "final"]);
+    assert_eq!(
+        keys_of(&built),
+        (
+            Some("D".into()),
+            vec![(24.0, "E".into()), (40.0, "D".into()), (56.0, "E".into())]
+        )
+    );
+}
+
+#[test]
+fn an_arrangement_that_opens_with_the_modulated_section_starts_in_its_key() {
+    let fixture = modulating_fixture();
+    let built = build(&fixture, &["coro", "intro"]);
+    assert_eq!(keys_of(&built), (Some("E".into()), vec![(16.0, "D".into())]));
+}
+
+#[test]
+fn an_original_captured_before_key_changes_leaves_the_key_alone() {
+    let mut fixture = modulating_fixture();
+    fixture.snapshot.keys = None;
+    assert_eq!(build(&fixture, &["coro", "intro"]).keys, None);
 }

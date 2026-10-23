@@ -18,7 +18,13 @@ import {
   type SongView,
   type TransportSnapshot,
 } from "../desktopApi";
-import { CUE_KINDS, MARKER_KINDS, markerKindLabel, markerKindVariants } from "../markerKinds";
+import {
+  CUE_KINDS,
+  MARKER_KINDS,
+  markerCategory,
+  markerKindLabel,
+  markerKindVariants,
+} from "../markerKinds";
 import { useDismissOnBack } from "../mobile/backNavigation";
 import { useSongStore } from "../songStore";
 import { useTransportStore } from "../store";
@@ -33,6 +39,7 @@ import {
   keyTrackOptions,
   markersForLabels,
   placeGuideSections,
+  snapKeyChangesToSections,
   type GroupMarkers,
   musicTempoTrackIds,
   offersTempoDetail,
@@ -169,9 +176,13 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
     tempo: true,
     signature: true,
     key: true,
+    keyChanges: true,
     sections: true,
   });
   const [keyChoice, setKeyChoice] = useState<string>("");
+  /** The key stretches found (the song modulates when there are 2+), editable
+   * one by one; the first is the key the song starts in. */
+  const [keySections, setKeySections] = useState<KeySection[]>([]);
   const [applying, setApplying] = useState(false);
   const unlistenRef = useRef<(() => void) | null>(null);
 
@@ -242,6 +253,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         result.tempo?.analysis.warnings.some((w) => w.kind === "estimatedWithoutClick") ?? false;
       setRows(proposalRows);
       setKeyChoice(detectedKey ?? "");
+      setKeySections(result.key?.analysis.sections ?? []);
       const groups = result.guide?.analysis.groups ?? [];
       setGroupMarkers(groups.map((group) => markersForLabels(group.labels, group.countedIn)));
       setInclude({
@@ -249,6 +261,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
         // Without a click the meter is a guess: the user opts in.
         signature: !estimated && proposalRows.some((row) => row.kind === "signature"),
         key: detectedKey !== null && detectedKey !== result.key?.currentKey,
+        keyChanges: true,
         sections: groups.length > 0,
       });
       setPhase({ kind: "review", result });
@@ -274,6 +287,10 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
   );
   const appliesKey =
     phase.kind === "review" && phase.result.key !== null && include.key && keyChoice !== "";
+  // A song that modulates: its first stretch is the starting key, the rest are
+  // key changes at the song's own times.
+  const appliesKeyChanges = appliesKey && include.keyChanges && keySections.length > 1;
+  const regionStart = song.regions.find((r) => r.id === regionId)?.startSeconds ?? 0;
   // Where the guide's markers land, on the grid the tempo review writes.
   const sections = useMemo(() => {
     if (phase.kind !== "review" || !phase.result.guide) return [];
@@ -301,7 +318,7 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
       const snapshot = await applySongAnalysis(
         regionId,
         touchesTempo ? tempoPayload : null,
-        appliesKey ? keyChoice : null,
+        appliesKeyChanges ? keySections[0].key : appliesKey ? keyChoice : null,
         appliesSections
           ? sections.map((section) => ({
               ...section,
@@ -309,6 +326,22 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 ? `${markerKindLabel(section.kind, t)} ${section.variant}`
                 : markerKindLabel(section.kind, t),
             }))
+          : null,
+        appliesKeyChanges
+          ? snapKeyChangesToSections(
+              keySections.slice(1).map((section) => ({
+                startSeconds: regionStart + section.startSeconds,
+                key: section.key,
+              })),
+              // The sections being written, or the song's own.
+              appliesSections
+                ? sections
+                    .filter((section) => markerCategory(section) === "section")
+                    .map((section) => section.startSeconds)
+                : song.sectionMarkers
+                    .filter((marker) => markerCategory(marker) === "section")
+                    .map((marker) => marker.startSeconds),
+            )
           : null,
       );
       onApplied(snapshot);
@@ -549,6 +582,10 @@ function SongAnalysisDialog({ song, regionId, regionName, onClose, onApplied }: 
                 onChoice={setKeyChoice}
                 included={include.key}
                 onInclude={(key) => setInclude({ ...include, key })}
+                keySections={keySections}
+                onKeySections={setKeySections}
+                changesIncluded={include.keyChanges}
+                onChangesIncluded={(keyChanges) => setInclude({ ...include, keyChanges })}
               />
             ) : null}
             {phase.result.guide ? (
@@ -935,15 +972,31 @@ function GuideReview({
   );
 }
 
+type KeySection = { startSeconds: number; key: string };
+
 type KeyReviewProps = {
   result: NonNullable<AnalyzeSongResult["key"]>;
   choice: string;
   onChoice: (key: string) => void;
   included: boolean;
   onInclude: (included: boolean) => void;
+  keySections: KeySection[];
+  onKeySections: (sections: KeySection[]) => void;
+  changesIncluded: boolean;
+  onChangesIncluded: (included: boolean) => void;
 };
 
-function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewProps) {
+function KeyReview({
+  result,
+  choice,
+  onChoice,
+  included,
+  onInclude,
+  keySections,
+  onKeySections,
+  changesIncluded,
+  onChangesIncluded,
+}: KeyReviewProps) {
   const { t } = useTranslation();
   const { analysis, currentKey, transposeSemitones } = result;
   if (!analysis.key) {
@@ -954,7 +1007,10 @@ function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewP
       </section>
     );
   }
-  const sounding = transposeSemitones !== 0 ? transposeKey(choice, transposeSemitones) : null;
+  const modulates = keySections.length > 1;
+  const perStretch = modulates && changesIncluded;
+  const sounding =
+    transposeSemitones !== 0 && !perStretch ? transposeKey(choice, transposeSemitones) : null;
   const tuning = Math.round(analysis.tuningCents);
   return (
     <section className="lt-song-analysis-part">
@@ -968,7 +1024,59 @@ function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewP
           {t("transport.songAnalysis.applyKey")}
         </label>
       </h3>
-      <dl className="lt-song-analysis-summary">
+      {modulates ? (
+        <label className="lt-song-analysis-key-changes-toggle">
+          <input
+            type="checkbox"
+            checked={changesIncluded}
+            disabled={!included}
+            onChange={(event) => onChangesIncluded(event.target.checked)}
+          />{" "}
+          {t("transport.songAnalysis.applyKeyChanges", { count: keySections.length - 1 })}
+        </label>
+      ) : null}
+      {perStretch ? (
+        <dl className="lt-song-analysis-summary">
+          {keySections.map((section, index) => (
+            <div key={section.startSeconds}>
+              <dt>
+                {index === 0
+                  ? t("transport.songAnalysis.keyStart")
+                  : formatSongPosition(section.startSeconds)}
+              </dt>
+              <dd>
+                <select
+                  aria-label={t("transport.songAnalysis.keyAt", {
+                    time: formatSongPosition(section.startSeconds),
+                  })}
+                  value={section.key}
+                  disabled={!included}
+                  onChange={(event) =>
+                    onKeySections(
+                      keySections.map((current, at) =>
+                        at === index ? { ...current, key: event.target.value } : current,
+                      ),
+                    )
+                  }
+                >
+                  {SONG_KEY_OPTIONS.map((key) => (
+                    <option key={key} value={key}>
+                      {key}
+                    </option>
+                  ))}
+                </select>
+                {transposeSemitones !== 0 ? (
+                  <span className="lt-render-hint">
+                    {" "}
+                    ({transposeKey(section.key, transposeSemitones)})
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      <dl className="lt-song-analysis-summary" hidden={perStretch}>
         <div>
           <dt>{t("transport.songAnalysis.key")}</dt>
           <dd>
@@ -988,10 +1096,13 @@ function KeyReview({ result, choice, onChoice, included, onInclude }: KeyReviewP
           </dd>
         </div>
       </dl>
-      {currentKey === analysis.key ? (
+      {currentKey === analysis.key && !perStretch ? (
         <p className="lt-render-hint">{t("transport.songAnalysis.keyUnchanged")}</p>
       ) : null}
-      {analysis.sections.length > 1 ? (
+      {perStretch ? (
+        <p className="lt-render-hint">{t("transport.songAnalysis.keyChangesHint")}</p>
+      ) : null}
+      {modulates && !perStretch ? (
         <p className="lt-render-warning">
           {t("transport.songAnalysis.keyModulates", {
             sections: analysis.sections

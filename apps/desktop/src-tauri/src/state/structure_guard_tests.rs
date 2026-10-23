@@ -324,3 +324,68 @@ fn songs_without_structures_are_untouched() {
         .push(marker("nueva", 3.0, MarkerKind::Custom));
     super::reconcile_song_structures(&song, &mut edited).expect("sin arreglos");
 }
+
+// ── Cambios de nota en una canción arreglada ───────────────────────────────
+
+fn modulating_song() -> Song {
+    let mut song = base_song();
+    let r2 = song.regions.iter_mut().find(|r| r.id == "r2").expect("r2");
+    r2.key = Some("D".into());
+    // El coro (C, en 32) sube a Mi.
+    r2.key_changes = vec![libretracks_core::KeyChange {
+        id: "up".into(),
+        offset_seconds: 24.0,
+        key: "E".into(),
+    }];
+    song
+}
+
+fn r2_keys(session: &DesktopSession) -> (Option<String>, Vec<(f64, String)>) {
+    let song = song_of(session);
+    let r2 = song.regions.iter().find(|r| r.id == "r2").expect("r2");
+    (
+        r2.key.clone(),
+        r2.key_changes
+            .iter()
+            .map(|change| (change.offset_seconds, change.key.clone()))
+            .collect(),
+    )
+}
+
+#[test]
+fn an_arrangement_carries_each_section_in_its_own_key() {
+    let (mut session, audio) = captured(modulating_song(), base_cues());
+    session
+        .save_song_arrangement("r2", arrangement("coro-primero", &["c", "a", "b"]), true, &audio)
+        .expect("apply");
+    // C (8 s, en Mi) abre la canción; A vuelve a Re al acabar.
+    assert_eq!(r2_keys(&session), (Some("E".into()), vec![(8.0, "D".into())]));
+
+    session.apply_song_arrangement("r2", None, &audio).expect("original");
+    assert_eq!(r2_keys(&session), (Some("D".into()), vec![(24.0, "E".into())]));
+}
+
+#[test]
+fn key_change_edits_in_an_arranged_song_are_rejected() {
+    let (mut session, audio) = captured(modulating_song(), base_cues());
+    session
+        .save_song_arrangement("r2", arrangement("largo", &["a", "b", "b", "c"]), true, &audio)
+        .expect("apply");
+    let before = r2_keys(&session);
+    assert_locked(
+        session.set_song_region_key_changes("r2", Vec::new(), &audio),
+        "quitar los cambios de nota",
+    );
+    assert_eq!(r2_keys(&session), before);
+}
+
+#[test]
+fn the_key_of_an_arranged_song_that_does_not_modulate_can_change() {
+    let (mut session, audio) = applied();
+    session
+        .update_song_region_key("r2", Some("G".into()), &audio)
+        .expect("a song with one key can change it");
+    // Volver al original no la deshace: se apuntó también en él.
+    session.apply_song_arrangement("r2", None, &audio).expect("original");
+    assert_eq!(r2_keys(&session), (Some("G".into()), vec![]));
+}

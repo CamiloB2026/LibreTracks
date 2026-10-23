@@ -71,6 +71,7 @@ fn demo_song() -> Song {
         tempo_markers: vec![],
         time_signature_markers: vec![],
         regions: vec![SongRegion {
+            key_changes: Vec::new(),
             id: "region_1".into(),
             name: "Move Demo".into(),
             start_seconds: 0.0,
@@ -144,6 +145,7 @@ fn demo_song_with_varispeed_region() -> Song {
     let mut song = demo_song();
     song.duration_seconds = 24.0;
     song.regions = vec![SongRegion {
+        key_changes: Vec::new(),
         id: "region_varispeed".into(),
         name: "Varispeed".into(),
         start_seconds: 5.0,
@@ -270,6 +272,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
     song.duration_seconds = 18.0;
     song.regions = vec![
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_1".into(),
             name: "Intro".into(),
             start_seconds: 0.0,
@@ -285,6 +288,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
             structure: None,
         },
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_2".into(),
             name: "Bridge".into(),
             start_seconds: 8.0,
@@ -300,6 +304,7 @@ fn demo_song_with_region_changes_and_sections() -> Song {
             structure: None,
         },
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_3".into(),
             name: "Outro".into(),
             start_seconds: 14.0,
@@ -428,6 +433,7 @@ fn hierarchy_song() -> Song {
         tempo_markers: vec![],
         time_signature_markers: vec![],
         regions: vec![SongRegion {
+            key_changes: Vec::new(),
             id: "region_1".into(),
             name: "Hierarchy Demo".into(),
             start_seconds: 0.0,
@@ -1031,6 +1037,7 @@ fn song_to_view_preserves_track_ids_and_parent_ids_verbatim() {
         tempo_markers: vec![],
         time_signature_markers: vec![],
         regions: vec![SongRegion {
+            key_changes: Vec::new(),
             id: "region_1".into(),
             name: "ID Audit".into(),
             start_seconds: 0.0,
@@ -1535,6 +1542,7 @@ fn varispeed_expansion_next_to_another_song_returns_descriptive_overlap_error() 
     song.duration_seconds = 24.0;
     song.regions[0].name = "Pueblos todos".into();
     song.regions.push(SongRegion {
+        key_changes: Vec::new(),
         id: "region_2".into(),
         name: "Santo por siempre".into(),
         start_seconds: 12.0,
@@ -3964,6 +3972,7 @@ fn reconcile_regions_and_clips_keeps_a_clip_from_crossing_into_the_next_song() {
     let mut song = demo_song();
     song.regions = vec![
         SongRegion {
+            key_changes: Vec::new(),
             id: "a".into(),
             name: "A".into(),
             start_seconds: 0.0,
@@ -3979,6 +3988,7 @@ fn reconcile_regions_and_clips_keeps_a_clip_from_crossing_into_the_next_song() {
             structure: None,
         },
         SongRegion {
+            key_changes: Vec::new(),
             id: "b".into(),
             name: "B".into(),
             start_seconds: 100.0,
@@ -4179,6 +4189,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
     ];
     song.regions = vec![
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_intro".into(),
             name: "Intro".into(),
             start_seconds: 0.0,
@@ -4194,6 +4205,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             structure: None,
         },
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_middle".into(),
             name: "Warped".into(),
             start_seconds: 10.0,
@@ -4209,6 +4221,7 @@ fn changing_warped_region_tempo_keeps_following_song_on_downbeat() {
             structure: None,
         },
         SongRegion {
+            key_changes: Vec::new(),
             id: "region_following".into(),
             name: "Following".into(),
             start_seconds: 17.384615384615387,
@@ -6236,4 +6249,125 @@ fn setting_song_tempo_out_of_range_changes_nothing() {
     let song = session.engine.song().expect("song should be loaded");
     assert!(!song.regions[0].warp_enabled);
     assert_eq!(song.bpm, 120.0);
+}
+
+// ── Cambios de nota ────────────────────────────────────────────────────────
+
+fn key_change(start_seconds: f64, key: &str) -> super::KeyChangeInput {
+    super::KeyChangeInput {
+        id: None,
+        start_seconds,
+        key: key.into(),
+    }
+}
+
+fn region_keys(session: &mut DesktopSession, region_id: &str) -> (Option<String>, Vec<(f64, String)>) {
+    let view = session
+        .song_view()
+        .expect("song view should build")
+        .expect("song summary should exist");
+    let region = view
+        .regions
+        .iter()
+        .find(|region| region.id == region_id)
+        .expect("region");
+    (
+        region.key.clone(),
+        region
+            .key_changes
+            .iter()
+            .map(|change| (change.start_seconds, change.key.clone()))
+            .collect(),
+    )
+}
+
+#[test]
+fn key_changes_are_stored_relative_to_the_song_and_shown_on_the_timeline() {
+    let mut session = session_with_song_dir("key-changes", demo_song_with_region_changes_and_sections());
+    let audio = crate::audio::engine::AudioController::default();
+    session
+        .update_song_region_key("region_2", Some("D".into()), &audio)
+        .expect("key");
+    session
+        .set_song_region_key_changes(
+            "region_2",
+            vec![
+                key_change(12.0, "F#"),
+                key_change(10.0, "E"),
+                // Fuera de la canción y repitiendo la nota: se descartan.
+                key_change(15.0, "G"),
+                key_change(11.0, "E"),
+            ],
+            &audio,
+        )
+        .expect("key changes");
+
+    assert_eq!(
+        region_keys(&mut session, "region_2"),
+        (Some("D".into()), vec![(10.0, "E".into()), (12.0, "F#".into())])
+    );
+    let song = session.engine.song().expect("song");
+    let region = song.regions.iter().find(|r| r.id == "region_2").unwrap();
+    assert_eq!(region.key_changes[0].offset_seconds, 2.0);
+    assert_eq!(region.key_at(13.0), Some("F#"));
+
+    session.undo_action(&audio).expect("undo");
+    assert_eq!(region_keys(&mut session, "region_2"), (Some("D".into()), vec![]));
+}
+
+#[test]
+fn splitting_a_song_shares_out_its_key_changes() {
+    let mut session = session_with_song_dir("key-split", demo_song_with_region_changes_and_sections());
+    let audio = crate::audio::engine::AudioController::default();
+    session
+        .update_song_region_key("region_1", Some("D".into()), &audio)
+        .expect("key");
+    session
+        .set_song_region_key_changes(
+            "region_1",
+            vec![key_change(2.0, "E"), key_change(6.0, "F")],
+            &audio,
+        )
+        .expect("key changes");
+    session
+        .split_song_region("region_1", 4.0, &audio)
+        .expect("split");
+
+    assert_eq!(
+        region_keys(&mut session, "region_1"),
+        (Some("D".into()), vec![(2.0, "E".into())])
+    );
+    let view = session.song_view().unwrap().unwrap();
+    let right = view
+        .regions
+        .iter()
+        .find(|r| (r.start_seconds - 4.0).abs() < 1e-4)
+        .expect("right half");
+    assert_eq!(right.key.as_deref(), Some("E"));
+    assert_eq!(right.key_changes.len(), 1);
+    assert_eq!(right.key_changes[0].start_seconds, 6.0);
+    assert_eq!(right.key_changes[0].key, "F");
+}
+
+#[test]
+fn resizing_a_song_keeps_its_key_changes_where_they_sound() {
+    let mut session = session_with_song_dir("key-resize", demo_song_with_region_changes_and_sections());
+    let audio = crate::audio::engine::AudioController::default();
+    session
+        .update_song_region_key("region_3", Some("D".into()), &audio)
+        .expect("key");
+    session
+        .set_song_region_key_changes("region_3", vec![key_change(16.0, "E")], &audio)
+        .expect("key changes");
+    session
+        .update_song_region("region_3", "Outro", 15.0, 18.0, &audio)
+        .expect("resize");
+
+    assert_eq!(
+        region_keys(&mut session, "region_3"),
+        (Some("D".into()), vec![(16.0, "E".into())])
+    );
+    let song = session.engine.song().expect("song");
+    let region = song.regions.iter().find(|r| r.id == "region_3").unwrap();
+    assert_eq!(region.key_changes[0].offset_seconds, 1.0);
 }

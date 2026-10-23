@@ -1159,6 +1159,34 @@ export const testDesktopApiMock = {
     });
     return clone(buildSnapshot());
   },
+  setSongRegionKeyChanges: async (
+    regionId: string,
+    changes: { id?: string | null; startSeconds: number; key: string }[],
+  ) => {
+    replaceSong({
+      ...state.song,
+      regions: state.song.regions.map((region) =>
+        region.id === regionId
+          ? {
+              ...region,
+              keyChanges: changes
+                .filter(
+                  (change) =>
+                    change.startSeconds > region.startSeconds &&
+                    change.startSeconds < region.endSeconds,
+                )
+                .sort((left, right) => left.startSeconds - right.startSeconds)
+                .map((change) => ({
+                  id: change.id ?? nextId("key-change"),
+                  startSeconds: change.startSeconds,
+                  key: change.key,
+                })),
+            }
+          : region,
+      ),
+    });
+    return clone(buildSnapshot());
+  },
   upsertSongTempoMarker: async (args: {
     markerId?: string | null;
     startSeconds: number;

@@ -86,6 +86,7 @@ mod tests {
             tempo_markers: vec![],
             time_signature_markers: vec![],
             regions: vec![SongRegion {
+                key_changes: Vec::new(),
                 id: "region_intro".into(),
                 name: "Cancion".into(),
                 start_seconds: 0.0,

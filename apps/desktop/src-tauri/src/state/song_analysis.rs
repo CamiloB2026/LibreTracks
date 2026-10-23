@@ -195,19 +195,26 @@ pub(super) fn apply_key_to_song(
         .find(|region| region.id == region_id)
         .ok_or_else(|| DesktopError::RegionNotFound(region_id.to_string()))?;
     let key = key.trim();
-    region.key = (!key.is_empty()).then(|| key.to_string());
+    // Normalizar: un cambio a la nota nueva ya no cambia nada.
+    region.set_key_map(libretracks_core::KeyMap {
+        key: (!key.is_empty()).then(|| key.to_string()),
+        changes: region.key_changes.clone(),
+    });
     Ok(())
 }
 
 impl DesktopSession {
     /// The reviewed analysis, as ONE undo step: the tempo map when `tempo` is
-    /// given (tempo and meter markers), the key when `key` is, the section
+    /// given (tempo and meter markers), the key when `key` is, the key changes
+    /// when `key_changes` is (they replace the song's own), the section
     /// markers when `sections` is.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_song_analysis(
         &mut self,
         region_id: &str,
         tempo: Option<(&[ProposedTempoMarker], &[ProposedSignatureMarker])>,
         key: Option<String>,
+        key_changes: Option<Vec<super::KeyChangeInput>>,
         sections: Option<&[AnalysedSection]>,
         audio: &AudioController,
     ) -> Result<TransportSnapshot, DesktopError> {
@@ -222,6 +229,10 @@ impl DesktopSession {
         }
         if let Some(key) = key.as_deref() {
             apply_key_to_song(&mut song, region_id, key)?;
+        }
+        // After the tempo map: the positions are in the view it leaves.
+        if let Some(changes) = key_changes {
+            super::set_region_key_changes(&mut song, region_id, changes)?;
         }
         if let Some(sections) = sections {
             apply_sections_to_song(&mut song, region_id, sections)?;

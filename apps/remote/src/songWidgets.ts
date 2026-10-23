@@ -7,7 +7,7 @@
 
 import {
   getEffectiveBpmAt,
-  regionEffectiveKey,
+  regionKeySummary,
   type PlaybackState,
   type SongRegionSummary,
   type SongView,
@@ -118,8 +118,9 @@ export function appliedArrangementName(region: SongRegionSummary): string | null
   return structure.arrangements.find((arrangement) => arrangement.id === appliedId)?.name ?? null;
 }
 
+/** Every key the song goes through ("D → E"), transpose applied. */
 export function keyForRegion(region: SongRegionSummary): string | null {
-  return regionEffectiveKey(region);
+  return regionKeySummary(region);
 }
 
 /** The region under the playhead, or null between/outside songs. */

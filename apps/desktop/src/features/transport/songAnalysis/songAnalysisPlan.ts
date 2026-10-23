@@ -798,3 +798,32 @@ export function buildApplyPayload(
   }
   return { tempoMarkers, signatureMarkers };
 }
+
+/** How far a detected key change may move to land on a section start. */
+export const KEY_CHANGE_SNAP_SECONDS = 4;
+
+/**
+ * Key changes onto the nearest section start within
+ * `KEY_CHANGE_SNAP_SECONDS`. A modulation almost always opens a section (the
+ * last chorus up a tone), and the analysis only places it to about a second;
+ * the section marker is where the band actually changes. One with no section
+ * near stays where it was found. Seconds on the same timeline as `sectionStarts`.
+ */
+export function snapKeyChangesToSections<T extends { startSeconds: number }>(
+  changes: T[],
+  sectionStarts: number[],
+): T[] {
+  return changes.map((change) => {
+    let nearest: number | null = null;
+    for (const start of sectionStarts) {
+      const distance = Math.abs(start - change.startSeconds);
+      if (
+        distance <= KEY_CHANGE_SNAP_SECONDS &&
+        (nearest === null || distance < Math.abs(nearest - change.startSeconds))
+      ) {
+        nearest = start;
+      }
+    }
+    return nearest === null ? change : { ...change, startSeconds: nearest };
+  });
+}

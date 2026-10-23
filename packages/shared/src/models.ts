@@ -264,6 +264,14 @@ export const COMPACT_COLUMN_DEFAULT_WIDTH_REM = 14;
 export const COMPACT_COLUMN_MIN_WIDTH_REM = 5;
 export const COMPACT_COLUMN_MAX_WIDTH_REM = 48;
 
+/** A key change inside a song: the ORIGINAL key (before the song's transpose)
+ * that rules from `startSeconds` on. Mirrors Rust `KeyChangeSummary`. */
+export type KeyChangeSummary = {
+  id: string;
+  startSeconds: number;
+  key: string;
+};
+
 export type SongRegionSummary = {
   id: string;
   name: string;
@@ -274,6 +282,11 @@ export type SongRegionSummary = {
    * `"F#"`), or `null` when unset. The key shown on the region is this value
    * transposed by `transposeSemitones` — see `regionEffectiveKey`. */
   key: string | null;
+  /** Key changes (modulations) inside the song, in timeline order. `key` is
+   * the key it STARTS in; each change rules from its `startSeconds` (timeline
+   * view seconds, like every other position here) until the next. Absent from
+   * hosts that predate the feature. See `regionKeyAt`. */
+  keyChanges?: KeyChangeSummary[];
   /** When true, the region's audio is time-stretched so its `warpSourceBpm`
    * aligns with the effective timeline tempo. Applies to ALL tracks in the
    * region, independent of `transposeSemitones`. */
@@ -2419,6 +2432,77 @@ export function regionEffectiveKey(
 ): string | null {
   if (!region) return null;
   return transposeKey(region.key, region.transposeSemitones);
+}
+
+type KeyedRegion = Pick<SongRegionSummary, "key" | "transposeSemitones" | "startSeconds"> & {
+  keyChanges?: KeyChangeSummary[];
+};
+
+/** A key that rules from `startSeconds` on, already transposed. */
+export type SoundingKey = { startSeconds: number; key: string };
+
+/**
+ * The sounding keys of a song in order: the one it starts in (at the region's
+ * start) and one entry per key change, each transposed by the song's
+ * `transposeSemitones`. Empty when the song has no key at all. Unparseable
+ * keys are skipped, like `regionEffectiveKey` hides them.
+ */
+export function regionKeySequence(
+  region: KeyedRegion | null | undefined,
+): SoundingKey[] {
+  if (!region) return [];
+  const sequence: SoundingKey[] = [];
+  const initial = transposeKey(region.key, region.transposeSemitones);
+  if (initial) sequence.push({ startSeconds: region.startSeconds, key: initial });
+  for (const change of region.keyChanges ?? []) {
+    const key = transposeKey(change.key, region.transposeSemitones);
+    if (key) sequence.push({ startSeconds: change.startSeconds, key });
+  }
+  return sequence;
+}
+
+/** Tolerance when comparing a position with a key change (same as Rust's). */
+const KEY_CHANGE_EPS_SECONDS = 1e-6;
+
+/**
+ * The sounding key of a song at `seconds` (timeline view seconds): the last
+ * key change at or before it, or the key the song starts in. Before the song
+ * starts it is the starting key, so a playhead parked on the previous song's
+ * tail still reads the next song's opening key.
+ */
+export function regionEffectiveKeyAt(
+  region: KeyedRegion | null | undefined,
+  seconds: number,
+): string | null {
+  const sequence = regionKeySequence(region);
+  let current: string | null = null;
+  for (const entry of sequence) {
+    if (current !== null && entry.startSeconds > seconds + KEY_CHANGE_EPS_SECONDS) break;
+    current = entry.key;
+  }
+  return current;
+}
+
+/** The first key change strictly after `seconds`, transposed; `null` if none. */
+export function regionNextKeyChange(
+  region: KeyedRegion | null | undefined,
+  seconds: number,
+): SoundingKey | null {
+  return (
+    regionKeySequence(region)
+      .slice(1)
+      .find((entry) => entry.startSeconds > seconds + KEY_CHANGE_EPS_SECONDS) ?? null
+  );
+}
+
+/**
+ * Compact label for every key the song goes through: `"D → E"`. Equal to
+ * `regionEffectiveKey` for a song that never modulates.
+ */
+export function regionKeySummary(region: KeyedRegion | null | undefined): string | null {
+  const sequence = regionKeySequence(region);
+  if (sequence.length === 0) return null;
+  return sequence.map((entry) => entry.key).join(" → ");
 }
 
 /**

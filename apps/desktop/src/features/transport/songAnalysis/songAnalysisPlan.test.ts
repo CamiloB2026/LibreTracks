@@ -15,6 +15,7 @@ import {
   placeGuideSections,
   musicTempoTrackIds,
   scaleTempoRows,
+  snapKeyChangesToSections,
   parseBpm,
   parseSignature,
   reviewRows,
@@ -613,3 +614,17 @@ describe("warped song", () => {
   });
 });
 
+
+describe("snapKeyChangesToSections", () => {
+  it("puts a key change on a section start a few seconds away", () => {
+    expect(
+      snapKeyChangesToSections([{ startSeconds: 178, key: "E" }], [120, 176.4, 200]),
+    ).toEqual([{ startSeconds: 176.4, key: "E" }]);
+  });
+
+  it("leaves it where it was found with no section near", () => {
+    expect(
+      snapKeyChangesToSections([{ startSeconds: 178, key: "E" }], [120, 183]),
+    ).toEqual([{ startSeconds: 178, key: "E" }]);
+  });
+});

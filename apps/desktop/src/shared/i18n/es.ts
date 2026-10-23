@@ -766,6 +766,12 @@ const es = {
       applyKey: "Aplicar nota",
       noKey: "No se ha encontrado una nota clara en estas pistas.",
       keyUnchanged: "La canción ya tiene esta nota.",
+      applyKeyChanges_one: "Aplicar el cambio de nota ({{count}})",
+      applyKeyChanges_other: "Aplicar los cambios de nota ({{count}})",
+      keyStart: "Inicio",
+      keyAt: "Nota desde {{time}}",
+      keyChangesHint:
+        "Cada tramo queda en su nota y el cambio se ve en la banda de la canción. Los instantes son aproximados: muévelos en el timeline si hace falta.",
       keyModulates:
         "La canción cambia de tonalidad: {{sections}}. Se propone la que dura más; la nota guardada es la de la canción, no la del último coro.",
       keyDoubt: "Dudosa: también podría ser {{key}}.",
@@ -969,6 +975,19 @@ const es = {
         "No lleva audio: referencia tus archivos por su ruta. El más pequeño, pero solo se abre en este equipo, donde los archivos siguen estando.",
       cancel: "Cancelar",
       confirm: "Exportar",
+    },
+    keyChanges: {
+      addAtCursor: "Cambio de nota en el cursor",
+      addAtCursorTitle: "Nota desde {{time}}",
+      menuTitle: "Cambio de nota · {{time}}",
+      remove: "Quitar cambio de nota",
+      added: "Cambio a {{key}} en {{time}}.",
+      updated: "El cambio de {{time}} ahora es a {{key}}.",
+      removed: "Cambio de nota de {{time}} quitado.",
+      moved: "Cambio de nota movido a {{time}}.",
+      upcoming: "→ {{key}}",
+      upcomingTitle: "Cambia a {{key}} en {{time}}",
+      summaryTitle: "Notas de la canción, en orden",
     },
     menu: {
       tracksMenuTitle: "Pistas",

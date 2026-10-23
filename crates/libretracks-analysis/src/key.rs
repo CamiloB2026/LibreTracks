@@ -169,8 +169,9 @@ pub fn analyze_key(samples: &[f32], sample_rate: u32) -> KeyAnalysis {
         return KeyAnalysis::silent();
     }
 
-    let stretches = key_stretches(&frames, tuning, signal.len() as f64 / rate);
+    let mut stretches = key_stretches(&frames, tuning, signal.len() as f64 / rate);
     if stretches.len() > 1 {
+        refine_boundaries(&frames, tuning, &mut stretches);
         // First of the longest: a tie goes to the key the song starts in.
         let main = stretches
             .iter()
@@ -326,6 +327,49 @@ fn key_stretches(frames: &[(f64, Peaks)], tuning: f64, total_seconds: f64) -> Ve
         }
     }
     groups
+}
+
+/// The key profile of the best key for `chroma`, rotated to its tonic.
+fn best_profile(chroma: &[f64; 12]) -> [f64; 12] {
+    let (tonic, minor, _) = rank_keys(chroma)[0];
+    let profile = if minor { &MINOR_PROFILE } else { &MAJOR_PROFILE };
+    std::array::from_fn(|pc| profile[(pc + 12 - tonic) % 12])
+}
+
+/// Move each key change to the frame where it actually happens. The stretches
+/// come from 30 s windows, so a change is only known to fall within a window
+/// of where they meet: the user wants the exact moment (it is drawn on the
+/// timeline, and a performer reads it). Within that span every frame votes for
+/// the key before or after (how much better its chroma fits one profile than
+/// the other), and the change goes where the votes before it favour the old
+/// key the most and the ones after it the new key: the maximum of the running
+/// sum of `fit(old) - fit(new)`.
+fn refine_boundaries(frames: &[(f64, Peaks)], tuning: f64, stretches: &mut [Stretch]) {
+    for index in 1..stretches.len() {
+        let (before, after) = stretches.split_at_mut(index);
+        let (old, new) = (&mut before[index - 1], &mut after[0]);
+        let old_profile = best_profile(&old.chroma);
+        let new_profile = best_profile(&new.chroma);
+        let from_seconds = (new.start - WINDOW_SECONDS).max(old.start);
+        let to_seconds = (new.start + WINDOW_SECONDS).min(new.end);
+        let from = frames.partition_point(|(seconds, _)| *seconds < from_seconds);
+        let to = frames.partition_point(|(seconds, _)| *seconds < to_seconds);
+        let mut running = 0.0;
+        let mut best = (0.0, new.start);
+        for frame in from..to {
+            let chroma = chromagram(&frames[frame..frame + 1], tuning);
+            if chroma.iter().sum::<f64>() <= 0.0 {
+                continue;
+            }
+            // The change at this frame: everything voted so far is before it.
+            if running > best.0 {
+                best = (running, frames[frame].0);
+            }
+            running += pearson(&chroma, &old_profile) - pearson(&chroma, &new_profile);
+        }
+        old.end = best.1;
+        new.start = best.1;
+    }
 }
 
 /// The song's chromagram (C first), normalised to sum 1, for the
@@ -612,6 +656,27 @@ mod tests {
         assert_eq!(sections[0], (0.0, "D"));
         assert_eq!(sections[1].1, "E");
         assert!((sections[1].0 - 112.0).abs() <= 32.0, "{analysis:?}");
+    }
+
+    #[test]
+    fn the_key_change_is_placed_where_it_happens_not_on_the_window_grid() {
+        // A change that falls mid-window (97 s, not a multiple of 30): the
+        // window grid alone puts it at 90 or 120.
+        for change in [97.0, 112.0, 133.0] {
+            let mut song = Vec::new();
+            let one = progression(62, false, 0.0);
+            while (song.len() as f64) < change * f64::from(RATE) {
+                song.extend_from_slice(&one);
+            }
+            let truth = song.len() as f64 / f64::from(RATE);
+            song.extend(lasting(64, 70.0));
+            let analysis = analyze_key(&song, RATE);
+            assert_eq!(analysis.sections.len(), 2, "{analysis:?}");
+            assert!(
+                (analysis.sections[1].start_seconds - truth).abs() <= 1.0,
+                "change at {truth}: {analysis:?}"
+            );
+        }
     }
 
     #[test]

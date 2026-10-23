@@ -23,7 +23,6 @@ import {
   getSongBaseTimeSignature,
   getSongTempoRegionAtPosition,
   getSongRegionAtPosition,
-  regionPadKey,
   normalizeAppSettings,
   type AppSettings,
   type AudioBackendKind,
@@ -492,6 +491,8 @@ import { MissingMediaModal } from "./panels/MissingMediaModal";
 import { createMissingMediaHandlers } from "./library/missingMediaHandlers";
 import { DismissOnBack } from "./mobile/DismissOnBack";
 import { getEffectiveTempoMarkerAt } from "./tempo/tempoMarkers";
+import { publishSoundingKey } from "./keyChanges/soundingKeyStore";
+import { useSoundingKeySync } from "./keyChanges/useSoundingKeySync";
 import {
   parseBpmDraft,
   parseTimeSignatureDraft,
@@ -4256,34 +4257,18 @@ export function TransportPanelContent() {
     setTimeSignatureDraft(getSongBaseTimeSignature(song));
   }, [song, song?.projectRevision, activeTempoRegionKey]);
 
-  // "Pad follows song key": when enabled, drive the pad's key from the tonic of
-  // the song region under the playhead, re-evaluating when the playhead crosses
-  // into another song (activeSongRegionId) or when that region's key/transpose
-  // is edited (song?.projectRevision). A pad is a tonal drone, so only the
-  // tonic matters — regionPadKey ignores major/minor. We push the change only
-  // when the tonic actually differs from the current padKey to avoid redundant
-  // decodes, and leave the manual key untouched when the song has no set key.
-  useEffect(() => {
-    if (!appSettings.padFollowSongKey || !appSettings.padEnabled) {
-      return;
-    }
-    const region = getSongRegionAtPosition(
-      songRef.current,
-      displayPositionSecondsRef.current,
-    );
-    const tonic = regionPadKey(region);
-    if (tonic === null || tonic === appSettingsRef.current.padKey) {
-      return;
-    }
-    handlePadChange({ padKey: tonic });
-  }, [
-    appSettings.padFollowSongKey,
-    appSettings.padEnabled,
-    appSettings.padKey,
-    activeSongRegionId,
-    song?.projectRevision,
-    handlePadChange,
-  ]);
+  // La nota que suena (con sus cambios) y el pad que la sigue: keyChanges/.
+  const followPadKey = useCallback(
+    (padKey: number) => handlePadChange({ padKey }),
+    [handlePadChange],
+  );
+  useSoundingKeySync({
+    song,
+    positionRef: displayPositionSecondsRef,
+    padFollowsKey: appSettings.padFollowSongKey && appSettings.padEnabled,
+    padKey: appSettings.padKey,
+    onPadKeyChange: followPadKey,
+  });
 
   // Waveforms for the song's clips (batched + polling).
   // See ./hooks/useSongWaveforms.
@@ -4858,15 +4843,16 @@ export function TransportPanelContent() {
       setActiveTempoRegionKey(nextRegionKey);
     }
 
-    // Track the song region under the playhead so the "pad follows song key"
-    // effect can react when the playhead crosses into a song with a different
-    // tonic. Only re-renders on an actual boundary crossing.
+    // Track the song region under the playhead (compact mixer filter). Only
+    // re-renders on an actual boundary crossing; the sounding key store does
+    // the same for key changes.
     const nextSongRegionId =
       getSongRegionAtPosition(songRef.current, clampedPosition)?.id ?? "";
     if (nextSongRegionId !== activeSongRegionIdRef.current) {
       activeSongRegionIdRef.current = nextSongRegionId;
       setActiveSongRegionId(nextSongRegionId);
     }
+    publishSoundingKey(songRef.current, clampedPosition);
 
     if (transportReadoutTempoRef.current) {
       transportReadoutTempoRef.current.textContent = `${displayedTempo.toFixed(2)} BPM`;
@@ -7840,6 +7826,7 @@ export function TransportPanelContent() {
                             );
                           }}
                           onAutomationCueEdit={handleAutomationCueEdit}
+                          keyChangeCallbacks={timelineMenus.keyChangeCallbacks}
                           onAutomationLaneContextMenu={(event) => {
                             if (!song) {
                               return;

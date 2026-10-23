@@ -15,7 +15,8 @@
 //! - mover o reordenar la canción: el original no cambia (se compara en
 //!   relativo);
 //! - renombrar o recolorear una marca: se propaga a sus copias `~n` y al
-//!   original.
+//!   original;
+//! - cambiar la nota de una canción que no modula: se propaga al original.
 //!
 //! Lo que es de la pista (volumen, mute, solo, pan, rutas, color, nombre) no
 //! toca el contenido de la región y nunca dispara la guardia.
@@ -23,7 +24,7 @@
 use std::collections::{HashMap, HashSet};
 
 use libretracks_core::song_structure::owning_region_id;
-use libretracks_core::{Clip, Marker, MidiClip, Song, TempoMarker, TimeSignatureMarker, VideoClip};
+use libretracks_core::{Clip, KeyChange, Marker, MidiClip, Song, TempoMarker, TimeSignatureMarker, VideoClip};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -59,6 +60,7 @@ pub(super) fn reconcile_song_structures(
     }
     drop_deleted_tracks_from_originals(song);
     propagate_marker_renames(previous, song);
+    propagate_single_key_edits(previous, song);
     check_applied_regions(previous, song)
 }
 
@@ -138,6 +140,31 @@ fn propagate_marker_renames(previous: &Song, song: &mut Song) {
     }
 }
 
+/// Cambiar la nota de una canción arreglada que no modula no rompe nada: todas
+/// sus secciones están en esa nota, así que se apunta también en el original.
+/// Con cambios de nota no hay una sola respuesta y la guardia lo rechaza.
+fn propagate_single_key_edits(previous: &Song, song: &mut Song) {
+    for region in &mut song.regions {
+        let Some(old) = previous.regions.iter().find(|old| old.id == region.id) else {
+            continue;
+        };
+        if old.key == region.key || !region.key_changes.is_empty() {
+            continue;
+        }
+        let Some(structure) = region.structure.as_mut() else {
+            continue;
+        };
+        if structure.applied_arrangement_id.is_none() {
+            continue;
+        }
+        if let Some(keys) = structure.original.keys.as_mut() {
+            if keys.changes.is_empty() {
+                keys.key = region.key.clone();
+            }
+        }
+    }
+}
+
 fn content_lists_equal(previous: &Song, song: &Song) -> bool {
     previous.clips == song.clips
         && previous.midi_clips == song.midi_clips
@@ -161,6 +188,8 @@ fn check_applied_regions(previous: &Song, song: &Song) -> Result<(), DesktopErro
             old.start_seconds == region.start_seconds
                 && old.end_seconds == region.end_seconds
                 && old.structure.as_ref() == Some(structure)
+                && old.key == region.key
+                && old.key_changes == region.key_changes
         });
         if lists_equal && same_place {
             continue;
@@ -209,7 +238,10 @@ fn check_applied_regions(previous: &Song, song: &Song) -> Result<(), DesktopErro
                 .iter()
                 .filter(|m| mine(m.start_seconds)),
             |m: &TimeSignatureMarker| &m.id,
-        );
+        ) && expected.keys.as_ref().is_none_or(|keys| {
+            keys.key == region.key
+                && same_items(&keys.changes, region.key_changes.iter(), |c: &KeyChange| &c.id)
+        });
         if !matches {
             return Err(locked());
         }

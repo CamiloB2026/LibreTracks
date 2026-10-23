@@ -16,6 +16,7 @@ use crate::state::DesktopSession;
 
 fn region(id: &str, start: f64, end: f64) -> SongRegion {
     SongRegion {
+        key_changes: Vec::new(),
         id: id.into(),
         name: id.into(),
         start_seconds: start,
@@ -344,6 +345,7 @@ fn applying_is_one_undo_step() {
                 &[proposed_signature(60.0, "6/8")],
             )),
             Some("Dm".into()),
+            None,
             None,
             &audio,
         )

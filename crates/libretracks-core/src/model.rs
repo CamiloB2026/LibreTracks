@@ -126,6 +126,36 @@ pub struct SongRegion {
     /// que una canción sin preferencia se escribe igual que antes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub voice_guide_count_style: Option<VoiceGuideCountStyle>,
+    /// Cambios de nota (modulaciones) dentro de la canción, ordenados. `key`
+    /// es la nota con la que ARRANCA; cada cambio rige desde su posición hasta
+    /// el siguiente. Posiciones relativas al inicio de la región y en tiempo de
+    /// fuente, así que mover o reordenar la canción y el warp no las tocan.
+    /// Se omite si está vacío: una versión vieja ve la nota inicial.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub key_changes: Vec<KeyChange>,
+}
+
+/// Un cambio de nota dentro de una canción. Igual que `SongRegion.key`, es la
+/// nota ORIGINAL (sin la transposición de la región) en la forma canónica en
+/// sostenidos (`"E"`, `"F#m"`).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyChange {
+    pub id: String,
+    /// Segundos desde el inicio de la región, en tiempo de fuente.
+    pub offset_seconds: f64,
+    pub key: String,
+}
+
+/// La nota de una canción a lo largo del tiempo: la inicial y sus cambios,
+/// relativos al inicio de lo que describa (región, original de un arreglo).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyMap {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub changes: Vec<KeyChange>,
 }
 
 /// Cómo se reparte el conteo hablado de la voz guía en los compases previos a
@@ -295,6 +325,11 @@ pub struct OriginalSnapshot {
     /// de sus saltos están en las mismas coordenadas que el resto.
     #[serde(default)]
     pub automation_cues: Vec<crate::automation::AutomationCue>,
+    /// La nota de la región al capturar (inicial y cambios, relativos a
+    /// `origin_seconds`). `None` en los originales capturados antes de los
+    /// cambios de nota: aplicar un arreglo entonces no toca la nota.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<KeyMap>,
 }
 
 /// Una sección del original: desde una marca de categoría Section hasta la

@@ -98,6 +98,7 @@ import { openRenderSong } from "../render/renderStore";
 import { openSongAnalysis } from "../songAnalysis/songAnalysisStore";
 import { openStructureEditor } from "../structure/structureEditor";
 import { tempoRampAction } from "../tempo/tempoRampAction";
+import { createKeyChangeCallbacks, keyChangeAtCursorAction } from "../keyChanges/keyChangeMenus";
 import type { ShortcutActionId } from "../keyboard/actions";
 import { createVideoMenus } from "./videoMenus";
 import { matchAliasesAction } from "../templates/matchAliases";
@@ -637,6 +638,7 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
         label: `${t("transport.menu.songKey", { defaultValue: "Nota de la canción" })} ▸`,
         onSelect: () => openSongRegionKeyMenu(region),
       },
+      keyChangeAtCursorAction(region, cursorSeconds, d),
       {
         label: t("transport.structure.menuItem"),
         onSelect: () => openStructureEditor(region.id),
@@ -1426,6 +1428,7 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
     midiLaneContextMenu,
     openMidiClipMenu,
     midiClipCallbacks,
+    keyChangeCallbacks: createKeyChangeCallbacks(getDeps),
     openVideoClipMenu,
     rulerContextMenu,
     songRegionContextMenu,

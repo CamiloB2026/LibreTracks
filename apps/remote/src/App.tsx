@@ -23,7 +23,7 @@ import {
   formatTransposeSemitones,
   METRONOME_SOUND_PRESETS,
   markerColor,
-  regionEffectiveKey,
+  regionKeySummary,
   isVoiceGuideCountStyle,
   VOICE_GUIDE_COUNT_STYLES,
   type AppSettings,
@@ -2310,9 +2310,9 @@ function ControlDeck({ section }: { section?: ControlDeckSection } = {}) {
                   }}
                 >
                   <span>{region.name}</span>
-                  {regionEffectiveKey(region) ? (
+                  {regionKeySummary(region) ? (
                     <em className="region-chip-key">
-                      {regionEffectiveKey(region)}
+                      {regionKeySummary(region)}
                     </em>
                   ) : null}
                   {region.transposeSemitones !== 0 ? (
@@ -2338,9 +2338,9 @@ function ControlDeck({ section }: { section?: ControlDeckSection } = {}) {
                     <strong>{formatTransposeSemitones(selectedRegion.transposeSemitones)} st</strong>
                     <button type="button" onClick={() => updateSelectedRegionTranspose(1)}>+</button>
                   </div>
-                  {regionEffectiveKey(selectedRegion) ? (
+                  {regionKeySummary(selectedRegion) ? (
                     <span className="selected-region-key">
-                      {regionEffectiveKey(selectedRegion)}
+                      {regionKeySummary(selectedRegion)}
                     </span>
                   ) : null}
                 </div>

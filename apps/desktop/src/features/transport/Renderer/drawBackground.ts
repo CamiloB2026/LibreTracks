@@ -1,7 +1,6 @@
 import {
   formatBpm,
   isMobileApp,
-  transposeKey,
   type ActiveVampSummary,
   type SectionMarkerSummary,
   type SongRegionSummary,
@@ -9,6 +8,11 @@ import {
 } from "../desktopApi";
 import type { TimelineGrid } from "../timeline/timelineMath";
 import { appliedArrangementName } from "../structure/arrangementName";
+import {
+  drawKeyChangeNotches,
+  keyAtScreenX,
+  keyChangeNotches,
+} from "../keyChanges/drawKeyChanges";
 import { markerCategory, markerColor } from "../markerKinds";
 import {
   MARKER_FLAG_FONT,
@@ -498,20 +502,23 @@ export function drawRulerRegion(
   context.fill();
   context.stroke();
 
+  // El nombre se queda pegado al borde izquierdo; la primera muesca de cambio
+  // de nota que tenga delante lo recorta (ver keyChanges/drawKeyChanges).
+  const textLeft = blockLeft + 7;
+  const notches = keyChangeNotches(region, cameraX, pixelsPerSecond);
+  const nextNotchX =
+    notches.find((notch) => notch.x > textLeft)?.x ?? Infinity;
+  const clipRight = Math.min(blockLeft + blockWidth - 6, nextNotchX - 3);
+
+  context.save();
   context.beginPath();
-  context.rect(
-    blockLeft + 6,
-    blockTop,
-    Math.max(0, blockWidth - 12),
-    blockHeight,
-  );
+  context.rect(blockLeft + 6, blockTop, Math.max(0, clipRight - blockLeft - 6), blockHeight);
   context.clip();
   // Fully opaque in both states — the resting name used to sit at 92% alpha on
   // top of a translucent block, which is where it lost its edge.
   context.fillStyle = isSelected ? "#fff4d6" : "#ffefc9";
   context.font = '700 10px "Space Grotesk", sans-serif';
   context.textBaseline = "middle";
-  const textLeft = blockLeft + 7;
   const textCenterY = blockTop + blockHeight / 2 + 0.5;
   context.fillText(region.name, textLeft, textCenterY);
 
@@ -519,8 +526,9 @@ export function drawRulerRegion(
   const badges: string[] = [];
   // The transpose always shifts the key, warp or not (warp = time-ratio,
   // transpose = pitch-scale, both independent on the same Bungee voice). Shown
-  // first as the key is the primary musical cue for a live performer.
-  const effectiveKey = transposeKey(region.key, region.transposeSemitones);
+  // first as the key is the primary musical cue for a live performer. It is
+  // the key sounding at the band's left edge, so it follows the key changes.
+  const effectiveKey = keyAtScreenX(region, textLeft, cameraX, pixelsPerSecond);
   if (effectiveKey) {
     badges.push(effectiveKey);
   }
@@ -564,6 +572,16 @@ export function drawRulerRegion(
     context.fillText(badgeText, badgeLeft + badgePaddingX, textCenterY + 0.1);
     badgeLeft += badgeWidth + 5;
   }
+  context.restore();
+
+  drawKeyChangeNotches(
+    context,
+    notches,
+    blockLeft,
+    blockLeft + blockWidth,
+    blockTop,
+    blockHeight,
+  );
   context.restore();
 }
 

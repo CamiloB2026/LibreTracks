@@ -260,6 +260,7 @@ pub(super) fn apply_structure(
         time_signature_markers,
         section_markers,
         automation_cues,
+        keys,
     } = built;
     let outside_before = governing_in_song(&previous, region.start_seconds, |p| !mine(p));
     let arranged_end_tempo = tempo_markers
@@ -345,6 +346,10 @@ pub(super) fn apply_structure(
             target.end_seconds = target.start_seconds + new_length;
         }
         target.structure = Some(structure);
+        // Cada sección suena en la nota que tenía en el original.
+        if let Some(keys) = keys {
+            target.set_key_map(keys);
+        }
     }
     if length_changes {
         let mut owners = Owners::of(song, &spans);

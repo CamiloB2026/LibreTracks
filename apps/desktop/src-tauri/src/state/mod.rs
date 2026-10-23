@@ -71,6 +71,8 @@ mod video_edit;
 mod video_library;
 mod video_audio;
 mod regions;
+pub use regions::KeyChangeInput;
+use regions::set_region_key_changes;
 mod ruler_markers;
 mod session;
 pub use external_import::parse_external_project;

@@ -14,7 +14,6 @@ import { appliedArrangementName } from "../structure/arrangementName";
 import {
   getEffectiveBpmAt,
   markerColor,
-  regionEffectiveKey,
   type ActiveVampSummary,
   type AppSettings,
   type SectionMarkerSummary,
@@ -37,6 +36,7 @@ import {
 import { FEATURE_FLAGS } from "@libretracks/shared/featureFlags";
 import { LiveChartPanel } from "../charts/LiveChartPanel";
 import { SongGapVampToggle } from "./SongGapVampToggle";
+import { SoundingKeyLabel } from "../keyChanges/SoundingKeyLabel";
 import { SongReorderHandle } from "../songs/SongReorderHandle";
 import {
   SONG_REORDER_ID_ATTRIBUTE,
@@ -379,7 +379,7 @@ function LivePerformanceViewComponent({
         </div>
         <div className="lt-live-song-metrics">
           <span>{currentRegion ? `${getEffectiveBpmAt(song, currentRegion.startSeconds).toFixed(0)} BPM` : `${song.bpm.toFixed(0)} BPM`}</span>
-          <span>{regionEffectiveKey(currentRegion) ?? "—"}</span>
+          <SoundingKeyLabel region={currentRegion} />
         </div>
         <div className="lt-live-song-progress">
           <span className="lt-live-song-progress-times">

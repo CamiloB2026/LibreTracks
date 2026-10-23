@@ -166,6 +166,7 @@
     "set_section_marker_kind",
     "set_song_region_chart",
     "set_song_region_compact_width",
+    "set_song_region_key_changes",
     "set_song_region_tempo",
     "set_song_tempo_marker_ramp",
     "set_voice_guide_config_realtime",

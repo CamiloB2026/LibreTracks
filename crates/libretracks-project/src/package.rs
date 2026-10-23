@@ -128,6 +128,10 @@ struct SongPackageManifest {
     /// before the per-song key feature → `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     region_key: Option<String>,
+    /// The song's key changes, relative to its start (which is the package's
+    /// zero). Absent in older packages.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    region_key_changes: Vec<libretracks_core::KeyChange>,
     #[serde(default)]
     tracks: Vec<Track>,
     #[serde(default)]
@@ -509,6 +513,7 @@ pub fn export_region_as_package_with_progress(
         duration_seconds: region_duration,
         region_transpose_semitones: region.transpose_semitones,
         region_key: region.key.clone(),
+        region_key_changes: region.key_changes.clone(),
         tracks,
         clips: clips.clone(),
         midi_clips,
@@ -1245,6 +1250,7 @@ pub fn merge_extracted_song_package(
         end_seconds: insert_at_seconds + region_span,
         transpose_semitones: manifest.region_transpose_semitones,
         key: manifest.region_key.clone(),
+        key_changes: manifest.region_key_changes.clone(),
         warp_enabled: false,
         warp_source_bpm: None,
         master: libretracks_core::SongMaster::default(),
@@ -1454,6 +1460,7 @@ mod tests {
 
     fn region(id: &str, name: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: id.into(),
             name: name.into(),
             start_seconds: start,

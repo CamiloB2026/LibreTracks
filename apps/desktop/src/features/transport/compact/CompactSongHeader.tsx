@@ -15,6 +15,7 @@ import { useDismissOnBack } from "../mobile/backNavigation";
 import { openRenderSong } from "../render/renderStore";
 import { openSongAnalysis } from "../songAnalysis/songAnalysisStore";
 import { ArrangementBadge } from "../structure/ArrangementBadge";
+import { KeySequenceLabel } from "../keyChanges/SoundingKeyLabel";
 import { openStructureEditor } from "../structure/structureEditor";
 import {
   regionEffectiveKey,
@@ -233,7 +234,7 @@ export function CompactSongHeaderComponent({
             className="lt-compact-song-key"
             title={t("compactView.songKeyTitle")}
           >
-            {regionEffectiveKey(region)}
+            <KeySequenceLabel region={region} />
           </div>
         ) : null}
       </div>

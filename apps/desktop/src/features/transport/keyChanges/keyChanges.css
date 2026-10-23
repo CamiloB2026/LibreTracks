@@ -1,0 +1,96 @@
+/* Zona táctil de un cambio de nota en la banda de la canción del ruler. El
+   canvas pinta la muesca y su pastilla; esto sólo se ve al arrastrar. */
+.lt-key-change-hotspot {
+  position: absolute;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: transparent;
+  cursor: ew-resize;
+  /* Por encima de la zona de la región (z-index 2), que mueve la canción. */
+  z-index: 3;
+  touch-action: none;
+}
+
+/* En táctil un :hover se come el primer toque (ver regionHoverTouch.test). */
+@media (hover: hover) {
+  .lt-key-change-hotspot:hover {
+    background: rgb(201 167 255 / 0.14);
+  }
+}
+
+.lt-key-change-hotspot:focus-visible {
+  background: rgb(201 167 255 / 0.14);
+  outline: none;
+}
+
+/* Mientras se arrastra, el mástil lila sigue al puntero (el canvas repinta la
+   muesca al soltar). */
+.lt-key-change-hotspot.is-dragging::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--lt-key-change-stem, 6px);
+  width: 2px;
+  background: rgb(201 167 255 / 0.95);
+  box-shadow: 0 0 6px 1px rgb(201 167 255 / 0.6);
+}
+
+/* La nota que suena (SoundingKeyLabel). Con un cambio de nota cerca, la
+   siguiente va detrás en lila, el color de las muescas del ruler. */
+.lt-sounding-key.has-upcoming {
+  border-color: rgb(201 167 255 / 0.55);
+}
+
+/* Anula el estilo de pastilla que las vistas dan a sus <span> (y el
+   `span:first-child { display: none }` del Live estrecho). */
+.lt-sounding-key .lt-sounding-key-next,
+.lt-live-song-metrics .lt-sounding-key .lt-sounding-key-next {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: rgb(214 190 255);
+  font: inherit;
+  animation: lt-sounding-key-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes lt-sounding-key-pulse {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-sounding-key .lt-sounding-key-next {
+    animation: none;
+  }
+}
+
+/* Secuencia de notas (KeySequenceLabel): las que no suenan, apagadas. */
+.lt-key-sequence-key {
+  opacity: 0.6;
+}
+
+.lt-key-sequence-key:only-child,
+.lt-key-sequence-key.is-current {
+  opacity: 1;
+}
+
+.lt-key-sequence-key.is-current {
+  color: rgb(214 190 255);
+}
+
+.lt-key-sequence-key.is-next {
+  animation: lt-sounding-key-pulse 1.2s ease-in-out infinite alternate;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lt-key-sequence-key.is-next {
+    animation: none;
+  }
+}

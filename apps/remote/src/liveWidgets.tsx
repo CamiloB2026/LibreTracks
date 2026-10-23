@@ -5,7 +5,7 @@ import {
   getSongBaseBpm,
   getSongBaseTimeSignature,
   markerColor,
-  regionEffectiveKey,
+  regionEffectiveKeyAt,
   type SongRegionSummary,
   type SongView,
 } from "@libretracks/shared/models";
@@ -174,7 +174,8 @@ export function deriveLiveMusicalContext(
     barsToMarker,
     secondsToSong,
     barsToSong,
-    currentKey: regionEffectiveKey(currentRegion),
+    // The key sounding at the playhead: it follows the song's key changes.
+    currentKey: regionEffectiveKeyAt(currentRegion, position),
   };
 }
 

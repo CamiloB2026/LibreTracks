@@ -901,6 +901,27 @@ export async function updateSongRegionKey(
   });
 }
 
+/** A key change as the UI sends it: timeline view seconds; no `id` = new. */
+export type KeyChangeInput = {
+  id?: string | null;
+  startSeconds: number;
+  key: string;
+};
+
+/**
+ * Replaces a song's key changes (the starting key stays). Changes outside the
+ * song or repeating the key already sounding are dropped. One undo step.
+ */
+export async function setSongRegionKeyChanges(
+  regionId: string,
+  changes: KeyChangeInput[],
+): Promise<TransportSnapshot> {
+  return invokeCommand<TransportSnapshot>("set_song_region_key_changes", {
+    regionId,
+    changes,
+  });
+}
+
 /** Replaces a song's lyrics and chords; `null` removes them. One undo step. */
 export async function setSongRegionChart(
   regionId: string,
@@ -1646,7 +1667,8 @@ export async function listenToSongAnalysisProgress(
 /**
  * Applies the reviewed analysis as ONE undo step: `tempo` replaces the tempo
  * and meter markers inside the song, `key` sets its original key, `sections`
- * replaces its section and cue markers. Null leaves that part alone.
+ * replaces its section and cue markers, `keyChanges` replaces its key changes
+ * (view seconds). Null leaves that part alone.
  */
 export async function applySongAnalysis(
   regionId: string,
@@ -1656,11 +1678,13 @@ export async function applySongAnalysis(
   } | null,
   key: string | null,
   sections: SectionChange[] | null = null,
+  keyChanges: KeyChangeInput[] | null = null,
 ): Promise<TransportSnapshot> {
   return invokeCommand<TransportSnapshot>("apply_song_analysis", {
     regionId,
     tempo,
     key,
+    keyChanges,
     sections,
   });
 }

@@ -342,6 +342,8 @@ pub struct SongRegionSummary {
     pub chart: Option<libretracks_core::SongChart>,
     /// Estilo de conteo de la voz guía propio de la canción; `None` = el global.
     pub voice_guide_count_style: Option<libretracks_core::VoiceGuideCountStyle>,
+    /// Cambios de nota dentro de la canción, ordenados; `key` es la inicial.
+    pub key_changes: Vec<KeyChangeSummary>,
     /// Lo que pinta el editor de arreglos. No lleva la instantánea del
     /// original, que puede ser grande: sólo secciones y arreglos.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1222,6 +1224,16 @@ pub(crate) fn marker_to_warped_summary(song: &Song, marker: &Marker) -> MarkerSu
     }
 }
 
+/// Un cambio de nota, en segundos de vista del timeline como el resto de
+/// posiciones del DTO (el modelo lo guarda relativo a la región, en fuente).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyChangeSummary {
+    pub id: String,
+    pub start_seconds: f64,
+    pub key: String,
+}
+
 pub(crate) fn region_to_summary(song: &Song, region: &SongRegion) -> SongRegionSummary {
     SongRegionSummary {
         id: region.id.clone(),
@@ -1240,6 +1252,18 @@ pub(crate) fn region_to_summary(song: &Song, region: &SongRegion) -> SongRegionS
         compact_column_width_rem: region.compact_column_width_rem,
         chart: region.chart.clone(),
         voice_guide_count_style: region.voice_guide_count_style,
+        key_changes: region
+            .key_changes
+            .iter()
+            .map(|change| KeyChangeSummary {
+                id: change.id.clone(),
+                start_seconds: warp_timeline_seconds_at(
+                    song,
+                    region.start_seconds + change.offset_seconds,
+                ),
+                key: change.key.clone(),
+            })
+            .collect(),
         structure: region
             .structure
             .as_ref()
@@ -1631,6 +1655,7 @@ mod tests {
 
     fn region(id: &str, start: f64, end: f64) -> SongRegion {
         SongRegion {
+            key_changes: Vec::new(),
             id: id.into(),
             name: id.into(),
             start_seconds: start,

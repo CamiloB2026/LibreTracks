@@ -21,8 +21,8 @@ use thiserror::Error;
 use crate::automation::{AutomationAction, AutomationCue, AutomationJumpTarget};
 use crate::model::{
     implicit_start_section_id, ArrangementBlock, Clip, Marker, MarkerCategory, MidiClip,
-    MidiEventKind, OriginalSection, OriginalSnapshot, Song, TempoMarker, TimeSignatureMarker,
-    VideoClip,
+    KeyChange, KeyMap, MidiEventKind, OriginalSection, OriginalSnapshot, Song, TempoMarker,
+    TimeSignatureMarker, VideoClip,
 };
 
 /// Fundido que recibe un borde recortado de un clip, si no tenía ya uno mayor.
@@ -90,6 +90,9 @@ pub struct BuiltRegion {
     pub time_signature_markers: Vec<TimeSignatureMarker>,
     pub section_markers: Vec<Marker>,
     pub automation_cues: Vec<AutomationCue>,
+    /// La nota de la región arreglada, relativa a su inicio (no se traslada).
+    /// `None` si el original no la capturó: entonces no se toca.
+    pub keys: Option<KeyMap>,
 }
 
 impl BuiltRegion {
@@ -278,6 +281,7 @@ pub fn capture_original(
         time_signature_markers: filtered(&song.time_signature_markers, |m| mine(m.start_seconds)),
         section_markers: filtered(&song.section_markers, |m| mine(m.start_seconds)),
         automation_cues: filtered(cues, |c| mine(c.at_seconds)),
+        keys: Some(region.key_map()),
     };
     check_snapshot_finite(&snapshot)?;
 
@@ -687,6 +691,10 @@ pub fn build_arrangement(
         }
         signature_before = governing_signature_at(snapshot, span_end_probe(span));
     }
+    built.keys = snapshot
+        .keys
+        .as_ref()
+        .map(|keys| arranged_keys(keys, &spans, built.duration_seconds));
     drop_redundant(
         &mut built.tempo_markers,
         &generated_tempo,
@@ -785,6 +793,53 @@ fn spans_of(
 }
 
 /// Tolerancia para "hay una marca justo al inicio del tramo".
+/// La nota de la canción arreglada: cada tramo arranca en la nota que regía en
+/// su inicio en el original y trae los cambios que caen dentro. Un coro final
+/// que modulaba suena en su nota aunque se coloque antes, y el verso que vuelve
+/// después vuelve a la suya.
+fn arranged_keys(keys: &KeyMap, spans: &[Span], duration: f64) -> KeyMap {
+    let mut ids = Appearances::default();
+    let mut changes: Vec<KeyChange> = Vec::new();
+    let mut initial = None;
+    for (index, span) in spans.iter().enumerate() {
+        let wanted = keys.key_at(span.start).map(str::to_string);
+        if index == 0 {
+            initial = wanted;
+        } else if let Some(key) = wanted {
+            let id = match keys
+                .changes
+                .iter()
+                .filter(|change| change.offset_seconds <= span.start + POSITION_EPS)
+                .max_by(|left, right| left.offset_seconds.total_cmp(&right.offset_seconds))
+            {
+                Some(change) => ids.next(&change.id),
+                None => ids.next("key~start"),
+            };
+            changes.push(KeyChange {
+                id,
+                offset_seconds: span.destination,
+                key,
+            });
+        }
+        for change in &keys.changes {
+            if change.offset_seconds > span.start + EDGE_EPS
+                && (span.closes_song || change.offset_seconds < span.end - EDGE_EPS)
+            {
+                changes.push(KeyChange {
+                    id: ids.next(&change.id),
+                    offset_seconds: change.offset_seconds + span.shift(),
+                    key: change.key.clone(),
+                });
+            }
+        }
+    }
+    KeyMap {
+        key: initial,
+        changes,
+    }
+    .normalized(duration)
+}
+
 fn start_tolerance(span: &Span) -> f64 {
     if span.opens_song {
         OWNER_TOLERANCE_SECONDS

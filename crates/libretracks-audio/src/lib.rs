@@ -1094,6 +1094,7 @@ mod tests {
             tempo_markers: vec![],
             time_signature_markers: vec![],
             regions: vec![SongRegion {
+                key_changes: Vec::new(),
                 id: "region_1".into(),
                 name: "Digno y Santo".into(),
                 start_seconds: 0.0,
@@ -1287,6 +1288,7 @@ mod tests {
             time_signature_markers: vec![],
             regions: vec![
                 SongRegion {
+                    key_changes: Vec::new(),
                     id: "region_intro".into(),
                     name: "Intro".into(),
                     start_seconds: 0.0,
@@ -1302,6 +1304,7 @@ mod tests {
                     structure: None,
                 },
                 SongRegion {
+                    key_changes: Vec::new(),
                     id: "region_bridge".into(),
                     name: "Bridge".into(),
                     start_seconds: 8.0,
@@ -1317,6 +1320,7 @@ mod tests {
                     structure: None,
                 },
                 SongRegion {
+                    key_changes: Vec::new(),
                     id: "region_outro".into(),
                     name: "Outro".into(),
                     start_seconds: 14.0,
