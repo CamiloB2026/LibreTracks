@@ -538,6 +538,40 @@ TEST_CASE("a jump landing on the same frame as a marker fires once, not twice") 
     CHECK(diag.counts_fired == 4);
 }
 
+TEST_CASE("a jump a beat after a marker replaces it instead of announcing both") {
+    // Field report: an automation cue meant to jump away from the Verse sat a
+    // beat after the Verse marker, and the guide spoke both sections.
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_marked_bank());
+    r.set_config({true, 1.0f, "monitor", 1, true});
+    auto session = make_session(MarkerKind::Verse, 4.0);
+    VoiceGuideTarget jump;
+    jump.active = true;
+    jump.at_frame = static_cast<Frame>(kSampleRate * 4.5); // one beat at 120 BPM
+    jump.kind = MarkerKind::Chorus;
+    auto ch = render_all(r, session, kSampleRate * 6, 1024, jump);
+    auto diag = r.diagnostics();
+    CHECK(diag.announcements_fired == 1);
+    CHECK(diag.counts_fired == 4);
+}
+
+TEST_CASE("a section that plays longer than the lead span keeps its announcement") {
+    // Verse at 4s, jump a full lead bar later at 6s: the Verse really plays,
+    // so it is announced before the jump destination.
+    VoiceGuideRenderer r;
+    r.set_clip_bank(make_marked_bank());
+    r.set_config({true, 1.0f, "monitor", 1, true});
+    auto session = make_session(MarkerKind::Verse, 4.0);
+    VoiceGuideTarget jump;
+    jump.active = true;
+    jump.at_frame = static_cast<Frame>(kSampleRate) * 6;
+    jump.kind = MarkerKind::Chorus;
+    auto ch = render_all(r, session, kSampleRate * 8, 1024, jump);
+    auto diag = r.diagnostics();
+    CHECK(diag.announcements_fired == 2);
+    CHECK(diag.counts_fired == 8);
+}
+
 // ── Dynamic cues ─────────────────────────────────────────────────────────────
 // Cues (Build, All In, ...) are one-shot spoken instructions. A loose cue (away
 // from any section downbeat) fires at its own frame with NO count-in. A cue that

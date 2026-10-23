@@ -716,8 +716,20 @@ void VoiceGuideRenderer::render(float** output_channels,
                 // bug: vamping on "Bridge" spoke the "Verse" that follows it.
                 const Frame reachable_horizon =
                     jump_target.active ? jump_target.at_frame : -1;
+                // A marker just before the jump (an automation cue dropped a
+                // beat after the section it means to replace, or a wait before
+                // its jump) is the same moment for the listener: announcing it
+                // too spoke two sections over each other. Inside the jump's
+                // lead span the jump wins; a section that plays for longer
+                // than that is still announced on its own.
+                const bool marker_superseded_by_jump =
+                    jump_frame > abs_frame && marker_frame >= 0
+                    && marker_frame < jump_frame
+                    && marker_frame > jump_frame
+                        - lead_span_for(style_for(jump_frame), jump_frame);
                 const bool marker_unreachable =
-                    reachable_horizon >= 0 && marker_frame > reachable_horizon;
+                    (reachable_horizon >= 0 && marker_frame > reachable_horizon)
+                    || marker_superseded_by_jump;
 
                 // Fire (section + count) for one target downbeat. Each beat-frame
                 // guard keys off the absolute frame, so distinct targets that
