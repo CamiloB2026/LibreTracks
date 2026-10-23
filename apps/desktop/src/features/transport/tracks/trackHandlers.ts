@@ -6,7 +6,12 @@ import type {
 } from "@libretracks/shared/models";
 
 import type { TrackDropState } from "../types";
-import { planTrackDrop, type MoveTrackArgs } from "./trackMovePlan";
+import {
+  applyTrackMoves,
+  planTrackDrop,
+  withTrackTreeFields,
+  type MoveTrackArgs,
+} from "./trackMovePlan";
 
 /**
  * Dependencies for the track create / reorder handlers extracted from
@@ -16,6 +21,9 @@ import { planTrackDrop, type MoveTrackArgs } from "./trackMovePlan";
  */
 export type TrackHandlerDeps = {
   getSong: () => SongView | null;
+  /** Write the song store (value or updater). The drop paints its result
+   * optimistically before the backend confirms it. */
+  setSong: (next: SongView | null | ((previous: SongView | null) => SongView | null)) => void;
   getTracksById: () => Record<string, TrackSummary>;
   getSelectedTrackIds: () => string[];
   runAction: (action: () => Promise<void>) => Promise<void>;
@@ -58,6 +66,7 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
     setStatus,
     t,
     moveTrack,
+    setSong,
     createTrack,
     prompt,
     setAutomationTrackPosition,
@@ -106,6 +115,17 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
       // does not wait on the backend (every move rebuilds the audio structure
       // and saves, which takes a while in a big session).
       clearTrackDragVisuals({ settle: true });
+      // And paint it: headers moved with the preview, but the clips live on
+      // the canvas, which only follows `song.tracks`. Applying the moves here
+      // (the backend's own rules, ./trackMovePlan) moves the clips with their
+      // track at once; the refresh below confirms it, and keeps the objects
+      // since they come back equal.
+      const tracksBefore = song!.tracks;
+      setSong((current) =>
+        current && current.tracks === tracksBefore
+          ? { ...current, tracks: withTrackTreeFields(applyTrackMoves(tracksBefore, plan.moves)) }
+          : current,
+      );
       await runAction(async () => {
         try {
           let lastSnapshot: TransportSnapshot | null = null;
@@ -131,6 +151,8 @@ export function createTrackHandlers(deps: TrackHandlerDeps) {
           );
         } catch (error) {
           clearTrackDragVisuals({ revert: true });
+          // Back to what the backend has: the optimistic order did not happen.
+          setSong((current) => (current ? { ...current, tracks: tracksBefore } : current));
           throw error;
         }
       });

@@ -28,8 +28,14 @@ function setup(overrides: Partial<TrackHandlerDeps> = {}) {
     tracks.map((entry) => [entry.id, entry]),
   );
 
+  const songState: { current: SongView | null } = {
+    current: { tracks } as unknown as SongView,
+  };
   const deps: TrackHandlerDeps = {
-    getSong: () => ({ tracks }) as unknown as SongView,
+    getSong: () => songState.current,
+    setSong: vi.fn((next) => {
+      songState.current = typeof next === "function" ? next(songState.current) : next;
+    }),
     getTracksById: () => tracksById,
     getSelectedTrackIds: () => [],
     runAction: vi.fn(async (action) => {
@@ -48,7 +54,7 @@ function setup(overrides: Partial<TrackHandlerDeps> = {}) {
     getVisibleTrackIds: () => Object.keys(tracksById),
     ...overrides,
   };
-  return { handlers: createTrackHandlers(deps), deps, tracksById };
+  return { handlers: createTrackHandlers(deps), deps, tracksById, songState };
 }
 
 describe("createTrackHandlers", () => {
@@ -151,8 +157,32 @@ describe("createTrackHandlers", () => {
     expect(deps.clearTrackDragVisuals).toHaveBeenCalledTimes(1);
   });
 
+  // The headers moved at once but the clips waited for the backend: the
+  // canvas paints from song.tracks. The drop now applies the order locally.
+  it("paints the new track order before the backend answers", async () => {
+    let resolveMove: (value: TransportSnapshot) => void = () => {};
+    const { handlers, songState } = setup({
+      moveTrack: vi.fn(
+        () => new Promise<TransportSnapshot>((resolve) => (resolveMove = resolve)),
+      ),
+    });
+    const drop = handlers.handleTrackDrop("dragged", {
+      targetTrackId: "parent-1",
+      mode: "before",
+    });
+
+    expect(songState.current!.tracks.map((entry) => entry.id)).toEqual([
+      "dragged",
+      "parent-1",
+      "target",
+      "other",
+    ]);
+    resolveMove(snapshot(3));
+    await drop;
+  });
+
   it("puts the rows back when the backend refuses the move", async () => {
-    const { handlers, deps } = setup({
+    const { handlers, deps, songState } = setup({
       moveTrack: vi.fn(async () => {
         throw new Error("nope");
       }),
@@ -163,6 +193,12 @@ describe("createTrackHandlers", () => {
     await handlers.handleTrackDrop("dragged", { targetTrackId: "target", mode: "before" });
 
     expect(deps.clearTrackDragVisuals).toHaveBeenLastCalledWith({ revert: true });
+    expect(songState.current!.tracks.map((entry) => entry.id)).toEqual([
+      "parent-1",
+      "target",
+      "dragged",
+      "other",
+    ]);
   });
 
   it("create track is cancelled when the name prompt is empty", async () => {

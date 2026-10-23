@@ -2953,6 +2953,7 @@ export function TransportPanelContent() {
         setStatus,
         t,
         moveTrack,
+        setSong,
         createTrack,
         prompt: (message, defaultValue) => promptDialog(message, defaultValue),
         setAutomationTrackPosition,
@@ -2965,6 +2966,7 @@ export function TransportPanelContent() {
       applyPlaybackSnapshot,
       clearTrackDragVisuals,
       setStatus,
+      setSong,
       t,
     ],
   );

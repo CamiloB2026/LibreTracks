@@ -193,6 +193,23 @@ function subtreeBounds(tracks: TrackSummary[], trackId: string): [number, number
   return [start, end];
 }
 
+/**
+ * La ruta de la pista movida, como `reparent_track` en el backend
+ * (state/track_tree.rs): al entrar en OTRA carpeta pasa a heredar de ella, y
+ * un "inherit" fuera de toda carpeta se guarda como lo que suena, Master.
+ */
+function movedRoute(track: TrackSummary, move: MoveTrackArgs): string {
+  const previousParent = track.parentTrackId ?? null;
+  let route = track.audioTo;
+  if (move.parentTrackId !== null && previousParent !== move.parentTrackId) {
+    route = "inherit";
+  }
+  if (move.parentTrackId === null && route?.trim().toLowerCase() === "inherit") {
+    route = "master";
+  }
+  return route;
+}
+
 /** Aplica los movimientos sobre una copia, como haría el backend. */
 export function applyTrackMoves(
   tracks: readonly TrackSummary[],
@@ -204,7 +221,7 @@ export function applyTrackMoves(
     if (!bounds) continue;
     const block = next.slice(bounds[0], bounds[1]);
     next = [...next.slice(0, bounds[0]), ...next.slice(bounds[1])];
-    block[0] = { ...block[0], parentTrackId: move.parentTrackId };
+    block[0] = { ...block[0], parentTrackId: move.parentTrackId, audioTo: movedRoute(block[0], move) };
 
     let insertIndex = next.length;
     const anchorAfter = move.insertAfterTrackId
@@ -270,4 +287,23 @@ export function previewRowOrder({
     if (id !== AUTOMATION_TRACK_ID && !real.has(id)) order.push(id);
   }
   return order;
+}
+
+/**
+ * `depth` y `hasChildren` recalculados tras mover, como los da el backend en
+ * la vista. Las pistas que no cambian conservan su objeto, para que sus filas
+ * memoizadas no se repinten.
+ */
+export function withTrackTreeFields(tracks: readonly TrackSummary[]): TrackSummary[] {
+  const byId = new Map(tracks.map((track) => [track.id, track]));
+  const parents = new Set(
+    tracks.map((track) => track.parentTrackId).filter((id): id is string => Boolean(id)),
+  );
+  return tracks.map((track) => {
+    const depth = depthOf(byId, track.id);
+    const hasChildren = parents.has(track.id);
+    return track.depth === depth && track.hasChildren === hasChildren
+      ? track
+      : { ...track, depth, hasChildren };
+  });
 }

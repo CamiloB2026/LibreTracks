@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { TrackSummary } from "@libretracks/shared/models";
 
 import { AUTOMATION_TRACK_ID } from "../library/pendingAudioImports";
-import { applyTrackMoves, planTrackDrop, previewRowOrder } from "./trackMovePlan";
+import {
+  applyTrackMoves,
+  planTrackDrop,
+  previewRowOrder,
+  withTrackTreeFields,
+} from "./trackMovePlan";
 
 const track = (
   id: string,
@@ -147,5 +152,51 @@ describe("previewRowOrder", () => {
         automationAfterTrackId: "drums",
       }),
     ).toEqual([AUTOMATION_TRACK_ID, "drums", "F", "f1", "f2", "bass", "keys"]);
+  });
+});
+
+describe("the optimistic song after a move", () => {
+  const summary = (id: string, parentTrackId: string | null, extra: Partial<TrackSummary> = {}) =>
+    ({ id, parentTrackId, kind: "audio", depth: 0, hasChildren: false, audioTo: "master", ...extra }) as TrackSummary;
+
+  it("routes a track that enters another folder through it, like the backend", () => {
+    const tracks = [summary("folder", null, { kind: "folder" }), summary("gtr", null, { audioTo: "ext:2-3" })];
+    const [, moved] = applyTrackMoves(tracks, [
+      { trackId: "gtr", insertAfterTrackId: null, insertBeforeTrackId: null, parentTrackId: "folder" },
+    ]);
+    expect(moved).toMatchObject({ id: "gtr", parentTrackId: "folder", audioTo: "inherit" });
+  });
+
+  it("sends an inheriting track that leaves every folder to Master", () => {
+    const tracks = [summary("folder", null, { kind: "folder" }), summary("gtr", "folder", { audioTo: "inherit" })];
+    const moved = applyTrackMoves(tracks, [
+      { trackId: "gtr", insertAfterTrackId: null, insertBeforeTrackId: "folder", parentTrackId: null },
+    ]);
+    expect(moved[0]).toMatchObject({ id: "gtr", parentTrackId: null, audioTo: "master" });
+  });
+
+  it("keeps a manual route when reordering inside the same folder", () => {
+    const tracks = [
+      summary("folder", null, { kind: "folder" }),
+      summary("a", "folder", { audioTo: "ext:2-3" }),
+      summary("b", "folder"),
+    ];
+    const moved = applyTrackMoves(tracks, [
+      { trackId: "a", insertAfterTrackId: "b", insertBeforeTrackId: null, parentTrackId: "folder" },
+    ]);
+    expect(moved.find((track) => track.id === "a")?.audioTo).toBe("ext:2-3");
+  });
+
+  it("recomputes depth and hasChildren, keeping untouched tracks as they were", () => {
+    const untouched = summary("solo", null);
+    const tracks = [
+      summary("folder", null, { kind: "folder", hasChildren: false }),
+      { ...summary("gtr", "folder"), depth: 0 },
+      untouched,
+    ];
+    const next = withTrackTreeFields(tracks);
+    expect(next[0]).toMatchObject({ hasChildren: true });
+    expect(next[1]).toMatchObject({ depth: 1 });
+    expect(next[2]).toBe(untouched);
   });
 });
