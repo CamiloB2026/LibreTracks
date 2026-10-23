@@ -61,6 +61,15 @@ let canvasRenderWorstLastSecond = 0;
 let canvasRenderWindowStart = 0;
 let canvasPaintCount = 0; // monotonic; lets the HUD distinguish "0 because idle" from "0 because instrumentation is broken"
 
+// ── Métricas del plan docs/plans/track-virtualization ───────────────────
+//
+// Callbacks de animación de los medidores de pista ejecutados en el frame en
+// curso. `TrackMeter` lo incrementa; `tick()` lo vuelca en la ventana y lo
+// pone a cero. Con un rAF por medidor sale N; con el reloj compartido del
+// paso 02, 1.
+let meterTicksThisFrame = 0;
+const meterTicksWindow: number[] = []; // mismas ~120 frames que frameTimeWindow
+
 // ── Métricas del plan docs/plans/ui-performance ─────────────────────────
 //
 // Cinco grupos añadidos para poder demostrar (o desmentir) las causas del
@@ -261,6 +270,8 @@ export function stopPerfMetrics() {
   canvasRenderWorstLastSecond = 0;
   canvasRenderWindowStart = 0;
   canvasPaintCount = 0;
+  meterTicksThisFrame = 0;
+  meterTicksWindow.length = 0;
   waveformTileRenderCount = 0;
   waveformTileRenderEma = 0;
   waveformTileRenderWorstThisSecond = 0;
@@ -293,6 +304,9 @@ function tick(now: number) {
 
   frameTimeWindow.push(frameMs);
   if (frameTimeWindow.length > FRAME_WINDOW_SIZE) frameTimeWindow.shift();
+  meterTicksWindow.push(meterTicksThisFrame);
+  if (meterTicksWindow.length > FRAME_WINDOW_SIZE) meterTicksWindow.shift();
+  meterTicksThisFrame = 0;
 
   // EMA over the window — bias toward recent samples.
   if (frameMs > 0) {
@@ -346,6 +360,33 @@ export function rollWaveformTileWindow(now: number) {
   waveformTileRenderWorstThisSecond = 0;
   waveformTileMsThisSecond = 0;
   waveformTileWindowStart = now;
+}
+
+/** Un callback de animación de un medidor de pista. Ver `meterTicksThisFrame`. */
+export function recordMeterTick() {
+  if (!started) return;
+  meterTicksThisFrame += 1;
+}
+
+export type TrackDomCounts = {
+  headerRowsMounted: number;
+  laneRowsMounted: number;
+  domNodes: number;
+};
+
+/**
+ * Filas de pista y nodos montados en el DOM. Recorre el documento, así que se
+ * muestrea sólo al pedir el informe (`brief`, `download`), nunca por frame.
+ */
+export function readTrackDomCounts(): TrackDomCounts {
+  if (!started || typeof document === "undefined") {
+    return { headerRowsMounted: 0, laneRowsMounted: 0, domNodes: 0 };
+  }
+  return {
+    headerRowsMounted: document.querySelectorAll(".lt-track-header-row").length,
+    laneRowsMounted: document.querySelectorAll(".lt-track-lane-row").length,
+    domNodes: document.getElementsByTagName("*").length,
+  };
 }
 
 export function recordRender(componentName: string) {
@@ -557,6 +598,12 @@ export type PerfSnapshot = {
   waveformTileCachePeakBytes: number;
   gridBuilds: number;
   gridEntries: number;
+  // ── Plan docs/plans/track-virtualization ──
+  /** Callbacks de animación de medidores por frame, media y máximo de la ventana. */
+  meterTicksPerFrameAvg: number;
+  meterTicksPerFrameMax: number;
+  /** Renders de `TrackHeadersPane` desde el último `clear()`. */
+  trackPaneRenders: number;
   /** [comando, llamadas, ms medios, peor ms, fallos], por coste total. */
   ipcByCommand: Array<[string, number, number, number, number]>;
   /** Últimos gestos cerrados, el más reciente primero. */
@@ -605,6 +652,9 @@ type RecordedSample = {
   waveformTileCacheBytes: number;
   tileDrainWorstMs: number;
   gridBuilds: number;
+  meterTicksPerFrameAvg: number;
+  meterTicksPerFrameMax: number;
+  trackPaneRenders: number;
 };
 
 type RecordedMarker = {
@@ -641,6 +691,9 @@ function appendRecordedSample() {
     waveformTileCacheBytes: snap.waveformTileCacheBytes,
     tileDrainWorstMs: snap.tileDrainWorstMs,
     gridBuilds: snap.gridBuilds,
+    meterTicksPerFrameAvg: snap.meterTicksPerFrameAvg,
+    meterTicksPerFrameMax: snap.meterTicksPerFrameMax,
+    trackPaneRenders: snap.trackPaneRenders,
   });
   if (recordedSamples.length > MAX_RECORDED_SAMPLES) {
     recordedSamples.shift();
@@ -700,6 +753,12 @@ function buildRecordingPayload() {
     commits: snapshot.commits,
     ipcByCommand: snapshot.ipcByCommand,
     waveformTileCachePeakBytes: snapshot.waveformTileCachePeakBytes,
+    trackRows: {
+      ...readTrackDomCounts(),
+      meterTicksPerFrameAvg: snapshot.meterTicksPerFrameAvg,
+      meterTicksPerFrameMax: snapshot.meterTicksPerFrameMax,
+      trackPaneRenders: snapshot.trackPaneRenders,
+    },
     sampleCount: recordedSamples.length,
     markerCount: recordedMarkers.length,
     samples: recordedSamples,
@@ -930,7 +989,17 @@ function median(values: number[]) {
  */
 export function briefSummary(): string {
   const snapshot = readPerfSnapshot();
+  const dom = readTrackDomCounts();
   const text = [
+    "=== FRAME ===",
+    `fps=${snapshot.fps.toFixed(1)} worstFrameMs=${snapshot.worstFrameMs.toFixed(1)}`,
+    "",
+    "=== PISTAS ===",
+    `headerRowsMounted=${dom.headerRowsMounted} laneRowsMounted=${dom.laneRowsMounted} ` +
+      `domNodes=${dom.domNodes} trackPaneRenders=${snapshot.trackPaneRenders} ` +
+      `meterTicksPerFrame avg=${snapshot.meterTicksPerFrameAvg.toFixed(1)} ` +
+      `max=${snapshot.meterTicksPerFrameMax}`,
+    "",
     "=== GESTOS ===",
     ...snapshot.gestures.map(
       (gesture) =>
@@ -1252,6 +1321,16 @@ export function readPerfSnapshot(): PerfSnapshot {
     waveformTileCachePeakBytes,
     gridBuilds: gridBuildCount,
     gridEntries: gridEntryCount,
+    meterTicksPerFrameAvg:
+      meterTicksWindow.length > 0
+        ? meterTicksWindow.reduce((sum, ticks) => sum + ticks, 0) /
+          meterTicksWindow.length
+        : 0,
+    meterTicksPerFrameMax: meterTicksWindow.reduce(
+      (max, ticks) => Math.max(max, ticks),
+      0,
+    ),
+    trackPaneRenders: renderCounts.get("TrackHeadersPane") ?? 0,
     ipcByCommand: [...ipcByCommand.entries()]
       .map(
         ([command, stats]) =>

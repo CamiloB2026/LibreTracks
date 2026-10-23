@@ -15,6 +15,7 @@ import {
   stepMeterDb,
 } from "@libretracks/shared/meterBallistics";
 
+import { recordMeterTick } from "../perf/perfMetrics";
 import { useSongStore } from "../songStore";
 import { useTransportStore, type TrackMeterState } from "../store";
 
@@ -227,6 +228,7 @@ function StereoMeterComponent({ source, id, orientation, className }: StereoMete
 
     // One frame loop drives both channels.
     const stepAnimation = (now: number) => {
+      recordMeterTick();
       const elapsedMs = animation.lastFrameAt > 0 ? now - animation.lastFrameAt : 16.67;
       animation.lastFrameAt = now;
 

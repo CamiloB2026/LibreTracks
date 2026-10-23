@@ -21,6 +21,7 @@ import { useVideoStore } from "../video/videoStore";
 import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
 import { useTimelineUIStore } from "../uiStore";
 import { useHeaderAreaSelection } from "../mobile/useAreaSelection";
+import { useRenderCounter } from "../perf/useRenderCounter";
 
 const TRACK_HEADER_CONTROL_SELECTOR =
   "button, input, label, textarea, select, .lt-track-toggle-group, .lt-track-volume, .lt-track-pan";
@@ -111,6 +112,7 @@ export function TrackHeadersPane({
   midiLanes,
   headerActions,
 }: TrackHeadersPaneProps) {
+  useRenderCounter("TrackHeadersPane");
   const { t } = useTranslation();
   // Same rule as the video lanes (`useVideoFeature`): on a phone video is
   // read-only only while its native players have not started.
