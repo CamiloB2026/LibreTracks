@@ -272,17 +272,30 @@ fn match_phrase(words: &[String], start: usize, phrase: &[&str]) -> Option<(usiz
             .collect();
         return Some((end, edit_distance(&heard, &phrase.concat())));
     }
-    if phrase.len() < 2 || start + phrase.len() > words.len() {
+    if phrase.len() < 2 {
         return None;
     }
-    let end = start + phrase.len();
-    if words[start..end]
-        .iter()
-        .any(|word| number_word(word).is_some())
-    {
-        return None;
+    // The phrase's words, with one filler allowed between two of them
+    // ("Bajel la intensidad").
+    let mut heard_words: Vec<&str> = Vec::with_capacity(phrase.len());
+    let mut position = start;
+    while heard_words.len() < phrase.len() {
+        let word = words.get(position)?;
+        if !heard_words.is_empty()
+            && is_filler(word)
+            && words.get(position + 1).is_some_and(|next| !is_filler(next))
+        {
+            position += 1;
+            continue;
+        }
+        if number_word(word).is_some() {
+            return None;
+        }
+        heard_words.push(word);
+        position += 1;
     }
-    let heard = words[start..end].concat();
+    let end = position;
+    let heard = heard_words.concat();
     let expected = phrase.concat();
     let off = edit_distance(&heard, &expected);
     (off <= phrase_slips(expected.chars().count())).then_some((end, off))
@@ -431,6 +444,7 @@ mod tests {
         assert_eq!(parsed("Solo ve guitarra."), vec![("guitar_solo", None)]);
         // Real ("Rey de Reyes"): both words slip, too far each on its own.
         assert_eq!(parsed("Bajel insensidad."), vec![("ease_down", None)]);
+        assert_eq!(parsed("Bajel la intensidad."), vec![("ease_down", None)]);
         assert_eq!(parsed("Subir insensidad."), vec![("build", None)]);
         assert_eq!(
             parsed("Salida, dos, tres, cuatro, tin, dos, tres, cuatro."),

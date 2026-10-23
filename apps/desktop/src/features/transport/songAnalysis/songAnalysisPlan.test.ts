@@ -222,6 +222,84 @@ describe("guide", () => {
     markers: [markersForLabels(labels)],
   });
 
+  // One group per announcement: [start, end, labels, count words].
+  const announced = (
+    list: [number, number, string[], { number: number; startSeconds: number }[]?][],
+  ) => ({
+    analysis: {
+      announcements: list.map(([startSeconds, endSeconds, , countWords], group) => ({
+        startSeconds,
+        endSeconds,
+        group,
+        countWords: countWords ?? [],
+      })),
+      groups: list.map(([startSeconds, endSeconds, labels]) => ({
+        labels,
+        transcript: null,
+        matchCost: null,
+        occurrences: 1,
+        firstStartSeconds: startSeconds,
+        firstEndSeconds: endSeconds,
+      })),
+    },
+    markers: list.map(([, , labels]) => markersForLabels(labels)),
+  });
+  // 120 BPM 4/4 from the song at 100 s: beats of 0.5 s, bars of 2 s.
+  const sectionsAt = (beats: number[], only = "chorus") => {
+    const { analysis, markers } = announced(
+      beats.map((beat) => [beat * 0.5, beat * 0.5 + 0.4, [only]]),
+    );
+    return placeGuideSections(plain(), "b", 100, analysis, markers, null)
+      .filter((marker) => marker.kind === only)
+      .map((marker) => marker.startSeconds);
+  };
+
+  it("sections announced off the click's bar in runs start a bar after the voice", () => {
+    // "Poema de salvación", "Goodness of God": the song has a short bar the
+    // click does not keep, and its names are said on beat 3 of the click's
+    // bars until another brings them back. The click's bars stay (no 2/4):
+    // the sections fall mid-bar, where the user placed them.
+    expect(sectionsAt([8, 24, 42, 58, 76, 92])).toEqual([106, 114, 123, 131, 140, 148]);
+  });
+
+  it("a lone name said on beat 3 starts its section on the next downbeat", () => {
+    // "Es Él": "Pre coro" two beats before its section, among names on beat 1.
+    expect(sectionsAt([8, 26, 40, 56])).toEqual([106, 114, 122, 130]);
+  });
+
+  it("a count that is a section's count-in places no count markers", () => {
+    // "Poema de salvación": "Intro." before the click, then a bar of "uno, dos,
+    // tres, cuatro": the voice guide counts the intro in by itself.
+    const words = [0, 1, 2, 3].map((k) => ({ number: k + 1, startSeconds: 2 + k * 0.5 }));
+    const { analysis, markers } = announced([
+      [0.1, 0.5, ["intro"]],
+      [2.0, 3.8, ["spoken_count"], words],
+    ]);
+    expect(
+      placeGuideSections(plain(), "b", 100, analysis, markers, null).map((m) => [
+        m.startSeconds,
+        m.kind,
+      ]),
+    ).toEqual([[104, "intro"]]);
+  });
+
+  it("a cue said apart in a section's lead-in goes with that section", () => {
+    // "Chorus." on beat 1, "Drums in." on beat 3 of the bar before it.
+    const { analysis, markers } = announced([
+      [4.0, 4.4, ["chorus"]],
+      [5.0, 5.6, ["drums_in"]],
+    ]);
+    expect(
+      placeGuideSections(plain(), "b", 100, analysis, markers, null).map((m) => [
+        m.startSeconds,
+        m.kind,
+      ]),
+    ).toEqual([
+      [106, "chorus"],
+      [106, "drums_in"],
+    ]);
+  });
+
   it("puts both markers of one announcement on the next downbeat", () => {
     const { analysis, markers } = oneAnnouncement(5.3, ["verse_3", "drums_in"]);
     // 120 BPM 4/4: bars of 2 s. Song at 100 s; ends at 105.3 → 106.

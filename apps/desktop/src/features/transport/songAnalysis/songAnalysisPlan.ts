@@ -359,6 +359,70 @@ const ON_DOWNBEAT_BEATS = 0.25;
 const COUNT_IN_GAP_SECONDS = 1.2;
 const LONG_TAIL_BEATS = 0.5;
 
+/** An announcement starts this close to a beat (share of a beat) to say
+ * which beat of the bar it is spoken on. */
+const ON_BEAT_SHARE = 0.15;
+
+/**
+ * Section announcements spoken off the click's bar, in runs, start their
+ * section a bar after they start: mid-bar on the click. A guide speaks each
+ * name from beat 1 of the bar before its section, and when the song has a
+ * short bar the click does not keep (no accent, or an accent in a steady
+ * 4/4), every announcement after it starts that many beats off, until
+ * another brings them back: "Goodness of God" (its .als has 2/4 bars at
+ * beats 28, 94, 216), "Poema de salvación" (coro, instrumental, versos 1-2
+ * two beats off, as the user placed them). A guide that says single names
+ * on beat 3 ("Es Él": "Pre coro" two beats before its section) leaves lone
+ * ones off among ones on beat 1: then this says nothing. The click's bars
+ * are not changed (no 2/4): players follow its accent. Returns announcement
+ * index → where its section starts, and the beats off the click's bar the
+ * song is at a time (0 where it is on it).
+ */
+function sectionsOffTheBar(
+  announcements: GuideAnalysis["announcements"],
+  markers: GroupMarkers[],
+  renderStartSeconds: number,
+  beatAt: (seconds: number) => number,
+  nearestBeat: (seconds: number) => number,
+  beatInBar: (beat: number) => number,
+  barAt: (seconds: number) => number,
+  leadBars: number,
+): { sections: Map<number, number>; offsetAt: (seconds: number) => number } {
+  const spoken: { index: number; beat: number; phase: number }[] = [];
+  for (const [index, announcement] of announcements.entries()) {
+    const group = markers[announcement.group];
+    if (!group || group.ignored || !group.section) continue;
+    const start = renderStartSeconds + announcement.startSeconds;
+    const beat = nearestBeat(start);
+    if (Math.abs(beat - start) > ON_BEAT_SHARE * beatAt(start)) continue;
+    spoken.push({ index, beat, phase: beatInBar(beat) });
+  }
+  const runs: (typeof spoken)[] = [];
+  for (const one of spoken) {
+    const run = runs[runs.length - 1];
+    if (run && run[0].phase === one.phase) run.push(one);
+    else runs.push([one]);
+  }
+  const sections = new Map<number, number>();
+  if (runs.length < 2 || runs[0][0].phase !== 0 || runs.some((run) => run.length < 2)) {
+    return { sections, offsetAt: () => 0 };
+  }
+  for (const run of runs) {
+    if (run[0].phase === 0) continue;
+    for (const { index, beat } of run) sections.set(index, beat + leadBars * barAt(beat));
+  }
+  // A run's bars hold from its first announcement to the next run's.
+  const offsetAt = (seconds: number) => {
+    let phase = 0;
+    for (const run of runs) {
+      if (run[0].beat - beatAt(run[0].beat) / 2 > seconds) break;
+      phase = run[0].phase;
+    }
+    return phase;
+  };
+  return { sections, offsetAt };
+}
+
 /**
  * Where each announcement's markers go: on the first downbeat after the
  * announcement ends (see `ANNOUNCEMENT_TAIL_BEATS`), or `leadBars - 1` bars
@@ -451,6 +515,30 @@ export function placeGuideSections(
       seconds >= songStart && lookBack < songStart ? songStart : downbeatFrom(lookBack);
     return barStart + Math.round((seconds - barStart) / beat) * beat;
   };
+  // Which beat of its bar (0 = the downbeat) a beat on the grid is.
+  const beatInBar = (beatSeconds: number) => {
+    const beat = beatAt(beatSeconds);
+    const lookBack = beatSeconds - barAt(beatSeconds) + beat / 2;
+    const barStart =
+      beatSeconds >= songStart && lookBack < songStart ? songStart : downbeatFrom(lookBack);
+    return Math.round((beatSeconds - barStart) / beat) % (Math.round(barAt(beatSeconds) / beat) || 1);
+  };
+  const { sections: offTheBar, offsetAt } = sectionsOffTheBar(
+    analysis.announcements,
+    markers,
+    renderStartSeconds,
+    beatAt,
+    nearestBeat,
+    beatInBar,
+    barAt,
+    leadBars,
+  );
+  // Counts said on their own that are a section's count-in: the voice guide
+  // counts that section in by itself.
+  const countIns = new Set<number>();
+  // The last section placed, and where its announcement started: a cue said
+  // apart in its lead-in ("Chorus." … "Drums in.") is that section's.
+  let lastSection: { announced: number; spot: number } | null = null;
   const placed: {
     startSeconds: number;
     kind: MarkerKind;
@@ -463,6 +551,7 @@ export function placeGuideSections(
     const group = markers[announcement.group];
     if (!group || group.ignored) continue;
     if (!group.section && group.cue === "count" && announcement.countWords?.length) {
+      if (countIns.has(index)) continue;
       for (const word of announcement.countWords) {
         const startSeconds = nearestBeat(renderStartSeconds + word.startSeconds);
         if (onSpot(startSeconds).some((other) => other.kind === "count")) continue;
@@ -492,15 +581,16 @@ export function placeGuideSections(
     // A count said on its own that starts by the time the section would is
     // its count-in, a bar or more after the words ("Poema de salvación":
     // "Intro." before the click, then a bar of "uno, dos, tres, cuatro"
-    // from that downbeat): the section starts after it. Its numbers still
-    // get their markers.
-    for (const next of analysis.announcements.slice(index + 1)) {
+    // from that downbeat): the section starts after it, and the voice
+    // guide's own count-in replaces the count's markers.
+    for (const [offset, next] of analysis.announcements.slice(index + 1).entries()) {
       const nextMarkers = markers[next.group];
       const spokenCount = nextMarkers && !nextMarkers.section && nextMarkers.cue === "count";
       const nextStart = renderStartSeconds + next.startSeconds;
       if (!spokenCount || nextStart > startSeconds + ON_DOWNBEAT_BEATS * beatAt(startSeconds)) {
         break;
       }
+      if (group.section) countIns.add(index + 1 + offset);
       end = renderStartSeconds + next.endSeconds;
       startSeconds = sectionAfter(end);
     }
@@ -520,6 +610,7 @@ export function placeGuideSections(
         regions,
       );
     }
+    startSeconds = offTheBar.get(index) ?? startSeconds;
     const slots = [
       { marker: parseMarkerValue(group.section), sectionSlot: true },
       { marker: parseMarkerValue(group.cue), sectionSlot: false },
@@ -529,8 +620,27 @@ export function placeGuideSections(
     // ahead, where the guide said it. Said apart but in the lead-in of a
     // section announced just before ("Chorus." … "Drums in."), it is that
     // section's.
+    const inLeadOf =
+      !group.section && lastSection && start > lastSection.announced && start < lastSection.spot
+        ? lastSection.spot
+        : null;
     const inSectionLead = onSpot(startSeconds).some((other) => inSectionLane(other));
-    const cueSpot = group.section || inSectionLead ? startSeconds : barBefore(startSeconds);
+    // In a stretch off the click's bar, a cue said on its own warns from the
+    // bar it is said in, as the guide counts it.
+    const offset = offsetAt(start);
+    const saidOn = nearestBeat(start);
+    const offBarCue =
+      offset !== 0 && Math.abs(saidOn - start) <= ON_BEAT_SHARE * beatAt(start)
+        ? saidOn -
+          (((beatInBar(saidOn) - offset) % Math.round(barAt(saidOn) / beatAt(saidOn)) +
+            Math.round(barAt(saidOn) / beatAt(saidOn))) %
+            Math.round(barAt(saidOn) / beatAt(saidOn))) *
+            beatAt(saidOn)
+        : null;
+    const cueSpot =
+      inLeadOf ??
+      (group.section || inSectionLead ? startSeconds : (offBarCue ?? barBefore(startSeconds)));
+    if (group.section) lastSection = { announced: start, spot: startSeconds };
     for (const { marker, sectionSlot } of slots) {
       if (!marker) continue;
       const spot = sectionSlot ? startSeconds : cueSpot;
