@@ -470,6 +470,29 @@ if(LT_ENGINE_BUILD_BENCHES)
         endif()
     endif()
 
+    # Plan realtime-resample, paso 2. Compila el interpolador directamente en
+    # vez de enlazar el motor, para que el mismo fuente salga con el NDK sin el
+    # resto de dependencias (receta en la cabecera del banco).
+    if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/bench_realtime_resample.cpp")
+        add_executable(bench_realtime_resample
+            bench/bench_realtime_resample.cpp
+            src/sources/sinc_interpolator.cpp)
+        target_compile_features(bench_realtime_resample PRIVATE cxx_std_20)
+        target_include_directories(bench_realtime_resample PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        if(LT_ENGINE_USE_BUNGEE AND WIN32 AND DEFINED LT_BUNGEE_DIR)
+            target_compile_definitions(bench_realtime_resample PRIVATE LT_BENCH_WITH_BUNGEE=1)
+            target_include_directories(bench_realtime_resample PRIVATE "${LT_BUNGEE_DIR}/include")
+            target_link_libraries(bench_realtime_resample PRIVATE
+                "${LT_BUNGEE_DIR}/windows-x86_64/bungee.lib")
+            add_custom_command(TARGET bench_realtime_resample POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${LT_BUNGEE_DIR}/windows-x86_64/bungee.dll"
+                    "$<TARGET_FILE_DIR:bench_realtime_resample>"
+                COMMENT "Copying Bungee DLL for realtime-resample bench")
+        endif()
+    endif()
+
     if(LT_ENGINE_USE_BUNGEE AND DEFINED LT_BUNGEE_DIR)
         foreach(_lt_bungee_bench bench_bungee_voice_cost bench_bungee_thread_scaling)
             if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/bench/${_lt_bungee_bench}.cpp")

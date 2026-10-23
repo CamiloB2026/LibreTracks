@@ -127,15 +127,15 @@ TEST_CASE("sinc interpolator reduces the ratio to an exact fraction") {
     SincInterpolator down(48000, 44100, 64);
     CHECK(down.ratio_num() == 160);
     CHECK(down.ratio_den() == 147);
-    CHECK(down.kernel_length() == 70);
+    CHECK(down.kernel_length() == 72);  // 64 * 48/44.1, rounded up to a multiple of 4
 }
 
 TEST_CASE("E1: a stream started mid-file is bit-identical to one started at 0") {
-    constexpr int kChannels = 2;
     constexpr Frame kSrcFrames = 44100 * 3;
-    const auto signal = make_broadband(kSrcFrames, kChannels, 44100);
-
+    // Stereo has its own kernel; mono and 3 channels take the generic one.
+    for (int kChannels : {2, 1, 3})
     for (int taps : {16, 32, 64}) {
+        const auto signal = make_broadband(kSrcFrames, kChannels, 44100);
         SincInterpolator si(44100, 48000, taps);
         const Frame total_out = si.output_length(kSrcFrames);
         const auto full = render_blocks(si, signal, kChannels, 0, total_out, 512);
@@ -151,7 +151,7 @@ TEST_CASE("E1: a stream started mid-file is bit-identical to one started at 0") 
                            Frame{1}, Frame{7}, total_out - 100}) {
             const Frame len = std::min<Frame>(8192, total_out - seek);
             const auto seeked = render_blocks(si, signal, kChannels, seek, len, 512);
-            INFO("taps=", taps, " seek=", seek);
+            INFO("channels=", kChannels, " taps=", taps, " seek=", seek);
             CHECK(bit_identical(full, static_cast<std::size_t>(seek) * kChannels,
                                 seeked, 0, static_cast<std::size_t>(len) * kChannels));
         }
@@ -268,5 +268,32 @@ TEST_CASE("E2: null test against the r8brain conversion the cache ships today") 
             CHECK(best_off == 0);
             CHECK(best_db <= -100.0);
         }
+    }
+}
+
+TEST_CASE("the stereo kernel computes the same filter as the generic one") {
+    // E2 measures quality on mono (generic kernel); stereo runs its own SIMD
+    // kernel with a different summation order. Same filter, so the two may
+    // only differ by float rounding.
+    constexpr Frame kSrcFrames = 44100;
+    const auto mono = make_broadband(kSrcFrames, 1, 44100);
+    std::vector<float> stereo(mono.size() * 2);
+    for (std::size_t i = 0; i < mono.size(); ++i) {
+        stereo[2 * i] = mono[i];
+        stereo[2 * i + 1] = -0.5f * mono[i];
+    }
+    for (int taps : {16, 32, 64}) {
+        SincInterpolator si(44100, 48000, taps);
+        const Frame out_frames = si.output_length(kSrcFrames);
+        const auto m = render_blocks(si, mono, 1, 0, out_frames, 512);
+        const auto s = render_blocks(si, stereo, 2, 0, out_frames, 512);
+        double worst = 0.0;
+        for (Frame f = 0; f < out_frames; ++f) {
+            const std::size_t i = static_cast<std::size_t>(f);
+            worst = std::max(worst, std::fabs(double(s[2 * i]) - m[i]));
+            worst = std::max(worst, std::fabs(double(s[2 * i + 1]) + 0.5 * m[i]));
+        }
+        INFO("taps=", taps, " worst=", worst);
+        CHECK(worst < 1e-6);
     }
 }

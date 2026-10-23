@@ -29,6 +29,9 @@ namespace lt {
 // ---------------------------------------------------------------------------
 class SincInterpolator {
 public:
+    // Longest kernel, in source frames (bounds the edge path's stack buffer).
+    static constexpr int kMaxKernel = 512;
+
     SincInterpolator(int source_sample_rate, int target_sample_rate, int taps);
 
     int source_sample_rate() const { return source_rate_; }
@@ -67,6 +70,8 @@ private:
     // den_ rows of length_ coefficients; row p is the kernel at fractional
     // offset p / den_.
     std::vector<float> table_;
+    // table_ with every coefficient duplicated, for interleaved stereo.
+    std::vector<float> stereo_table_;
 };
 
 } // namespace lt
