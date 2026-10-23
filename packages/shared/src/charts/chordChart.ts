@@ -277,3 +277,19 @@ export function transposeChart(doc: ChartDoc, semitones: number, flats = false):
     })),
   };
 }
+
+/**
+ * The chart transposed `semitones`, spelled with sharps and with flats. A song
+ * that modulates is read in a different key in each part (D up to Eb: the last
+ * chorus wants `Ab`, not `G#`), so the reader picks the spelling per block from
+ * the key sounding where it starts. Without a transposition the chords stay as
+ * written and both are the same document.
+ */
+export type SpelledChart = { sharps: ChartDoc; flats: ChartDoc };
+
+export function spellChart(doc: ChartDoc, semitones: number): SpelledChart {
+  return {
+    sharps: transposeChart(doc, semitones, false),
+    flats: transposeChart(doc, semitones, true),
+  };
+}

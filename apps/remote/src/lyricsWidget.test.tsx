@@ -81,6 +81,23 @@ describe("LyricsWidget", () => {
     expect(container.querySelector(".lyrics-block.is-current .lyrics-block-label")?.textContent).toBe("Estrofa");
   });
 
+  it("spells each part in the key it sounds in when the song modulates", () => {
+    // In C, +2 sounds in D (sharps); the chorus modulates to Eb, +2 = F (flats).
+    const modulating: SongChart = {
+      text: ["{section: Verso}", "[F#]Verso", "{section: Coro}", "[Ab]Coro"].join("\n"),
+      links: chart.links,
+    };
+    const target = {
+      ...region("song", 0, 40, modulating, 2),
+      keyChanges: [{ id: "up", startSeconds: 20, key: "D#" }],
+    };
+    const { container } = render(
+      <LyricsWidget songView={songView([target])} getPositionSeconds={() => 0} pendingMarkerId={null} />,
+    );
+    const chords = [...container.querySelectorAll(".lyrics-chord")].map((node) => node.textContent);
+    expect(chords).toEqual(["G#", "Bb"]);
+  });
+
   it("shows a scheduled jump right after the part playing", () => {
     const { container } = render(
       <LyricsWidget

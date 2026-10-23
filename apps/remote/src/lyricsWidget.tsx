@@ -3,16 +3,17 @@ import { memo, useEffect, useMemo, useRef, useState, type CSSProperties } from "
 import {
   getEffectiveBpmAt,
   markerCategory,
-  regionEffectiveKey,
+  regionEffectiveKeyAt,
   type SectionMarkerSummary,
   type SongRegionSummary,
   type SongView,
 } from "@libretracks/shared/models";
 import {
   parseChordPro,
-  transposeChart,
+  spellChart,
   type ChartDoc,
   type ChartLine,
+  type SpelledChart,
 } from "@libretracks/shared/charts/chordChart";
 import { keyPrefersFlats, parseNoteRun } from "@libretracks/shared/charts/chordNotation";
 import {
@@ -165,21 +166,23 @@ export const LyricsWidget = memo(function LyricsWidget({
 
   const sources = useRef({ songView, getPositionSeconds });
   sources.current = { songView, getPositionSeconds };
-  const docs = useRef(new Map<string, { text: string; transpose: number; doc: ChartDoc }>());
+  const docs = useRef(new Map<string, { text: string; transpose: number; spelled: SpelledChart }>());
 
-  const docFor = (region: SongRegionSummary | null): ChartDoc | null => {
+  /** The song's chart spelled for the key sounding at `seconds` (by default
+   * where it starts): with key changes each part reads in its own key. */
+  const docFor = (region: SongRegionSummary | null, seconds?: number): ChartDoc | null => {
     if (!region?.chart) return null;
-    const cached = docs.current.get(region.id);
-    if (cached && cached.text === region.chart.text && cached.transpose === region.transposeSemitones) {
-      return cached.doc;
+    let cached = docs.current.get(region.id);
+    if (!cached || cached.text !== region.chart.text || cached.transpose !== region.transposeSemitones) {
+      cached = {
+        text: region.chart.text,
+        transpose: region.transposeSemitones,
+        spelled: spellChart(parseChordPro(region.chart.text), region.transposeSemitones),
+      };
+      docs.current.set(region.id, cached);
     }
-    const doc = transposeChart(
-      parseChordPro(region.chart.text),
-      region.transposeSemitones,
-      keyPrefersFlats(regionEffectiveKey(region)),
-    );
-    docs.current.set(region.id, { text: region.chart.text, transpose: region.transposeSemitones, doc });
-    return doc;
+    const key = regionEffectiveKeyAt(region, seconds ?? region.startSeconds);
+    return keyPrefersFlats(key) ? cached.spelled.flats : cached.spelled.sharps;
   };
 
   const resolve = (): LyricsState => {
@@ -297,7 +300,9 @@ export const LyricsWidget = memo(function LyricsWidget({
         >
           {blocks.map((block, blockIndex) => {
             const isCurrent = blockIndex === currentBlock;
-            const section = block.section === null ? null : doc.sections[block.section];
+            const blockDoc =
+              docFor(region, markers.find((marker) => marker.id === block.markerId)?.startSeconds) ?? doc;
+            const section = block.section === null ? null : blockDoc.sections[block.section];
             return (
               <div
                 key={block.key}

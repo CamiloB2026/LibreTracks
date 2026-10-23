@@ -12,14 +12,14 @@ import { useTranslation } from "react-i18next";
 
 import {
   getEffectiveBpmAt,
-  regionEffectiveKey,
+  regionEffectiveKeyAt,
   type SongChart,
   type SongRegionSummary,
   type SongView,
 } from "@libretracks/shared/models";
 
 import { ChartEditorModal } from "./ChartEditorModal";
-import { parseChordPro, transposeChart, type ChartLine } from "@libretracks/shared/charts/chordChart";
+import { parseChordPro, spellChart, type ChartLine } from "@libretracks/shared/charts/chordChart";
 import { keyPrefersFlats, parseNoteRun } from "@libretracks/shared/charts/chordNotation";
 import {
   personalPrefersFlats,
@@ -186,19 +186,32 @@ export const LiveChartPanel = memo(function LiveChartPanel({
   const shift = extraSemitones + (guestChords ? personalChordShift(personal.prefs) : 0);
   const spelling: AccidentalPreference =
     guestChords && accidentals === "auto" ? personal.accidentals : accidentals;
-  const doc = useMemo(() => {
-    if (!chart || !region) return null;
-    const effectiveKey = regionEffectiveKey(region);
-    const flats =
-      shift === 0 && spelling === "auto"
-        ? keyPrefersFlats(effectiveKey)
-        : personalPrefersFlats(effectiveKey, shift, spelling);
-    return transposeChart(
-      parseChordPro(chart.text),
-      region.transposeSemitones + shift,
-      flats,
-    );
-  }, [chart, region, shift, spelling]);
+  const spelled = useMemo(
+    () =>
+      chart && region
+        ? spellChart(parseChordPro(chart.text), region.transposeSemitones + shift)
+        : null,
+    [chart, region, shift],
+  );
+  // The chart spelled for the key sounding at `seconds`: with key changes,
+  // each part reads in its own key (see spellChart).
+  const docAt = useCallback(
+    (seconds: number) => {
+      if (!spelled || !region) return null;
+      const key = regionEffectiveKeyAt(region, seconds);
+      const flats =
+        shift === 0 && spelling === "auto"
+          ? keyPrefersFlats(key)
+          : personalPrefersFlats(key, shift, spelling);
+      return flats ? spelled.flats : spelled.sharps;
+    },
+    [spelled, region, shift, spelling],
+  );
+  const doc = useMemo(() => (region ? docAt(region.startSeconds) : null), [docAt, region]);
+  const markerStarts = useMemo(
+    () => new Map(markers.map((marker) => [marker.id, marker.startSeconds])),
+    [markers],
+  );
   const links = useMemo(
     () => (chart ? (recording ? applyLineRecording(chart.links, recording) : chart.links) : []),
     [chart, recording],
@@ -519,7 +532,8 @@ export const LiveChartPanel = memo(function LiveChartPanel({
         >
           {blocks.map((block, blockIndex) => {
             const isCurrent = blockIndex === currentBlock;
-            const section = block.section === null ? null : doc.sections[block.section];
+            const blockDoc = docAt(markerStarts.get(block.markerId) ?? region?.startSeconds ?? 0) ?? doc;
+            const section = block.section === null ? null : blockDoc.sections[block.section];
             const sheetLabel = section?.label && section.label.toLowerCase() !== block.label.toLowerCase() ? section.label : null;
             return (
               <div

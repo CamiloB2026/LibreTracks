@@ -298,4 +298,19 @@ describe("LiveChartPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: "liveChart.pasteText" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
+
+  it("spells each part in the key it sounds in when the song modulates", () => {
+    // In C, +2 sounds in D (sharps); the chorus modulates to Eb, +2 = F (flats).
+    const modulating: SongChart = {
+      text: ["{section: Verso}", "[F#]Verso", "{section: Coro}", "[Ab]Coro"].join("\n"),
+      links: linked.links,
+    };
+    const target = {
+      ...region(modulating, 2),
+      keyChanges: [{ id: "up", startSeconds: 20, key: "D#" }],
+    };
+    const { container } = renderPanel(target, { current: 0 });
+    const chords = [...container.querySelectorAll(".lt-chart-chord")].map((node) => node.textContent);
+    expect(chords).toEqual(["G#", "Bb"]);
+  });
 });
