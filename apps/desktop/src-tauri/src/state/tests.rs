@@ -6195,6 +6195,42 @@ fn setting_song_tempo_turns_warp_on_and_scales_every_marker_inside() {
 }
 
 #[test]
+fn changing_a_tempo_marker_of_a_slowed_song_at_its_view_position_edits_it() {
+    // Field report: changing the bpm added a second marker a few seconds
+    // before the real one. The UI sent the marker's source position, and this
+    // command takes view seconds and converts them again.
+    let mut song = demo_song();
+    song.tempo_markers = vec![TempoMarker {
+        id: "tempo_inside".into(),
+        start_seconds: 6.0,
+        bpm: 130.0,
+        ramp: false,
+    }];
+    let mut session = session_with_song_dir("tempo-marker-edit-slowed-song", song);
+    let audio = crate::audio::engine::AudioController::default();
+    session
+        .set_song_region_tempo("region_1", 108.0, &audio)
+        .expect("song tempo should change");
+    let view_start = session
+        .song_view()
+        .expect("song view should build")
+        .expect("song summary should exist")
+        .tempo_markers[0]
+        .start_seconds;
+    assert!(view_start > 6.1, "a slowed song moves the marker later in view");
+
+    session
+        .upsert_song_tempo_marker(view_start, 100.0, &audio)
+        .expect("tempo marker should update");
+
+    let song = session.engine.song().expect("song should be loaded");
+    assert_eq!(song.tempo_markers.len(), 1);
+    assert_eq!(song.tempo_markers[0].id, "tempo_inside");
+    assert!((song.tempo_markers[0].start_seconds - 6.0).abs() < 1e-6);
+    assert_eq!(song.tempo_markers[0].bpm, 100.0);
+}
+
+#[test]
 fn setting_one_song_tempo_leaves_the_neighbours_alone_and_original_undoes_it() {
     let mut session = session_with_song_dir(
         "region-tempo-neighbours",

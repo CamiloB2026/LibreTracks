@@ -92,10 +92,12 @@ describe("createTapTempoHandler", () => {
     expect(updateSongTempo).toHaveBeenCalledWith(240);
   });
 
-  it("upserts onto the active tempo marker when one exists at the cursor", async () => {
+  it("upserts onto the active tempo marker at its view position", async () => {
+    // Behind a slowed-down song the view and source positions differ; the
+    // backend converts view → source itself, so the source one would miss.
     const marker = {
       startSeconds: 4,
-      sourceStartSeconds: 4,
+      sourceStartSeconds: 3.8,
     } as unknown as TempoMarkerSummary;
     const upsertSongTempoMarker = vi.fn(async () => snapshot(2));
     const { handleTapTempo } = setup({

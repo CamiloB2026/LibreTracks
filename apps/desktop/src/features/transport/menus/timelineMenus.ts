@@ -817,7 +817,7 @@ export function createTimelineMenus(getDeps: () => TimelineMenuDeps) {
 
           await d.runAction(async () => {
             const nextSnapshot = await upsertSongTempoMarker(
-              marker.sourceStartSeconds ?? marker.startSeconds,
+              marker.startSeconds,
               nextBpm,
             );
             d.optimisticallyAppliedRevisionsRef.current.add(

@@ -7022,7 +7022,7 @@ export function TransportPanelContent() {
               );
               const nextSnapshot = tempoMarker
                 ? await upsertSongTempoMarker(
-                    tempoMarker.sourceStartSeconds ?? tempoMarker.startSeconds,
+                    tempoMarker.startSeconds,
                     clampedBpm,
                   )
                 : await updateSongTempo(clampedBpm);

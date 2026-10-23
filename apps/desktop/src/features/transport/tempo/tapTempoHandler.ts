@@ -38,8 +38,10 @@ export type TapTempoHandlerDeps = {
     song: SongView,
     positionSeconds: number,
   ) => TempoMarkerSummary | null;
+  // View seconds: the backend converts to source time itself, so passing a
+  // marker's sourceStartSeconds converts twice and misses it after a warp.
   upsertSongTempoMarker: (
-    sourceStartSeconds: number,
+    startSeconds: number,
     bpm: number,
   ) => Promise<TransportSnapshot>;
   updateSongTempo: (bpm: number) => Promise<TransportSnapshot>;
@@ -104,7 +106,7 @@ export function createTapTempoHandler(deps: TapTempoHandlerDeps) {
     void runAction(async () => {
       const nextSnapshot = tempoMarker
         ? await upsertSongTempoMarker(
-            tempoMarker.sourceStartSeconds ?? tempoMarker.startSeconds,
+            tempoMarker.startSeconds,
             nextBpm,
           )
         : await updateSongTempo(nextBpm);
