@@ -132,6 +132,13 @@ export async function importFromCloud(
       });
     }
     return false;
+  } finally {
+    // The import unpacks the whole package before it resolves, so the staged
+    // copy is dead weight from here on. It used to be left behind: a 10-song
+    // set stayed in the cache at full size next to the session it became.
+    if (localPath) {
+      void discardStagedPackage(localPath).catch(() => {});
+    }
   }
 }
 
@@ -168,26 +175,28 @@ export async function importWithStorageChoice(
  * by one line and gains no logic.
  */
 export async function importSongWithChoice(
-  runImport: (sourcePath?: string) => void,
+  runImport: (sourcePath?: string) => Promise<void> | void,
 ): Promise<void> {
   await importWithStorageChoice(
     "song",
     () => runImport(),
     async (localPath) => {
-      runImport(localPath);
+      // Awaited: the staged package is deleted as soon as this resolves.
+      await runImport(localPath);
     },
   );
 }
 
 /** "Import session" with the local-or-Drive question in front of it. */
 export async function importSessionWithChoice(
-  runImport: (sourcePath?: string) => void,
+  runImport: (sourcePath?: string) => Promise<void> | void,
 ): Promise<void> {
   await importWithStorageChoice(
     "session",
     () => runImport(),
     async (localPath) => {
-      runImport(localPath);
+      // Awaited: the staged package is deleted as soon as this resolves.
+      await runImport(localPath);
     },
   );
 }

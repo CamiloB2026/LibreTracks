@@ -171,7 +171,9 @@ export function useProjectActions({
     loadingMessage: string,
     successEvent: Extract<ProductEventName, "project_created" | "project_opened">,
   ) {
-    void runAction(
+    // Returned so a caller can tell when the loader is finished with its
+    // source: the Drive import deletes the staged package at that point.
+    return runAction(
       async () => {
         let unlistenProjectProgress: (() => void) | null = null;
         let stopProjectProgressPolling: (() => void) | null = null;
@@ -289,7 +291,7 @@ export function useProjectActions({
    * flow instead of growing a parallel one.
    */
   function handleImportSessionClick(sourcePath?: string) {
-    runProjectLoadFlow(
+    return runProjectLoadFlow(
       () => importSessionPackage(sourcePath),
       t("transport.shell.importingSession", {
         defaultValue: "Importando sesión...",
@@ -398,7 +400,10 @@ export function useProjectActions({
     // tracks immediately, waveforms fill in as they decode, and play is
     // progressive (decoded head audible, rest silent). The user can keep using
     // the UI throughout, exactly like the audio-file import.
-    void runAction(async () => {
+    //
+    // Returned for the same reason as `handleImportSessionClick`: it resolves
+    // once the package has been unzipped and is no longer needed.
+    return runAction(async () => {
       setStatus(
         t("transport.shell.importingProject", {
           defaultValue: "Importing project...",

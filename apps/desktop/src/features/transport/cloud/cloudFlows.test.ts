@@ -1,7 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { beginExportWithChoice, cancelExportChoice, finishExportWithChoice } from "./cloudFlows";
+import { discardStagedPackage, downloadFromCloud } from "../desktopApi";
+import {
+  beginExportWithChoice,
+  cancelExportChoice,
+  finishExportWithChoice,
+  importFromCloud,
+} from "./cloudFlows";
 import { useCloudStore } from "./cloudStore";
+
+vi.mock("../desktopApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../desktopApi")>()),
+  getCloudStagingDir: vi.fn(async () => "/cache/cloud-staging"),
+  downloadFromCloud: vi.fn(),
+  discardStagedPackage: vi.fn(async () => {}),
+}));
 
 /**
  * El destino de una exportacion vive en el store porque se pregunta ANTES de
@@ -68,5 +81,58 @@ describe("destino de exportacion", () => {
 
     await finishExportWithChoice("x.ltpkg", vi.fn());
     expect(useCloudStore.getState().exportTarget).toBeNull();
+  });
+});
+
+/**
+ * El paquete bajado de Drive solo existe para importarlo. Antes se quedaba en
+ * la carpeta de paso para siempre: una sesion de 10 canciones ocupaba su
+ * tamano entero en la cache, junto a la sesion en la que se habia convertido.
+ */
+describe("paquete de paso de una importacion desde Drive", () => {
+  const file = { id: "f1", name: "testanalisis.ltset", sizeBytes: 1 } as never;
+  const staged = "/cache/cloud-staging/testanalisis.ltset";
+
+  beforeEach(() => {
+    useCloudStore.getState().reset();
+    useCloudStore.setState({
+      refreshFiles: async () => {},
+      refreshQuota: async () => {},
+    } as never);
+    vi.mocked(downloadFromCloud).mockReset().mockResolvedValue(staged);
+    vi.mocked(discardStagedPackage).mockClear();
+  });
+
+  /** Elige el archivo en el selector como haria el modal. */
+  async function pick() {
+    await vi.waitFor(() => expect(useCloudStore.getState().pendingPick).not.toBeNull());
+    useCloudStore.getState().pendingPick!.resolve(file);
+  }
+
+  it("se borra cuando la importacion ha terminado, no antes", async () => {
+    let finishImport!: () => void;
+    const runImport = vi.fn(
+      () => new Promise<void>((resolve) => (finishImport = resolve)),
+    );
+    const flow = importFromCloud("sessions", runImport);
+    await pick();
+    await vi.waitFor(() => expect(runImport).toHaveBeenCalledWith(staged));
+
+    // Aun descomprimiendo: borrarlo ahora romperia la importacion.
+    expect(discardStagedPackage).not.toHaveBeenCalled();
+
+    finishImport();
+    expect(await flow).toBe(true);
+    expect(discardStagedPackage).toHaveBeenCalledWith(staged);
+  });
+
+  it("se borra tambien si la importacion falla", async () => {
+    const flow = importFromCloud("sessions", async () => {
+      throw new Error("zip corrupto");
+    });
+    await pick();
+
+    expect(await flow).toBe(false);
+    expect(discardStagedPackage).toHaveBeenCalledWith(staged);
   });
 });
