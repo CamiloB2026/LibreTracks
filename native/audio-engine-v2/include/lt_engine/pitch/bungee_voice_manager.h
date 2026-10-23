@@ -159,6 +159,27 @@ public:
     std::shared_ptr<const PreparedVoiceMap>
     build_prepared_voice_map(PreparedVoiceMap prepared_voices) const;
 
+    // Build the voices the session needs and the active map lacks, and add
+    // them WITHOUT touching the ones already there (same shared_ptr, warm
+    // pipeline and phase kept).
+    //
+    // A prepared jump publishes only the clips audible at its target, so any
+    // warp clip that starts later is left without a voice and plays silent
+    // when the playhead reaches it. Call this after publishing a prepared set.
+    // The merge is a compare-and-swap against the live map: if another jump
+    // publishes meanwhile, the new voices are merged onto that one instead.
+    // It does not bump the publish generation — it adds voices, it does not
+    // move the playhead — so a pending seek rebuild is not discarded by it.
+    void enroll_missing_voices(const Session& session,
+                               const SourceManager& sources,
+                               Frame playhead) noexcept;
+
+    // Same, on the async worker. Never displaces a pending full rebuild (that
+    // one builds every voice anyway).
+    void enroll_missing_voices_async(Frame playhead,
+                                     const Session& session,
+                                     const SourceManager& sources);
+
     void publish_prepared_voice_map_realtime(
         std::shared_ptr<const PreparedVoiceMap> prepared_voices) noexcept;
 
@@ -190,6 +211,7 @@ private:
                                   const Session& session,
                                   const SourceManager& sources,
                                   std::uint64_t expected_generation);
+    void ensure_async_worker();
     std::unique_ptr<Impl> impl_;
 };
 

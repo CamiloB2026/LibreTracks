@@ -1014,6 +1014,88 @@ TEST_CASE("PrearmedJumpManager prefeed: scheduled mid-callback jump keeps pitche
     CHECK(std::llabs(p_onset - u_onset) <= 32);
 }
 
+// ─── A prepared jump must not orphan the clips that start after its target ───
+//
+// Field report (issue: automation on warped + transposed songs): an automation
+// jump lands fine, then at the next marker the audio stops while the transport
+// keeps running. The prepared set only carries the clips audible AT the target,
+// and publishing it replaces the whole voice map — so a warp clip that starts
+// later has no voice and render_path_stretched returns silence for it. Nothing
+// re-enrolled it: only the unprepared path asks the control thread for a full
+// rebuild. Without automation there is no prepared jump and the map built at
+// Play covers every clip, which is why the user only heard it with cues.
+TEST_CASE("PrearmedJumpManager: clips after a prepared jump target get their voices back") {
+    constexpr Frame kHalf = kClipLen / 2;
+    SourceManager sources;
+    sources.register_source("src-next", "");
+    REQUIRE(sources.store_decoded_source(
+        "src-next", test::make_stereo_sine(kClipLen, 440.0, 0.5f),
+        kCh, kSR, kClipLen).is_ok());
+
+    Track track;
+    track.id = "track-next";
+    track.gain = 1.0f;
+    track.transpose_behavior = TransposeBehavior::FollowsSongOrRegion;
+    track.clips.push_back(Clip{"clip-a", "src-next", 0, 0, kHalf});
+    track.clips.push_back(Clip{"clip-b", "src-next", kHalf, kHalf, kHalf});
+
+    Song song;
+    song.id = "song-next";
+    song.start_frame = 0;
+    song.end_frame = kClipLen;
+    song.bpm = 120.0;
+    Region region;
+    region.id = "region-next";
+    region.start_frame = 0;
+    region.end_frame = kClipLen;
+    region.warp_enabled = true;
+    region.warp_source_bpm = 120.0001;
+    region.transpose_semitones = kSemitones;
+    song.regions.push_back(region);
+    song.tracks.push_back(track);
+    song.markers.push_back(Marker{"marker-next", "M1", kMarkerFrame});
+    Session session;
+    session.songs.push_back(song);
+
+    BungeeVoiceManager bvm;
+    REQUIRE(bvm.prepare(kSR, kCh, kBlockFrames));
+    PrearmedJumpManager prearm;
+    REQUIRE(prearm.prepare(kSR, kCh, kBlockFrames));
+    prearm.prepare_all_markers(session, sources, 1);
+
+    PrearmTargetKey key;
+    key.kind             = PrearmTargetKind::Marker;
+    key.song_id          = "song-next";
+    key.target_id        = "marker-next";
+    key.timeline_frame   = kMarkerFrame;
+    key.sample_rate      = kSR;
+    key.block_size       = kBlockFrames;
+    key.session_revision = 1;
+    auto prepared = prearm.take_ready(key);
+    REQUIRE(prepared);
+    bvm.swap_in_prepared_voices(prepared->extract_voice_map());
+
+    // The marker sits inside clip-a only: that is all the prepared set holds.
+    auto landed = bvm.voice_for_shared("clip-a");
+    REQUIRE(landed);
+    REQUIRE_FALSE(bvm.voice_for_shared("clip-b"));
+
+    bvm.enroll_missing_voices(session, sources, kMarkerFrame);
+
+    // The voice playing the landing keeps its warm pipeline (same instance)…
+    CHECK(bvm.voice_for_shared("clip-a") == landed);
+    // …and the clip after it can sound when playback reaches it.
+    REQUIRE(bvm.voice_for_shared("clip-b"));
+    auto into_b = render_n_blocks(session.songs[0].tracks[0], kHalf, 20,
+                                  sources, &bvm, kSemitones);
+    constexpr std::size_t kSkipSamples = 5120 * kCh;
+    REQUIRE(into_b.size() > kSkipSamples);
+    std::vector<float> settled(into_b.begin() + kSkipSamples, into_b.end());
+    const float rms = block_rms(settled);
+    INFO("clip-b settled rms=", rms);
+    CHECK(rms > 0.05f);
+}
+
 TEST_CASE("PrearmedJumpManager prepare_target_now waits for streaming target blocks beyond eager cache") {
     constexpr Frame marker_frame = kDefaultBlockFrames * 300;
     constexpr Frame clip_len = marker_frame + kDefaultBlockFrames * 4;

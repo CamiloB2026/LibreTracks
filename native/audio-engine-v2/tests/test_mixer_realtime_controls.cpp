@@ -910,6 +910,45 @@ TEST_CASE("prepared scheduled jump still de-clicks the post-jump boundary") {
     CHECK(left[static_cast<std::size_t>(kTrigger + 127)] == doctest::Approx(0.75f));
 }
 
+// A prepared set only covers the clips audible at its target; the control
+// thread has to enroll the ones that start later (see the prearmed jump test
+// "clips after a prepared jump target get their voices back"). This is the
+// handshake that tells it to.
+TEST_CASE("prepared scheduled jump hands its target to the control thread for a voice top-up") {
+    BungeeVoiceManager bvm;
+    if (!bvm.prepare(test::kFixtureSampleRate, 2, kBlock))
+        return;  // built without Bungee: no prepared maps to publish
+
+    SourceManager sources;
+    add_source(sources, "source", 0.5f, 48000 * 2);
+    auto session = std::make_shared<Session>(one_track_session(0, 48000 * 2));
+    TransportClock clock(test::kFixtureSampleRate);
+    JumpScheduler scheduler;
+    Mixer mixer(session, &sources, &clock, &scheduler);
+    mixer.set_bungee_voice_manager(&bvm);
+
+    ScheduledJump jump;
+    jump.jump_id = "prepared-marker";
+    jump.target = frame_target(24000);
+    jump.trigger = JumpTrigger::AtFrame;
+    jump.status = JumpStatus::Pending;
+    jump.trigger_frame = 300;
+    jump.prepared_voice_map = std::make_shared<PreparedVoiceMap>();
+    REQUIRE(scheduler.schedule(jump).is_ok());
+
+    clock.seek(0);
+    clock.play();
+    std::vector<float> left(kBlock, 0.0f), right(kBlock, 0.0f);
+    float* out[2] = {left.data(), right.data()};
+    mixer.render(out, 2, kBlock, clock.sample_rate());
+
+    REQUIRE(mixer.scheduled_jump_executed_count() == 1);
+    CHECK(mixer.take_pending_prepared_jump() == 24000);
+    CHECK(mixer.take_pending_prepared_jump() == Mixer::kNoJumpPending);
+    // Prepared: no full rebuild requested — that one re-primes every voice.
+    CHECK(mixer.take_pending_scheduled_jump() == Mixer::kNoJumpPending);
+}
+
 TEST_CASE("master fade ramps output gain in the audio callback") {
     SourceManager sources;
     add_source(sources, "source", 0.5f, 48000 * 4);

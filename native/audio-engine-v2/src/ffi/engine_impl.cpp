@@ -964,6 +964,13 @@ void EngineImpl::service_control_thread_tasks() {
             bungee_voices_->rebuild_for_seek_async(
                 target, *session_, *source_manager_);
         }
+        const Frame prepared_target = mixer_->take_pending_prepared_jump();
+        if (prepared_target != Mixer::kNoJumpPending
+            && bungee_voices_ && bungee_voices_->is_available()
+            && session_ && source_manager_) {
+            bungee_voices_->enroll_missing_voices_async(
+                prepared_target, *session_, *source_manager_);
+        }
     }
 }
 
@@ -2274,6 +2281,11 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                     if (auto prepared = prearmed_jumps_->take_ready(key)) {
                         bungee_voices_->swap_in_prepared_voices(
                             prepared->extract_voice_map());
+                        // The set only covers clips audible at the target;
+                        // enroll the warp clips that start later, or they
+                        // play silent when the playhead reaches them.
+                        bungee_voices_->enroll_missing_voices_async(
+                            target_frame, *session_, *source_manager_);
                         // Set transport to target immediately so the next
                         // audio block reads from the new playhead with the
                         // freshly-published voices.
@@ -2353,6 +2365,8 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                     if (auto prepared = prearmed_jumps_->take_ready(key)) {
                         bungee_voices_->swap_in_prepared_voices(
                             prepared->extract_voice_map());
+                        bungee_voices_->enroll_missing_voices_async(
+                            target_frame, *session_, *source_manager_);
                         clock_->seek(target_frame);
                         if (mixer_) mixer_->trigger_crossfade();
                         // The prearmed set carries voices, not audio blocks.
@@ -2427,6 +2441,8 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                     if (auto prepared = prearmed_jumps_->take_ready(key)) {
                         bungee_voices_->swap_in_prepared_voices(
                             prepared->extract_voice_map());
+                        bungee_voices_->enroll_missing_voices_async(
+                            target_frame, *session_, *source_manager_);
                         clock_->seek(target_frame);
                         if (mixer_) mixer_->trigger_crossfade();
                         // The prearmed set carries voices, not audio blocks.
@@ -2583,6 +2599,8 @@ Result<void> EngineImpl::dispatch_command(const EngineCommand& cmd) {
                             if (auto prepared = prearmed_jumps_->take_ready(key)) {
                                 bungee_voices_->swap_in_prepared_voices(
                                     prepared->extract_voice_map());
+                                bungee_voices_->enroll_missing_voices_async(
+                                    target_frame, *session_, *source_manager_);
                                 clock_->seek(target_frame);
                                 if (mixer_) mixer_->trigger_crossfade();
                                 refill_prearm_cache();

@@ -1107,6 +1107,7 @@ void Mixer::render(float** output_channels,
                 publish_summary.queued_max,
                 publish_summary.queued_total);
             bungee_voices_->publish_prepared_voice_map_realtime(due_jump->prepared_voice_map);
+            pending_prepared_jump_frame_.store(due_jump->target_frame, std::memory_order_release);
         }
         clock_->seek(due_jump->target_frame);
         // Warp lives inside the single Bungee voice now (one stretcher per
@@ -2266,6 +2267,10 @@ Frame Mixer::take_pending_scheduled_jump() noexcept {
             expected, kNoJumpPending, std::memory_order_acq_rel))
         return f;
     return kNoJumpPending;
+}
+
+Frame Mixer::take_pending_prepared_jump() noexcept {
+    return pending_prepared_jump_frame_.exchange(kNoJumpPending, std::memory_order_acq_rel);
 }
 
 } // namespace lt

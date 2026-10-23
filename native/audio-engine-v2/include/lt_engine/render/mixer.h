@@ -174,6 +174,12 @@ public:
     // Sentinel returned by take_pending_scheduled_jump() when no jump is pending.
     static constexpr Frame kNoJumpPending = -1;
 
+    // Same handshake for a PREPARED scheduled jump: its voice set only covers
+    // the clips audible at the target, so the control thread must enroll the
+    // ones that start later (BungeeVoiceManager::enroll_missing_voices) or they
+    // play silent when the playhead reaches them. kNoJumpPending if none.
+    Frame take_pending_prepared_jump() noexcept;
+
 #if defined(LT_ENGINE_TEST_HOOKS)
     // Test-only latch: exercise the render fallback used while rebuilding the
     // control table. Never enabled in shipped engine targets.
@@ -462,6 +468,8 @@ private:
     // so the control thread can call prepare_for_transport_discontinuity() for pitch.
     // Sentinel: -1 means no pending jump. Written from audio thread, read from control thread.
     std::atomic<Frame> pending_scheduled_jump_frame_{kNoJumpPending};
+    // Target of the last prepared scheduled jump, awaiting its voice top-up.
+    std::atomic<Frame> pending_prepared_jump_frame_{kNoJumpPending};
 
     // Click-free crossfade around seeks/jumps.
     FadeProcessor fade_;
