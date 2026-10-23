@@ -605,9 +605,9 @@ fn run_job(
 
     let read = |path: &std::path::Path| read_mono_wav(path).map_err(JobError::Failed);
     let outcome = (|| -> Result<(), JobError> {
-        // A click without accent: read again once the guide says where its
-        // bars start.
-        let mut unaccented_click: Option<(Vec<f32>, u32)> = None;
+        // The click is read again once the guide says where its bars start:
+        // without accent, and the short bars an accent may not show.
+        let mut click_to_reread: Option<(Vec<f32>, u32)> = None;
         if let Some(tempo) = &job.tempo {
             if !on_progress(AnalysisProgress::at(RENDER_END, "tempo")) {
                 return Err(JobError::Cancelled);
@@ -623,8 +623,8 @@ fn run_job(
                 .flatten()
                 .filter(|eighths| !eighths.segments.is_empty())
                 .map(|analysis| TempoReading::new(analysis, tempo));
-            if !tempo.from_music && !analysis.downbeat_known && !job.guide_track_ids.is_empty() {
-                unaccented_click = Some((samples, rate));
+            if !tempo.from_music && !job.guide_track_ids.is_empty() {
+                click_to_reread = Some((samples, rate));
             }
             result.tempo = Some(TempoResult {
                 reading: TempoReading::new(analysis, tempo),
@@ -668,7 +668,7 @@ fn run_job(
             if ANALYSIS_CANCEL.load(Ordering::Acquire) {
                 return Err(JobError::Cancelled);
             }
-            if let (Some(tempo), Some((click, click_rate))) = (&job.tempo, &unaccented_click) {
+            if let (Some(tempo), Some((click, click_rate))) = (&job.tempo, &click_to_reread) {
                 let reread = |as_eighths: bool| {
                     analyze_click_with_guide(
                         click,
@@ -1158,7 +1158,7 @@ mod tests {
             )
             .expect("model");
             let guide = analyze_guide(&guide_samples, guide_rate, &templates, Some(&mut whisper));
-            if !downbeat_known {
+            {
                 let reread = |as_eighths: bool| {
                     analyze_click_with_guide(
                         &samples,

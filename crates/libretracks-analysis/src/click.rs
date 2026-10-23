@@ -258,7 +258,7 @@ fn analyze_click_reading(
         return None;
     }
     let mut warnings = Vec::new();
-    let beats = if downbeat_known {
+    let mut beats = if downbeat_known {
         beats
     } else {
         let beats = fold_subdivisions(beats, UNACCENTED_SUBDIVISION_MAX_SECONDS);
@@ -340,6 +340,35 @@ fn analyze_click_reading(
                     seconds: times[index],
                     kind: ClickWarningKind::DownbeatFromGuide,
                 });
+            }
+        }
+    } else if let Some(guide) = guide {
+        // An accent can keep a steady 4/4 through the song's short bars
+        // ("Poema de salvación": its coro, instrumental and versos 1-2 start
+        // two beats off the accent, as the user placed them, then the
+        // sections are back on it). Where the guide's announcements say so
+        // (see `bar_restarts_from_guide`), they say where the bars start.
+        let first_run = (1..beats.len())
+            .find(|&index| is_gap(&beats, index))
+            .unwrap_or(beats.len());
+        let downbeats: Vec<usize> = (0..first_run).filter(|&i| beats[i].downbeat).collect();
+        if let [first, second, ..] = downbeats[..] {
+            let beats_per_bar = second - first;
+            let times: Vec<f64> = beats[..first_run].iter().map(|b| b.seconds).collect();
+            let restarts = bar_restarts_from_guide(&times, beats_per_bar, first, guide);
+            if !restarts.is_empty() {
+                let mut since_bar = 0;
+                for (index, beat) in beats[first..first_run].iter_mut().enumerate() {
+                    if restarts.contains(&(first + index)) {
+                        since_bar = 0;
+                        warnings.push(ClickWarning {
+                            seconds: beat.seconds,
+                            kind: ClickWarningKind::DownbeatFromGuide,
+                        });
+                    }
+                    beat.downbeat = since_bar % beats_per_bar == 0;
+                    since_bar += 1;
+                }
             }
         }
     }
@@ -1502,6 +1531,57 @@ mod tests {
                 .collect(),
             groups: Vec::new(),
         }
+    }
+
+    #[test]
+    fn an_accent_in_steady_four_four_gives_way_to_the_guide_s_short_bars() {
+        // "Poema de salvación" (91 BPM): the accent keeps a steady 4/4, but
+        // the coro, instrumental and versos 1-2 are announced on beat 3 of
+        // its bars, in a run, and start four beats later (as the user placed
+        // them); then the sections are back on the accent.
+        let (clicks, _) = bars_at(0.0, 91.0, 4, 80);
+        let samples = render(&clicks);
+        let beat = 60.0 / 91.0;
+        let spoken = [
+            32.0, 48.0, 66.0, 98.0, 114.0, 130.0, 148.0, 180.0, 196.0, 212.0,
+        ];
+        let guide = GuideAnalysis {
+            announcements: spoken
+                .iter()
+                .map(|&at| crate::guide::GuideAnnouncement {
+                    start_seconds: at * beat,
+                    end_seconds: at * beat + 0.6,
+                    group: 0,
+                    count_words: Vec::new(),
+                })
+                .collect(),
+            groups: vec![crate::guide::GuideGroup {
+                labels: vec!["chorus".to_string()],
+                transcript: None,
+                match_cost: None,
+                counted_in: false,
+                occurrences: spoken.len(),
+                first_start_seconds: 0.0,
+                first_end_seconds: 0.0,
+            }],
+        };
+        let analysis = analyze_click_with_guide(&samples, RATE, 4, false, &guide).expect("read");
+        assert!(analysis.downbeat_known);
+        let short: Vec<(f64, u32)> = analysis
+            .segments
+            .iter()
+            .filter(|segment| segment.beats_per_bar == 2)
+            .map(|segment| (segment.start_seconds / beat, segment.bars))
+            .collect();
+        assert_eq!(short.len(), 2, "{analysis:?}");
+        assert_close(short[0].0, 64.0, 0.01);
+        assert_close(short[1].0, 146.0, 0.01);
+        // Without a guide the accent rules, as before.
+        let plain = analyze_click(&samples, RATE, 4);
+        assert!(plain
+            .segments
+            .iter()
+            .all(|segment| segment.beats_per_bar == 4));
     }
 
     #[test]
