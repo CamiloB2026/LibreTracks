@@ -15,9 +15,9 @@ import {
   stepMeterDb,
 } from "@libretracks/shared/meterBallistics";
 
-import { recordMeterTick } from "../perf/perfMetrics";
 import { useSongStore } from "../songStore";
 import { useTransportStore, type TrackMeterState } from "../store";
+import { registerMeter, selectMeter } from "./meterTicker";
 
 const EMPTY_METER: TrackMeterState = {
   leftPeak: 0,
@@ -163,14 +163,24 @@ function setChannelTarget(channel: ChannelAnimationState, rawPeak: number, now: 
   }
 }
 
-function areTrackMetersEqual(
-  previousMeter: TrackMeterState | undefined,
-  nextMeter: TrackMeterState | undefined,
-) {
-  return (
-    (previousMeter?.leftPeak ?? 0) === (nextMeter?.leftPeak ?? 0) &&
-    (previousMeter?.rightPeak ?? 0) === (nextMeter?.rightPeak ?? 0)
-  );
+type SongState = ReturnType<typeof useSongStore.getState>;
+type SongTrack = NonNullable<SongState["song"]>["tracks"][number];
+
+// Índice id → pista por canción. Cada edición publica una canción nueva, así
+// que se reconstruye una vez por edición y no una vez por medidor: con
+// `tracks.find` en el selector, N medidores hacían N búsquedas de N pistas.
+const trackIndexBySong = new WeakMap<object, Map<string, SongTrack>>();
+
+function trackById(song: SongState["song"], id: string): SongTrack | undefined {
+  if (!song) {
+    return undefined;
+  }
+  let index = trackIndexBySong.get(song);
+  if (!index) {
+    index = new Map(song.tracks.map((track) => [track.id, track]));
+    trackIndexBySong.set(song, index);
+  }
+  return index.get(id);
 }
 
 type StereoMeterProps = {
@@ -182,14 +192,10 @@ type StereoMeterProps = {
 };
 
 function StereoMeterComponent({ source, id, orientation, className }: StereoMeterProps) {
-  const selectMeter = (state: ReturnType<typeof useTransportStore.getState>) =>
-    source === "track" ? state.meters[id] : state.regionMeters[id];
   // «Convertir a mono» de la pista: un solo canal en el medidor. El master de
   // una canción no tiene esa opción.
   const mono = useSongStore(
-    (state) =>
-      source === "track" &&
-      state.song?.tracks.find((track) => track.id === id)?.monoDownmix === true,
+    (state) => source === "track" && trackById(state.song, id)?.monoDownmix === true,
   );
   const monoRef = useRef(mono);
   monoRef.current = mono;
@@ -199,11 +205,9 @@ function StereoMeterComponent({ source, id, orientation, className }: StereoMete
     Array.from({ length: CHANNEL_COUNT }, () => ({ bar: null, peak: null, clip: null })),
   );
   const animationRef = useRef<{
-    frameId: number | null;
     lastFrameAt: number;
     channels: ChannelAnimationState[];
   }>({
-    frameId: null,
     lastFrameAt: 0,
     channels: Array.from({ length: CHANNEL_COUNT }, idleChannel),
   });
@@ -218,17 +222,8 @@ function StereoMeterComponent({ source, id, orientation, className }: StereoMete
       });
     };
 
-    const stopAnimation = () => {
-      if (animation.frameId !== null) {
-        cancelAnimationFrame(animation.frameId);
-        animation.frameId = null;
-      }
-      animation.lastFrameAt = 0;
-    };
-
-    // One frame loop drives both channels.
-    const stepAnimation = (now: number) => {
-      recordMeterTick();
+    // The shared ticker calls this once per frame while the meter moves.
+    const step = (now: number) => {
       const elapsedMs = animation.lastFrameAt > 0 ? now - animation.lastFrameAt : 16.67;
       animation.lastFrameAt = now;
 
@@ -241,32 +236,27 @@ function StereoMeterComponent({ source, id, orientation, className }: StereoMete
       applyAll(now);
 
       if (!moving) {
-        stopAnimation();
-        return;
+        animation.lastFrameAt = 0;
       }
-
-      animation.frameId = requestAnimationFrame(stepAnimation);
+      return moving;
     };
 
-    const scheduleAnimation = () => {
-      if (animation.frameId !== null) {
-        return;
-      }
-
-      animation.frameId = requestAnimationFrame(stepAnimation);
-    };
-
-    const updateMeterTarget = (meter: TrackMeterState | undefined) => {
-      const peaks = channelPeaks(meter ?? EMPTY_METER, monoRef.current);
-      const now = performance.now();
-      animation.channels.forEach((channel, index) => {
-        setChannelTarget(channel, peaks[index], now);
-      });
-      scheduleAnimation();
-    };
+    const registration = registerMeter({
+      source,
+      id,
+      step,
+      onMeter: (meter) => {
+        const peaks = channelPeaks(meter ?? EMPTY_METER, monoRef.current);
+        const now = performance.now();
+        animation.channels.forEach((channel, index) => {
+          setChannelTarget(channel, peaks[index], now);
+        });
+        registration.wake();
+      },
+    });
 
     const currentPeaks = channelPeaks(
-      selectMeter(useTransportStore.getState()) ?? EMPTY_METER,
+      selectMeter(useTransportStore.getState(), source, id) ?? EMPTY_METER,
       monoRef.current,
     );
     animation.channels.forEach((channel, index) => {
@@ -277,27 +267,16 @@ function StereoMeterComponent({ source, id, orientation, className }: StereoMete
     applyAll(performance.now());
 
     if (animation.channels.some((channel) => channel.currentDb > peakToMeterDb(0))) {
-      scheduleAnimation();
+      registration.wake();
     }
 
-    const unsubscribe = useTransportStore.subscribe(
-      selectMeter,
-      (meter) => {
-        updateMeterTarget(meter);
-      },
-      {
-        equalityFn: areTrackMetersEqual,
-      },
-    );
-
     return () => {
-      unsubscribe();
-      stopAnimation();
+      registration.unregister();
+      animation.lastFrameAt = 0;
       animation.channels = Array.from({ length: CHANNEL_COUNT }, idleChannel);
       applyAll(0);
     };
     // Re-seat the bars when the track switches between mono and stereo.
-    // `selectMeter` only reads `source` and `id`, both listed.
   }, [source, id, mono, orientation]);
 
   const idleMeterStyle = meterStyleFromDb(peakToMeterDb(0), orientation);
