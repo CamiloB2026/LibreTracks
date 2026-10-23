@@ -11,7 +11,7 @@ import { clamp, secondsToScreenX } from "../timeline/timelineMath";
 import { isMobileApp } from "../desktopApi";
 import { useVideoStore } from "../video/videoStore";
 import { drawVideoLane } from "./drawVideoLane";
-import type { TrackRowLayout } from "../tracks/trackLayout";
+import { visibleTrackWindow, type TrackRowLayout } from "../tracks/trackLayout";
 import {
   drawWaveformSketch,
   getWaveformRenderPixelsPerSecond,
@@ -408,30 +408,6 @@ export function analyzedClipRatio(
   );
 }
 
-function resolveVisibleTrackWindow(
-  layout: TrackRowLayout,
-  viewportScrollTop: number,
-  viewportHeight: number,
-) {
-  const trackCount = layout.heights.length;
-  const safeScrollTop = Math.max(0, viewportScrollTop);
-  const safeViewportHeight = Math.max(
-    layout.baseHeight,
-    viewportHeight || layout.baseHeight,
-  );
-  // One row of slack on each side, so a row scrolling into view is already
-  // painted. Rows have their own heights now, hence rowAt() rather than a
-  // division by a shared height.
-  const startIndex = clamp(layout.rowAt(safeScrollTop) - 1, 0, trackCount);
-  const endIndex = clamp(
-    layout.rowAt(safeScrollTop + safeViewportHeight) + 2,
-    startIndex,
-    trackCount,
-  );
-
-  return { startIndex, endIndex };
-}
-
 /**
  * Paint the automation cues as diamonds along the synthetic automation track's
  * row. Mirrors the old ruler-lane look (drawRulerAutomationCue) but anchored to
@@ -714,7 +690,12 @@ export function drawTrackClipsLayer(
 ) {
   const layout = snapshot.trackLayout;
   const { startIndex: visibleTrackStart, endIndex: visibleTrackEnd } =
-    resolveVisibleTrackWindow(layout, viewport.scrollTop, viewport.height);
+    // One row of slack on each side, so a row scrolling into view is already
+    // painted.
+    visibleTrackWindow(layout, viewport.scrollTop, viewport.height, {
+      rowsBefore: 1,
+      rowsAfter: 1,
+    });
 
   beginWaveformTilePaint();
   const songDrawIndex = getSongDrawIndex(snapshot.song);

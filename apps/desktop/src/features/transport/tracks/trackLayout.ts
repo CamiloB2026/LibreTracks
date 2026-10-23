@@ -148,3 +148,70 @@ export function trackRowDeltaForDrag(
   const centre = layout.tops[fromIndex] + layout.heights[fromIndex] / 2;
   return layout.rowAt(centre + deltaY) - fromIndex;
 }
+
+export type TrackRowWindow = {
+  /** First row included, inclusive. */
+  startIndex: number;
+  /** Row after the last one included, exclusive. */
+  endIndex: number;
+};
+
+export type TrackRowWindowMargin = {
+  /** Extra pixels above and below the viewport, applied before picking rows. */
+  overscanPx?: number;
+  /** Extra whole rows above the first row the (overscanned) band touches. */
+  rowsBefore?: number;
+  /** Extra whole rows below the last row the (overscanned) band touches. */
+  rowsAfter?: number;
+};
+
+/**
+ * Rows a viewport `[scrollTop, scrollTop + viewportHeight)` of the track area
+ * touches, plus a margin. THE answer to "which rows can be seen": the canvas
+ * culls with it and the DOM rows (`useVisibleTrackRows`) mount with it, so the
+ * two can never disagree about where a row is.
+ *
+ * Works on per-row heights through `rowAt`; never divides by a shared height.
+ */
+export function visibleTrackWindow(
+  layout: TrackRowLayout,
+  scrollTop: number,
+  viewportHeight: number,
+  { overscanPx = 0, rowsBefore = 0, rowsAfter = 0 }: TrackRowWindowMargin = {},
+): TrackRowWindow {
+  const trackCount = layout.heights.length;
+  const safeScrollTop = Math.max(0, scrollTop);
+  const safeViewportHeight = Math.max(
+    layout.baseHeight,
+    viewportHeight || layout.baseHeight,
+  );
+  const bandTop = safeScrollTop - overscanPx;
+  const bandBottom = safeScrollTop + safeViewportHeight + overscanPx;
+  const startIndex = clampIndex(layout.rowAt(bandTop) - rowsBefore, 0, trackCount);
+  const endIndex = clampIndex(
+    layout.rowAt(bandBottom) + 1 + rowsAfter,
+    startIndex,
+    trackCount,
+  );
+  return { startIndex, endIndex };
+}
+
+/**
+ * Heights that stand in for the rows outside `window`, so the content keeps
+ * exactly `layout.totalHeight`: `top + Σ heights[start, end) + bottom`.
+ */
+export function spacersFor(
+  layout: TrackRowLayout,
+  { startIndex, endIndex }: TrackRowWindow,
+): { top: number; bottom: number } {
+  const trackCount = layout.heights.length;
+  const start = clampIndex(startIndex, 0, trackCount);
+  const end = clampIndex(endIndex, start, trackCount);
+  const top = start < trackCount ? layout.tops[start] : layout.totalHeight;
+  const bottom = end < trackCount ? layout.totalHeight - layout.tops[end] : 0;
+  return { top, bottom };
+}
+
+function clampIndex(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}

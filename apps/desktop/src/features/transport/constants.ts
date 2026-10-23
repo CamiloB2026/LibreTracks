@@ -72,6 +72,18 @@ export const DOM_EXTERNAL_DROP_PREVIEW_TTL_MS = 250;
 export const NATIVE_DND_DEBUG_ENABLED =
   import.meta.env.DEV && import.meta.env.VITE_NATIVE_DND_DEBUG === "true";
 
+/**
+ * Rows at or below which the track headers and lanes mount every row, exactly
+ * as before `docs/plans/track-virtualization`. Above it only the rows near the
+ * viewport are mounted. Provisional starting value of that plan: the baseline
+ * that should confirm it (S1 ~27 rows vs. TM 138) is pending, see
+ * `docs/plans/track-virtualization/state/01.md`.
+ */
+export const TRACK_VIRTUALIZATION_MIN_ROWS = 48;
+/** The mounted row window snaps to multiples of this many rows, so scrolling
+ * only re-renders when it crosses a block. */
+export const TRACK_WINDOW_BLOCK_ROWS = 8;
+
 export const HARDWARE_OUTPUT_CHANNEL_COUNT = 8;
 export const LIBRARY_DRAG_EDGE_BUFFER_PX = 50;
 export const LIBRARY_DRAG_MAX_SCROLL_SPEED_PX = 22;
