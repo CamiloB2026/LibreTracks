@@ -66,6 +66,8 @@ import {
   type LibraryPreviewRow,
 } from "./LibraryPreviewLanes";
 import type { TrackRowLayout } from "../tracks/trackLayout";
+import { renderTrackRows } from "../tracks/trackRowWindowing";
+import { useTrackRowWindow } from "../tracks/useTrackRowWindow";
 import {
   LANE_CUES,
   LANE_REGIONS,
@@ -95,6 +97,7 @@ import {
   externalDropBadgeColors,
   externalDropGuideColors,
 } from "./externalDropLook";
+import { TIMELINE_RULER_HEIGHT } from "../constants";
 
 // Must stay in sync with the lane layout in Renderer/drawBackground.ts and
 // the ruler heights in styles.css: 94px is the mobile lanes' bottom edge (87)
@@ -102,8 +105,9 @@ import {
 // lane's 92 + 34) plus the same. The desktop value grew from 122 so the cue
 // lane could move below the two-line bar/timecode labels instead of sharing
 // their band. Changing it here alone misaligns the ruler with the track
-// headers — the CSS row heights below must move with it.
-const RULER_HEIGHT = isMobileApp ? 94 : 134;
+// headers — the CSS row heights below must move with it. The value lives in
+// constants.ts because the track row window (tracks/useTrackRowWindow) needs it.
+const RULER_HEIGHT = TIMELINE_RULER_HEIGHT;
 
 
 type LibraryClipPreviewState = {
@@ -470,6 +474,8 @@ export function TimelineCanvasPane({
     livePixelsPerSecondRef,
     () => onSelectRegion(null),
   );
+  // Same window as the headers: see ../tracks/useTrackRowWindow.
+  const rowWindow = useTrackRowWindow(trackLayout, visibleTracks);
   const touchAreaSelect = useLaneAreaSelection({
     surfaceRef: laneAreaRef,
     rows: { layout: trackLayout, tracks: visibleTracks },
@@ -1225,7 +1231,7 @@ export function TimelineCanvasPane({
           ) : null}
 
           {song?.tracks &&
-            visibleTracks.map((track) => {
+            renderTrackRows(visibleTracks, trackLayout, rowWindow, (track) => {
               const trackClips = clipsByTrack[track.id] ?? [];
               const isPendingTrack = Boolean(track.isPending);
               const isAutomationTrack = Boolean(track.isAutomation);

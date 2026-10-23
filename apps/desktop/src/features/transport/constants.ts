@@ -80,6 +80,9 @@ export const NATIVE_DND_DEBUG_ENABLED =
  * `docs/plans/track-virtualization/state/01.md`.
  */
 export const TRACK_VIRTUALIZATION_MIN_ROWS = 48;
+/** Height of the sticky ruler on top of the track rows, inside the same
+ * vertical scroll viewport. Keep the .lt-ruler CSS heights in sync. */
+export const TIMELINE_RULER_HEIGHT = isMobileApp ? 94 : 134;
 /** The mounted row window snaps to multiples of this many rows, so scrolling
  * only re-renders when it crosses a block. */
 export const TRACK_WINDOW_BLOCK_ROWS = 8;

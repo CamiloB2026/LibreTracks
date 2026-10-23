@@ -23,6 +23,8 @@ import { useTouchContextMenu } from "../timeline/useTouchContextMenu";
 import { useTimelineUIStore } from "../uiStore";
 import { useHeaderAreaSelection } from "../mobile/useAreaSelection";
 import { useRenderCounter } from "../perf/useRenderCounter";
+import { renderTrackRows } from "./trackRowWindowing";
+import { useTrackRowWindow } from "./useTrackRowWindow";
 
 const TRACK_HEADER_CONTROL_SELECTOR =
   "button, input, label, textarea, select, .lt-track-toggle-group, .lt-track-volume, .lt-track-pan";
@@ -137,6 +139,9 @@ export function TrackHeadersPane({
     [trackLayout, visibleTracks],
   );
   useHeaderAreaSelection(paneRef, touchContextMenu.cancel, areaRows);
+  // Only the rows near the viewport are mounted in a big session; the lanes
+  // read the same window. See ./useTrackRowWindow.
+  const rowWindow = useTrackRowWindow(trackLayout, visibleTracks);
 
   useEffect(() => {
     const headersList = headersListRef.current;
@@ -205,7 +210,7 @@ export function TrackHeadersPane({
         aria-hidden={!hasSong}
         ref={headersListRef}
       >
-        {hasSong && visibleTracks.map((track) => {
+        {hasSong && renderTrackRows(visibleTracks, trackLayout, rowWindow, (track) => {
           const automationEnabled = midiLanes?.automationEnabled !== false;
           const isTrackSelected = selectedTrackIds.includes(track.id);
           const childCount = getTrackChildCount(track.id);

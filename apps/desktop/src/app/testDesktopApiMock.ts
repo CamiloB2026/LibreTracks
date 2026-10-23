@@ -870,6 +870,37 @@ export function useEmptySongForTest() {
   state.playbackState = "stopped";
 }
 
+/**
+ * Replace the song's tracks with `count` plain audio tracks named
+ * "Track 1".."Track N" and no clips: a session as big as the 138-track one
+ * from docs/plans/track-virtualization, for the row-window tests.
+ */
+export function useManyTracksSongForTest(
+  count: number,
+  /** Per-track overrides: own heights, folders, collapsed folders. */
+  overrides: (index: number) => Partial<SongView["tracks"][number]> = () => ({}),
+) {
+  replaceSong({
+    ...state.song,
+    tracks: Array.from({ length: count }, (_, index) => ({
+      id: `many-track-${index}`,
+      name: `Track ${index + 1}`,
+      kind: "audio" as const,
+      parentTrackId: null,
+      depth: 0,
+      hasChildren: false,
+      volume: 1,
+      pan: 0,
+      muted: false,
+      solo: false,
+      audioTo: "master",
+      transposeEnabled: false,
+      ...overrides(index),
+    })),
+    clips: [],
+  });
+}
+
 export function emitWaveformReadyForTest(
   filePath: string,
   durationSeconds: number,

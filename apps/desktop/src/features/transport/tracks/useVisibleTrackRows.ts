@@ -44,7 +44,7 @@ type UseVisibleTrackRowsOptions = {
   blockRows?: number;
 };
 
-type ViewportMetrics = { scrollTop: number; clientHeight: number };
+export type ViewportMetrics = { scrollTop: number; clientHeight: number };
 
 const NO_PINNED: readonly number[] = [];
 
@@ -73,6 +73,54 @@ export function resolveVisibleTrackRows(
     endIndex: Math.min(rowCount, Math.ceil(raw.endIndex / block) * block),
     isWindowed: true,
   };
+}
+
+/** Scroll (passive, read in a frame) and resize listeners on the viewport. */
+export function bindViewport(viewport: HTMLElement, sync: () => void) {
+  let frameId: number | null = null;
+  const measure = () => {
+    frameId = null;
+    sync();
+  };
+  const scheduleMeasure = () => {
+    if (frameId === null) {
+      frameId = requestAnimationFrame(measure);
+    }
+  };
+
+  sync();
+  viewport.addEventListener("scroll", scheduleMeasure, { passive: true });
+  const resizeObserver =
+    typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
+  resizeObserver?.observe(viewport);
+
+  return () => {
+    viewport.removeEventListener("scroll", scheduleMeasure);
+    resizeObserver?.disconnect();
+    if (frameId !== null) {
+      cancelAnimationFrame(frameId);
+    }
+  };
+}
+
+/** Pinned rows that fall outside the window, unique and ascending. */
+export function outsidePinnedIndices(
+  { startIndex, endIndex, isWindowed }: TrackRowWindow & { isWindowed: boolean },
+  pinnedIndices: readonly number[],
+  rowCount: number,
+): number[] {
+  if (!isWindowed || pinnedIndices.length === 0) {
+    return [];
+  }
+  return [...new Set(pinnedIndices)]
+    .filter(
+      (index) =>
+        Number.isInteger(index) &&
+        index >= 0 &&
+        index < rowCount &&
+        (index < startIndex || index >= endIndex),
+    )
+    .sort((left, right) => left - right);
 }
 
 export function useVisibleTrackRows({
@@ -119,36 +167,26 @@ export function useVisibleTrackRows({
     }
   };
 
+  // The viewport is only mounted in the DAW view, so it can appear, go and
+  // be replaced while this hook lives: re-bind whenever the element changes.
+  const bindingRef = useRef<{ element: HTMLElement; unbind: () => void } | null>(null);
   useLayoutEffect(() => {
     const viewport = viewportRef.current;
-    if (!viewport) {
+    if (bindingRef.current?.element === viewport) {
       return;
     }
-    let frameId: number | null = null;
-    const measure = () => {
-      frameId = null;
-      syncRef.current(viewport);
-    };
-    const scheduleMeasure = () => {
-      if (frameId === null) {
-        frameId = requestAnimationFrame(measure);
-      }
-    };
-
-    measure();
-    viewport.addEventListener("scroll", scheduleMeasure, { passive: true });
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleMeasure);
-    resizeObserver?.observe(viewport);
-
-    return () => {
-      viewport.removeEventListener("scroll", scheduleMeasure);
-      resizeObserver?.disconnect();
-      if (frameId !== null) {
-        cancelAnimationFrame(frameId);
-      }
-    };
-  }, [viewportRef]);
+    bindingRef.current?.unbind();
+    bindingRef.current = viewport
+      ? { element: viewport, unbind: bindViewport(viewport, () => syncRef.current(viewport)) }
+      : null;
+  });
+  useLayoutEffect(
+    () => () => {
+      bindingRef.current?.unbind();
+      bindingRef.current = null;
+    },
+    [],
+  );
 
   // A new layout can move the window without any scroll (and resize the
   // content, which clamps scrollTop). The derivation in render already uses the
@@ -162,20 +200,10 @@ export function useVisibleTrackRows({
 
   const { startIndex, endIndex, isWindowed } = window;
   const rowCount = layout.heights.length;
-  const outsidePinned = useMemo(() => {
-    if (!isWindowed || pinnedIndices.length === 0) {
-      return [];
-    }
-    return [...new Set(pinnedIndices)]
-      .filter(
-        (index) =>
-          Number.isInteger(index) &&
-          index >= 0 &&
-          index < rowCount &&
-          (index < startIndex || index >= endIndex),
-      )
-      .sort((left, right) => left - right);
-  }, [isWindowed, pinnedIndices, rowCount, startIndex, endIndex]);
+  const outsidePinned = useMemo(
+    () => outsidePinnedIndices({ startIndex, endIndex, isWindowed }, pinnedIndices, rowCount),
+    [isWindowed, pinnedIndices, rowCount, startIndex, endIndex],
+  );
 
   return { startIndex, endIndex, isWindowed, pinnedIndices: outsidePinned };
 }

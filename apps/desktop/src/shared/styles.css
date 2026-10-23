@@ -4391,6 +4391,15 @@ html.lt-ios body {
   position: relative;
 }
 
+/* Stands in for the track rows a big session does not mount (headers and
+   lanes, tracks/trackRowWindowing.tsx). Its height comes from the row layout
+   and must never flex, or the scroll height drifts from the canvas. */
+.lt-track-row-spacer {
+  display: block;
+  flex: 0 0 auto;
+  box-sizing: border-box;
+}
+
 .lt-track-list-dropzone {
   position: relative;
   flex: 1 1 auto;

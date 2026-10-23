@@ -37,6 +37,7 @@ import {
   useStructureStore,
 } from "../features/transport/structure/structureStore";
 import { resetVideoCanvasState } from "../features/transport/video/videoCanvasState";
+import { useTrackRowWindowStore } from "../features/transport/tracks/useTrackRowWindow";
 import { emitWaveformReadyForTest, resetTestDesktopApiMock, testDesktopApiMock } from "../app/testDesktopApiMock";
 
 export type MockWebviewDragDropEvent =
@@ -381,6 +382,13 @@ beforeEach(async () => {
   resetVideoCanvasState();
   // Arreglos: el diálogo de la guardia y el editor viven en un store.
   useStructureStore.setState(INITIAL_STRUCTURE_STATE);
+  // Ventana de filas de pista: sin métricas = montar todas.
+  useTrackRowWindowStore.setState({
+    metrics: null,
+    pressedTrackId: null,
+    focusedTrackId: null,
+    onRowsMounted: null,
+  });
   vi.clearAllMocks();
   vi.restoreAllMocks();
   await i18n.changeLanguage("en");

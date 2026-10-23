@@ -463,6 +463,7 @@ import {
 } from "./menus/timelineMenus";
 import { createTrackHandlers } from "./tracks/trackHandlers";
 import { useTrackDragPreview } from "./tracks/useTrackDragPreview";
+import { useTrackRowWindowController } from "./tracks/useTrackRowWindow";
 import { createTrackHeaderHandlers } from "./tracks/trackHeaderHandlers";
 import { useTrackHeights } from "./tracks/useTrackHeights";
 import { createCompactSongHandlers } from "./compact/compactSongHandlers";
@@ -2919,14 +2920,18 @@ export function TransportPanelContent() {
 
   // Track drag preview ("hueco + fantasma") for the DAW and the compact
   // mixer. See ./tracks/useTrackDragPreview.
-  const { applyTrackDragVisuals, clearTrackDragVisuals, resolveTrackDrop } =
-    useTrackDragPreview({
-      song,
-      songRef,
-      timelineShellRef,
-      getVisibleTrackIds: () => visibleTracksRef.current.map((track) => track.id),
-      getTrackLayout: () => trackRowLayoutRef.current,
-    });
+  const {
+    applyTrackDragVisuals,
+    attachMountedTrackRows,
+    clearTrackDragVisuals,
+    resolveTrackDrop,
+  } = useTrackDragPreview({
+    song,
+    songRef,
+    timelineShellRef,
+    getVisibleTrackIds: () => visibleTracksRef.current.map((track) => track.id),
+    getTrackLayout: () => trackRowLayoutRef.current,
+  });
 
   // Track create / reorder handlers. See ./tracks/trackHandlers. Reactive state
   // is read through getters (songRef, tracksByIdRef, the timeline UI store) so
@@ -5583,6 +5588,9 @@ export function TransportPanelContent() {
     applyPlaybackSnapshot,
     optimisticallyAppliedRevisionsRef,
   });
+  // Which track rows the DAW mounts. See ./tracks/useTrackRowWindow.
+  useTrackRowWindowController({ viewportRef: timelineScrollViewportRef, layout: trackRowLayout,
+    tracks: visibleTracks, onRowsMounted: attachMountedTrackRows });
 
   // Native iOS keeps this last-known state after WebContent dies, so a black
   // UI can leave evidence in errors.log even though JavaScript is already gone.
