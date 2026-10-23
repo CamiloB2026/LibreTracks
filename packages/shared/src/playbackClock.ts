@@ -174,6 +174,10 @@ export function resolveVisualClockResync(params: {
   maxDurationSeconds: number;
   /** Value to store as the anchor's own durationSeconds. */
   anchorDurationSeconds: number;
+  /** How long the snapshot took to reach us (the poll's round trip), in
+   * seconds. The engine sampled its position somewhere inside that trip, so by
+   * now it has moved on by anything up to this much. Omitted = fresh. */
+  snapshotAgeSeconds?: number;
 }): VisualClockResyncDecision {
   const {
     anchor,
@@ -183,6 +187,7 @@ export function resolveVisualClockResync(params: {
     nowMs,
     maxDurationSeconds,
     anchorDurationSeconds,
+    snapshotAgeSeconds = 0,
   } = params;
 
   const canPreserveAnchor =
@@ -211,7 +216,21 @@ export function resolveVisualClockResync(params: {
   // null pump), the anchor is only refreshed at the backend's 250ms sync
   // cadence while positionSeconds stays live; comparing against the anchor
   // there would tug the playhead backwards on every poll that skipped a sync.
-  const enginePositionSeconds = nextSnapshot.positionSeconds;
+  //
+  // A late snapshot is not a slow engine. With the UI busy the reply to a poll
+  // can land hundreds of ms after the engine sampled it; read as "now", that
+  // pulled the playhead back past the snap threshold, and the next prompt poll
+  // threw it forward again — the playhead jumping back and forth on its own.
+  // So the engine is "now" anywhere from the sampled position to that plus the
+  // round trip, and only a visual position outside that span is drift.
+  const sampledPositionSeconds = nextSnapshot.positionSeconds;
+  const travelledSeconds =
+    Math.max(0, snapshotAgeSeconds) *
+    (nextSnapshot.transportClock?.playbackRate ?? 1);
+  const enginePositionSeconds = Math.min(
+    Math.max(visualNowSeconds, sampledPositionSeconds),
+    sampledPositionSeconds + travelledSeconds,
+  );
   const driftSeconds = Math.abs(visualNowSeconds - enginePositionSeconds);
 
   if (driftSeconds <= PLAYBACK_SNAPSHOT_REANCHOR_TOLERANCE_SECONDS) {

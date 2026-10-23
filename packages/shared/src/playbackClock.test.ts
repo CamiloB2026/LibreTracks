@@ -234,4 +234,56 @@ describe("resolveVisualClockResync", () => {
       kind: "keep",
     });
   });
+
+  it("does not pull the playhead back for a snapshot that arrived late", () => {
+    // The engine said 10 s, but the reply took 450 ms: by now it is anywhere
+    // up to 10.45 s, so a playhead drawn at 10.45 is right. Read as "now", the
+    // same snapshot is 0.45 s of drift and snaps the playhead back.
+    const late = resolveVisualClockResync({
+      anchor: anchor({}),
+      previousSnapshot: snapshot(),
+      nextSnapshot: snapshot(),
+      visualNowSeconds: 10.45,
+      nowMs: 5000,
+      maxDurationSeconds: 600,
+      anchorDurationSeconds: 600,
+      snapshotAgeSeconds: 0.45,
+    });
+    expect(late).toEqual({ kind: "keep" });
+    expect(resync({ visualNowSeconds: 10.45 })).toEqual({ kind: "snap" });
+  });
+
+  it("still corrects a late snapshot whose engine is genuinely behind", () => {
+    // A 100 ms trip explains at most 0.1 s; the remaining 0.2 s is real drift
+    // and eases toward the furthest position the engine could have reached.
+    const decision = resolveVisualClockResync({
+      anchor: anchor({}),
+      previousSnapshot: snapshot(),
+      nextSnapshot: snapshot(),
+      visualNowSeconds: 10.3,
+      nowMs: 5000,
+      maxDurationSeconds: 600,
+      anchorDurationSeconds: 600,
+      snapshotAgeSeconds: 0.1,
+    });
+    expect(decision.kind).toBe("correct");
+    if (decision.kind !== "correct") return;
+    expect(decision.anchor.anchorPositionSeconds).toBeCloseTo(10.1, 6);
+  });
+
+  it("a late snapshot never excuses a playhead running BEHIND the engine", () => {
+    const decision = resolveVisualClockResync({
+      anchor: anchor({}),
+      previousSnapshot: snapshot(),
+      nextSnapshot: snapshot(),
+      visualNowSeconds: 9.8,
+      nowMs: 5000,
+      maxDurationSeconds: 600,
+      anchorDurationSeconds: 600,
+      snapshotAgeSeconds: 0.45,
+    });
+    expect(decision.kind).toBe("correct");
+    if (decision.kind !== "correct") return;
+    expect(decision.anchor.anchorPositionSeconds).toBeCloseTo(10, 6);
+  });
 });

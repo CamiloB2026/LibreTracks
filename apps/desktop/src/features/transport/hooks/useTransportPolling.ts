@@ -5,6 +5,7 @@ import {
   recordSnapshotCommitGap,
   recordSnapshotIpc,
 } from "../perf/perfMetrics";
+import { rememberSnapshotRoundTrip } from "../snapshotRoundTrip";
 
 const PLAYING_POLL_INTERVAL_MS = 250;
 const IDLE_POLL_INTERVAL_MS = 800;
@@ -92,6 +93,7 @@ export function useTransportPolling({
         if (!active) {
           return;
         }
+        rememberSnapshotRoundTrip(nextSnapshot, ipcDurationMs);
 
         applyPlaybackSnapshot(nextSnapshot);
         // Measured from the moment the snapshot landed in JS to right

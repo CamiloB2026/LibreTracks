@@ -397,6 +397,7 @@ import {
   resolveVisualPositionAcrossVamp,
 } from "@libretracks/shared/playbackClock";
 import { resolveFollowCameraX, syncTimelineScrollElement } from "./followCamera";
+import { snapshotAgeSeconds } from "./snapshotRoundTrip";
 import {
   buildAudioRoutingOptions,
   buildMemoizedClipsByTrack,
@@ -3135,6 +3136,7 @@ export function TransportPanelContent() {
             ? durationSeconds
             : Number.MAX_SAFE_INTEGER,
       anchorDurationSeconds: timelineDurationSecondsRef.current || durationSeconds,
+      snapshotAgeSeconds: snapshotAgeSeconds(nextSnapshot),
     });
 
     if (decision.kind === "reanchor") {
