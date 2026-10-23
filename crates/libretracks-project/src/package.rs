@@ -527,8 +527,6 @@ pub fn export_region_as_package_with_progress(
     let file = File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
     let options = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    let waveform_options =
-        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("manifest.json", options)
         .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
     zip.write_all(serde_json::to_vec_pretty(&manifest)?.as_slice())?;
@@ -570,7 +568,10 @@ pub fn export_region_as_package_with_progress(
                     crate::SessionPackageAudio::Referenced => {}
                     crate::SessionPackageAudio::Original => {
                         if let Ok(audio_bytes) = fs::read(&source_abs) {
-                            zip.start_file(format!("audio/{file_name}"), waveform_options)
+                            let entry = format!("audio/{file_name}");
+                            let entry_options =
+                                crate::session_package::payload_entry_options(&entry);
+                            zip.start_file(entry, entry_options)
                                 .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
                             zip.write_all(&audio_bytes)?;
                         }
@@ -589,7 +590,10 @@ pub fn export_region_as_package_with_progress(
                             prepared_sample_rate.get_or_insert(info.sample_rate);
                             if let Ok(prepared_bytes) = fs::read(&staging) {
                                 let entry = crate::prepared_relative_path(file_name);
-                                zip.start_file(format!("audio/{entry}"), waveform_options)
+                                let entry = format!("audio/{entry}");
+                                let entry_options =
+                                    crate::session_package::payload_entry_options(&entry);
+                                zip.start_file(entry, entry_options)
                                     .map_err(|error| {
                                         ProjectError::AudioDecode(error.to_string())
                                     })?;
@@ -619,10 +623,9 @@ pub fn export_region_as_package_with_progress(
             .file_stem()
             .and_then(|value| value.to_str())
             .unwrap_or("waveform");
-        zip.start_file(
-            format!("waveforms/{stem}.waveform.ltpeaks"),
-            waveform_options,
-        )
+        let waveform_entry = format!("waveforms/{stem}.waveform.ltpeaks");
+        let waveform_options = crate::session_package::payload_entry_options(&waveform_entry);
+        zip.start_file(waveform_entry, waveform_options)
         .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
         zip.write_all(&waveform_bytes)?;
     }

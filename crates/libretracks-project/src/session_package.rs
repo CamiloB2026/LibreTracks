@@ -590,6 +590,34 @@ pub fn session_video_payload(song_dir: &Path, song: &Song) -> (usize, u64) {
     (planned.len(), bytes)
 }
 
+/// Zip options for an audio or waveform entry, picked by its extension.
+///
+/// PCM (WAV/AIFF — and everything a Prepared export writes) is deflated: on
+/// real multitrack stems it shrinks to ~60%, because silent stretches all but
+/// vanish, and that is what makes a set fit in a Drive quota or on a pen drive.
+/// Level 1 keeps nearly all of that (level 6 gets 57% instead of 60%) at three
+/// times the speed. `.ltpeaks` deflate to ~45% too. Codecs that are already
+/// compressed (mp3, m4a, ogg, flac…) are stored: deflating them only costs time.
+/// Readers need nothing new — the `zip` crate inflates transparently, so
+/// packages from this version open in every earlier one.
+pub(crate) fn payload_entry_options(entry_name: &str) -> SimpleFileOptions {
+    let extension = Path::new(entry_name)
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(str::to_ascii_lowercase);
+    let deflates = matches!(
+        extension.as_deref(),
+        Some("wav" | "wave" | "aif" | "aiff" | "aifc" | "ltpeaks")
+    );
+    if deflates {
+        SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated)
+            .compression_level(Some(1))
+    } else {
+        SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored)
+    }
+}
+
 /// Copy a (possibly multi-gigabyte) file into the zip without holding it in
 /// memory, uncompressed. Zip64 when it needs it. `false` if it cannot be read.
 pub(crate) fn write_file_entry<W: Write + io::Seek>(
@@ -848,9 +876,8 @@ pub fn export_session_as_package_with_options(
     let mut zip = ZipWriter::new(file);
     let deflated =
         SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
-    // Audio and waveforms are already compressed (or not worth re-deflating);
-    // store them so export stays fast on large sets.
-    let stored = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    // Audio and waveforms pick their own method by extension — see
+    // `payload_entry_options`.
 
     // The manifest is written LAST: an Optimized export only learns the rate it
     // is carrying once it has decoded a source, and the importer needs that
@@ -1008,7 +1035,7 @@ pub fn export_session_as_package_with_options(
             SessionPackageAudio::Referenced => {}
             SessionPackageAudio::Original => {
                 if let Ok(audio_bytes) = fs::read(source_abs) {
-                    zip.start_file(relative_path.clone(), stored)
+                    zip.start_file(relative_path.clone(), payload_entry_options(relative_path))
                         .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
                     zip.write_all(&audio_bytes)?;
                 }
@@ -1035,7 +1062,7 @@ pub fn export_session_as_package_with_options(
                 if let Ok(info) = crate::prepared_audio::prepare_audio_to_wav(source_abs, &staging) {
                     prepared_sample_rate.get_or_insert(info.sample_rate);
                     if let Ok(prepared_bytes) = fs::read(&staging) {
-                        zip.start_file(relative_path.clone(), stored)
+                        zip.start_file(relative_path.clone(), payload_entry_options(relative_path))
                             .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
                         zip.write_all(&prepared_bytes)?;
                     }
@@ -1072,7 +1099,8 @@ pub fn export_session_as_package_with_options(
         let Ok(waveform_bytes) = fs::read(&waveform_path) else {
             continue;
         };
-        zip.start_file(waveform_entry, stored)
+        let waveform_options = payload_entry_options(&waveform_entry);
+        zip.start_file(waveform_entry, waveform_options)
             .map_err(|error| ProjectError::AudioDecode(error.to_string()))?;
         zip.write_all(&waveform_bytes)?;
     }
@@ -2125,6 +2153,68 @@ mod tests {
             assert_eq!(manifest.prepared_sample_rate, None);
             assert_eq!(manifest.prepared_format, None);
         }
+    }
+
+    #[test]
+    fn full_export_deflates_pcm_and_stores_compressed_codecs() {
+        let src = tempfile::tempdir().expect("src");
+        let song_dir = src.path();
+        write_session_dir(song_dir);
+        // A stem that is silent most of the song — what deflate is here for —
+        // next to an mp3, which must travel as is.
+        let mut silent_wav = b"RIFF....WAVE".to_vec();
+        silent_wav.resize(1 << 20, 0);
+        fs::write(song_dir.join("audio").join("one.wav"), &silent_wav).expect("one");
+        let mp3: Vec<u8> = (0..4096u32).map(|index| (index * 31 % 251) as u8).collect();
+        fs::write(song_dir.join("audio").join("two.mp3"), &mp3).expect("two");
+        let mut song = session();
+        song.clips[1].file_path = "audio/two.mp3".into();
+        let package_path = song_dir.join("set.ltset");
+
+        export_session_as_package(
+            song_dir,
+            song_dir,
+            &song,
+            &sidecars(),
+            &package_path,
+            true,
+            |_, _| {},
+        )
+        .expect("export full");
+
+        let mut archive = ZipArchive::new(File::open(&package_path).expect("open")).expect("zip");
+        let mut seen = (false, false);
+        for index in 0..archive.len() {
+            let entry = archive.by_index_raw(index).expect("entry");
+            let name = entry.name().to_string();
+            if name.ends_with("one.wav") {
+                seen.0 = true;
+                assert_eq!(entry.compression(), zip::CompressionMethod::Deflated);
+                assert!(
+                    entry.compressed_size() < entry.size() / 10,
+                    "silent WAV barely shrank: {} of {}",
+                    entry.compressed_size(),
+                    entry.size()
+                );
+            } else if name.ends_with("two.mp3") {
+                seen.1 = true;
+                assert_eq!(entry.compression(), zip::CompressionMethod::Stored);
+            }
+        }
+        assert_eq!(seen, (true, true), "both sources should be bundled");
+
+        // And the deflated audio comes back byte for byte.
+        let target = tempfile::tempdir().expect("target");
+        let dest_dir = target.path().join("Mi Set");
+        let extracted =
+            extract_session_package(&dest_dir, &package_path, |_, _| {}).expect("extract");
+        let loaded = crate::load_song_from_file(&extracted.song_file).expect("load session");
+        let wav_clip = loaded
+            .clips
+            .iter()
+            .find(|clip| clip.file_path.ends_with("one.wav"))
+            .expect("wav clip");
+        assert_eq!(fs::read(dest_dir.join(&wav_clip.file_path)).expect("wav"), silent_wav);
     }
 
     #[test]
