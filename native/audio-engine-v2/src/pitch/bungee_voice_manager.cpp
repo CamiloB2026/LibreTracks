@@ -55,12 +55,11 @@ void request_source_range(const SourceManager& sources,
                           const Id& source_id,
                           Frame start,
                           int frames) {
-    if (frames <= 0) return;
-    const int first = static_cast<int>(std::max<Frame>(0, start) / kDefaultBlockFrames);
-    const int last = static_cast<int>(
-        std::max<Frame>(0, start + frames - 1) / kDefaultBlockFrames);
-    for (int block = first; block <= last; ++block)
-        sources.request_block(source_id, block, /*urgent=*/true);
+    // Through request_range, never block indices computed here: `start` is in
+    // engine frames, and a source resampled on the fly keeps its file's own
+    // frames in the cache. Dividing by the block size here asked for the wrong
+    // blocks, and the wait below then ran to its deadline for every voice.
+    sources.request_range(source_id, start, frames, /*urgent=*/true);
 }
 
 // Mirror of the LIBRETRACKS_AUDIO_DEBUG flag used in engine_impl.cpp. Cached

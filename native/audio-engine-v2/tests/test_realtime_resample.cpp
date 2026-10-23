@@ -1,5 +1,6 @@
 #include <doctest/doctest.h>
 
+#include <lt_engine/pitch/bungee_voice_manager.h>
 #include <lt_engine/render/track_renderer.h>
 #include <lt_engine/session/session.h>
 #include <lt_engine/sources/decoded_source.h>
@@ -272,6 +273,64 @@ TEST_CASE("realtime resample: a jump renders the same samples as playing through
     // And the first audible block is the clip start, not silence or noise.
     const auto& first = through[2];
     CHECK(std::any_of(first.begin(), first.end(), [](float v) { return std::fabs(v) > 0.01f; }));
+    std::remove(path.c_str());
+}
+
+TEST_CASE("realtime resample: a warp voice seeking into a resampled source does not stall") {
+    // Reported in the app: with warp on, a far click took seconds and the app
+    // lagged after it. The voice manager asked for blocks by dividing ENGINE
+    // frames by the block size, i.e. the wrong blocks for a source whose cache
+    // holds native frames, then waited on the right ones — nobody had asked
+    // for them — until its 750 ms deadline, voice after voice.
+    RealtimeResampleFlag on(true);
+    BungeeVoiceManager mgr;
+    if (!mgr.prepare(kEngineRate, 2, 480)) return;
+
+    constexpr int kSeconds = 30;
+    const auto path = temp_wav("warp_seek");
+    REQUIRE(write_float_wav(path, make_audio(static_cast<Frame>(kFileRate) * kSeconds, 2),
+                            2, kFileRate));
+    SourceManager sm;
+    sm.register_source("src1", path);
+    REQUIRE(sm.try_install_native_file("src1", kEngineRate));
+    const Frame length = sm.get_shared("src1")->duration_frames();
+
+    Session session;
+    session.id = "s";
+    session.sample_rate = kEngineRate;
+    Song song;
+    song.id = "song1";
+    song.start_frame = 0;
+    song.end_frame = length;
+    song.bpm = 120.0;
+    // Warp AND a transpose, as in the app: a neutral warp would skip the voice.
+    song.transpose_semitones = -2;
+    Region region;
+    region.id = "region1";
+    region.start_frame = 0;
+    region.end_frame = length;
+    region.warp_enabled = true;
+    region.warp_source_bpm = 100.0;
+    song.regions.push_back(region);
+    Track track;
+    track.id = "trk1";
+    track.kind = TrackKind::Audio;
+    track.transpose_behavior = TransposeBehavior::FollowsSongOrRegion;
+    track.clips.push_back(Clip{"clip1", "src1", 0, 0, length});
+    song.tracks.push_back(track);
+    session.songs.push_back(song);
+
+    // 15 s in (18 s of source at this warp ratio): engine-frame blocks and
+    // native-frame blocks are well apart there.
+    const auto t0 = std::chrono::steady_clock::now();
+    mgr.rebuild_for_seek(static_cast<Frame>(kEngineRate) * 15, session, sm);
+    const double ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    MESSAGE("warp seek rebuild: ", ms, " ms");
+#if LT_ENGINE_HAVE_BUNGEE
+    CHECK(mgr.voice_for("clip1") != nullptr);
+    CHECK(ms < 500.0);
+#endif
     std::remove(path.c_str());
 }
 
