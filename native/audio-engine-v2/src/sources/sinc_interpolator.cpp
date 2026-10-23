@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
+#include <mutex>
 #include <numeric>
+#include <tuple>
 
 #if defined(__aarch64__) || defined(_M_ARM64)
 #  include <arm_neon.h>
@@ -253,6 +256,20 @@ void SincInterpolator::render(const float* window, Frame window_start, Frame win
             y[c] = dot_strided(gathered, 1, h, length_);
         }
     }
+}
+
+std::shared_ptr<const SincInterpolator> shared_sinc_interpolator(
+    int source_sample_rate, int target_sample_rate, int taps) {
+    static std::mutex mtx;
+    static std::map<std::tuple<int, int, int>, std::weak_ptr<const SincInterpolator>> tables;
+    std::lock_guard lock(mtx);
+    auto& slot = tables[{source_sample_rate, target_sample_rate, taps}];
+    if (auto existing = slot.lock())
+        return existing;
+    auto made = std::make_shared<const SincInterpolator>(
+        source_sample_rate, target_sample_rate, taps);
+    slot = made;
+    return made;
 }
 
 } // namespace lt

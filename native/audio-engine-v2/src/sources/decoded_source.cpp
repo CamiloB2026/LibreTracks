@@ -45,13 +45,120 @@ DecodedSource::DecodedSource(Id                 source_id,
     , duration_frames_(duration_frames)
 {}
 
+DecodedSource::DecodedSource(Id                 source_id,
+                             int                channel_count,
+                             int                native_sample_rate,
+                             Frame              native_duration_frames,
+                             int                engine_sample_rate,
+                             BlockCache*        cache,
+                             std::function<void(const Id&, int, int, bool)> request_blocks)
+    : source_id_(std::move(source_id))
+    , cache_(cache)
+    , request_blocks_(std::move(request_blocks))
+    , channel_count_(channel_count)
+    , sample_rate_(engine_sample_rate)
+    , native_duration_frames_(native_duration_frames)
+{
+    if (native_sample_rate != engine_sample_rate) {
+        resampler_ = shared_sinc_interpolator(native_sample_rate, engine_sample_rate,
+                                              kRealtimeResampleTaps);
+        duration_frames_ = resampler_->output_length(native_duration_frames);
+    } else {
+        duration_frames_ = native_duration_frames;
+    }
+}
+
 int DecodedSource::read(Frame offset_frames, int frame_count,
                          float** out, int out_channels) const noexcept {
-    if (!is_loaded() || offset_frames >= duration_frames_)
+    if (resampler_)
+        return read_resampled(offset_frames, frame_count, out, out_channels);
+    return read_stored(offset_frames, frame_count, out, out_channels);
+}
+
+void DecodedSource::native_span(Frame offset_frames, Frame frame_count,
+                                Frame& first, Frame& last) const noexcept {
+    const Frame stored = resampler_ ? native_duration_frames_ : duration_frames_;
+    if (resampler_) {
+        resampler_->source_span(offset_frames, frame_count, first, last);
+    } else {
+        first = offset_frames;
+        last = offset_frames + std::max<Frame>(0, frame_count);
+    }
+    first = std::clamp<Frame>(first, 0, stored);
+    last = std::clamp<Frame>(last, first, stored);
+}
+
+int DecodedSource::read_resampled(Frame offset_frames, int frame_count,
+                                  float** out, int out_channels) const noexcept {
+    if (!is_loaded() || frame_count <= 0 || offset_frames >= duration_frames_)
+        return 0;
+    const int readable = static_cast<int>(
+        std::min<Frame>(frame_count, duration_frames_ - offset_frames));
+
+    // Scratch on the stack (~27 KB): several render threads read sources at
+    // once and the audio thread must not allocate. Not thread_local: a DLL's
+    // TLS block is reserved in every thread of the process, and Android below
+    // API 29 emulates TLS with a malloc on each thread's first touch.
+    //
+    // The native window is fixed and the chunk follows from the ratio, so the
+    // common rates (44.1 <-> 48k) cover a whole callback in ONE cache read —
+    // each read takes the block-cache lock — and only extreme ratios (192k)
+    // split it further.
+    constexpr int kChunk = 1024;
+    constexpr int kSpan = 1160;
+    float left[kSpan];
+    float right[kSpan];
+    float window[kSpan * 2];
+    float rendered[kChunk * 2];
+
+    const int ch = std::min(channel_count_, 2);
+    const Frame num = resampler_->ratio_num();
+    const Frame den = resampler_->ratio_den();
+    const int max_chunk = static_cast<int>(std::min<Frame>(
+        kChunk, (kSpan - resampler_->kernel_length() - 2) * den / num));
+    if (max_chunk <= 0)
+        return 0;
+
+    int done = 0;
+    while (done < readable) {
+        const int n = std::min(max_chunk, readable - done);
+        const Frame at = offset_frames + done;
+        Frame first = 0, last = 0;
+        native_span(at, n, first, last);
+        int got = 0;
+        if (last > first) {
+            float* planes[2] = {left, right};
+            got = read_stored(first, static_cast<int>(last - first), planes, ch);
+        }
+        for (int f = 0; f < got; ++f) {
+            window[f * ch] = left[f];
+            if (ch == 2) window[f * 2 + 1] = right[f];
+        }
+        resampler_->render(window, first, std::max(0, got), ch, at, n, rendered);
+
+        for (int c = 0; c < out_channels; ++c) {
+            float* dst = out[c] + done;
+            if (c < ch) {
+                for (int f = 0; f < n; ++f) dst[f] = rendered[f * ch + c];
+            } else if (ch == 1 && c == 1) {
+                for (int f = 0; f < n; ++f) dst[f] = rendered[f];
+            } else {
+                std::fill(dst, dst + n, 0.f);
+            }
+        }
+        done += n;
+    }
+    return readable;
+}
+
+int DecodedSource::read_stored(Frame offset_frames, int frame_count,
+                               float** out, int out_channels) const noexcept {
+    const Frame stored_frames = resampler_ ? native_duration_frames_ : duration_frames_;
+    if (!is_loaded() || offset_frames >= stored_frames)
         return 0;
 
     int readable = static_cast<int>(
-        std::min<Frame>(frame_count, duration_frames_ - offset_frames));
+        std::min<Frame>(frame_count, stored_frames - offset_frames));
 
     int ch_copy = std::min(out_channels, channel_count_);
     // Canales de salida con senal: una fuente mono pedida en estereo se
@@ -121,7 +228,7 @@ int DecodedSource::read(Frame offset_frames, int frame_count,
             if (request_blocks_) {
                 const int kReadAheadBlocks = streaming_read_ahead_blocks();
                 const int blocks_in_source = static_cast<int>(
-                    (duration_frames_ + cache_->block_frames() - 1) /
+                    (stored_frames + cache_->block_frames() - 1) /
                     cache_->block_frames());
                 const int last_ahead = std::min(block_index + kReadAheadBlocks,
                                                 blocks_in_source - 1);
@@ -176,15 +283,28 @@ int DecodedSource::read(Frame offset_frames, int frame_count,
 }
 
 bool DecodedSource::is_range_ready(Frame offset_frames, int frame_count) const noexcept {
-    if (!cache_)
-        return is_loaded();
+    if (!resampler_)
+        return is_stored_range_ready(offset_frames, frame_count);
     if (frame_count <= 0)
         return true;
     if (offset_frames < 0 || offset_frames >= duration_frames_)
         return false;
+    Frame first = 0, last = 0;
+    native_span(offset_frames, frame_count, first, last);
+    return last <= first || is_stored_range_ready(first, static_cast<int>(last - first));
+}
+
+bool DecodedSource::is_stored_range_ready(Frame offset_frames, int frame_count) const noexcept {
+    if (!cache_)
+        return is_loaded();
+    if (frame_count <= 0)
+        return true;
+    const Frame stored_frames = resampler_ ? native_duration_frames_ : duration_frames_;
+    if (offset_frames < 0 || offset_frames >= stored_frames)
+        return false;
     const int first = cache_->block_index_for(std::max<Frame>(0, offset_frames));
     const int last = cache_->block_index_for(
-        std::max<Frame>(0, std::min<Frame>(duration_frames_ - 1,
+        std::max<Frame>(0, std::min<Frame>(stored_frames - 1,
                                            offset_frames + frame_count - 1)));
     for (int block = first; block <= last; ++block) {
         if (!cache_->has_block(source_id_, block))

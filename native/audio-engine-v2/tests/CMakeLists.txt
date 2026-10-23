@@ -24,6 +24,7 @@ add_executable(lt_engine_tests
     test_streaming_source_cache.cpp
     test_resampler_seek_continuity.cpp
     test_sinc_interpolator.cpp
+    test_realtime_resample.cpp
     test_audio_fixtures.cpp
     test_fade_processor.cpp
     test_metronome_renderer.cpp

@@ -1589,8 +1589,14 @@ void SourceManager::request_range(const Id& source_id,
     const Frame end = std::min<Frame>(
         source->duration_frames() - 1,
         start + static_cast<Frame>(frame_count) - 1);
-    const int first = block_cache_.block_index_for(start);
-    const int last = block_cache_.block_index_for(end);
+    // Callers speak engine frames; the cache holds the file's own frames, which
+    // differ for a source resampled on the fly (identity otherwise).
+    Frame native_first = 0, native_last = 0;
+    source->native_span(start, end - start + 1, native_first, native_last);
+    if (native_last <= native_first)
+        return;
+    const int first = block_cache_.block_index_for(native_first);
+    const int last = block_cache_.block_index_for(native_last - 1);
 
     std::vector<int> missing_blocks;
     missing_blocks.reserve(static_cast<std::size_t>(last - first + 1));
@@ -1677,7 +1683,9 @@ void SourceManager::preload_clip_heads(
             continue;  // a fully-resident source needs no preload
         if (start_frame < 0 || start_frame >= source->duration_frames())
             continue;
-        const int block = block_cache_.block_index_for(start_frame);
+        Frame native_first = 0, native_last = 0;
+        source->native_span(start_frame, 1, native_first, native_last);
+        const int block = block_cache_.block_index_for(native_first);
         block_cache_.pin(source_id, block);
         // Pinning only records intent; the block still has to be fetched. Mark
         // it urgent so it lands before any read-ahead already in flight.
@@ -1848,6 +1856,16 @@ SourcePeakWindow SourceManager::source_peaks_window(const Id& source_id,
     if (!entry.source || !entry.source->is_loaded() || entry.channel_count <= 0
         || entry.duration_frames <= 0 || entry.status == "streaming") {
         return window;
+    }
+
+    // The caller asks in engine frames; a source resampled on the fly keeps its
+    // file's own rate in the entry, and the window is answered in that rate
+    // (window.sample_rate says which, so seconds come out right either way).
+    if (entry.source->is_resampled()) {
+        const double to_native = static_cast<double>(entry.sample_rate)
+                               / static_cast<double>(entry.source->sample_rate());
+        start_frame = static_cast<Frame>(std::floor(static_cast<double>(start_frame) * to_native));
+        end_frame = static_cast<Frame>(std::ceil(static_cast<double>(end_frame) * to_native));
     }
 
     const Frame clamped_start = std::clamp<Frame>(start_frame, 0, entry.duration_frames);
@@ -2455,6 +2473,10 @@ void SourceManager::fill_blocks_from_disk(const Id& source_id,
         reader.close();
 }
 
+bool realtime_resample_enabled() {
+    return lt_env_flag_enabled("LIBRETRACKS_REALTIME_RESAMPLE");
+}
+
 std::string pcm_cache_file_for(const Id& source_id,
                                const std::string& file_path,
                                int sample_rate) {
@@ -2525,8 +2547,14 @@ bool SourceManager::try_install_native_file(const Id& source_id,
     // start-to-finish (some compressed payloads inside WAV) would play the
     // head and then stutter. Those keep the decode route, which turns them
     // into a cache file that IS seekable.
+    //
+    // LIBRETRACKS_REALTIME_RESAMPLE=1 (plan realtime-resample) lifts the rate
+    // condition: the DecodedSource resamples while it reads, so a 44.1k WAV on
+    // a 48k engine streams in place instead of being copied to the cache.
+    const bool rate_ok = info.samplerate == engine_sample_rate ||
+        (info.samplerate > 0 && realtime_resample_enabled());
     const bool eligible =
-        info.samplerate == engine_sample_rate &&
+        rate_ok &&
         info.frames > 0 &&
         info.seekable != 0 &&
         (info.channels == 1 || info.channels == 2);
@@ -2535,6 +2563,7 @@ bool SourceManager::try_install_native_file(const Id& source_id,
         return false;
     }
     const int channel_count = info.channels;
+    const int native_sample_rate = info.samplerate;
     const Frame duration_frames = static_cast<Frame>(info.frames);
     sf_close(sf);
 
@@ -2574,7 +2603,9 @@ bool SourceManager::try_install_native_file(const Id& source_id,
         // separate code path needed.
         entry.cache_file_path = file_path;
         entry.channel_count = channel_count;
-        entry.sample_rate = engine_sample_rate;
+        // The FILE's rate and length: the fill worker and the waveform read
+        // the file itself. Only the DecodedSource speaks engine frames.
+        entry.sample_rate = native_sample_rate;
         entry.duration_frames = duration_frames;
         // disk_cache_bytes counts bytes the engine has *itself* written to
         // its cache directory. Native files we stream in place don't take any
@@ -2584,8 +2615,9 @@ bool SourceManager::try_install_native_file(const Id& source_id,
         entry.source = std::make_shared<DecodedSource>(
             source_id,
             channel_count,
-            engine_sample_rate,
+            native_sample_rate,
             duration_frames,
+            engine_sample_rate,
             &block_cache_,
             [this](const Id& id, int first_block, int block_count, bool urgent) {
                 request_blocks(id, first_block, block_count, urgent);

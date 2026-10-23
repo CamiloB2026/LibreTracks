@@ -85,6 +85,16 @@ void SourcePreparationQueue::enqueue_source(const Source& source) {
         impl_->push_event(EvSourcePrepared{ source_id });
     };
 
+    // With realtime resampling a file at another rate streams in place too, so
+    // try that before a conversion left over from before the flag: otherwise
+    // an existing cache copy would keep winning and the flag would change
+    // nothing for any file already played once.
+    if (realtime_resample_enabled()
+        && impl_->source_manager->try_install_native_file(source_id, sr)) {
+        mark_ready(/*publishes_peaks=*/false);
+        return;
+    }
+
     // Fast path 1: if a PCM cache from a previous session is still valid for
     // this file (matching mtime + size), reuse it and skip the decode worker
     // entirely.

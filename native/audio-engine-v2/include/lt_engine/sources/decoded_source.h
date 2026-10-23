@@ -3,6 +3,7 @@
 #include <lt_engine/core/types.h>
 #include <lt_engine/session/session.h>
 #include <lt_engine/sources/block_cache.h>
+#include <lt_engine/sources/sinc_interpolator.h>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -59,6 +60,20 @@ public:
                   BlockCache*        cache,
                   std::function<void(const Id&, int, int, bool)> request_blocks);
 
+    // Streaming source whose file is at `native_sample_rate`, presented to the
+    // engine at `engine_sample_rate` (plan realtime-resample). The block cache
+    // holds NATIVE frames; read(), duration_frames() and is_range_ready() speak
+    // engine frames and convert with a stateless SincInterpolator, so a read at
+    // any frame returns the same samples whatever was read before — a jump
+    // cannot leave a seam.
+    DecodedSource(Id                 source_id,
+                  int                channel_count,
+                  int                native_sample_rate,
+                  Frame              native_duration_frames,
+                  int                engine_sample_rate,
+                  BlockCache*        cache,
+                  std::function<void(const Id&, int, int, bool)> request_blocks);
+
     // Read `frame_count` frames starting at `offset_frames` into `out`.
     // `out` is pre-allocated: out[ch] points to a buffer of frame_count floats.
     // Returns the number of frames actually read (may be < frame_count at EOF).
@@ -66,12 +81,23 @@ public:
              float** out, int out_channels) const noexcept;
 
     int    channel_count()   const noexcept { return channel_count_; }
+    // Engine-facing rate and length. For a resampled source these are the
+    // engine's, not the file's (see native_sample_rate()).
     int    sample_rate()     const noexcept { return sample_rate_; }
     Frame  duration_frames() const noexcept { return duration_frames_; }
     bool   is_loaded()       const noexcept { return !samples_.empty() || cache_ != nullptr; }
     bool   is_streaming()    const noexcept { return cache_ != nullptr; }
     size_t memory_bytes()    const noexcept { return samples_.size() * sizeof(float); }
     bool   is_range_ready(Frame offset_frames, int frame_count) const noexcept;
+
+    bool   is_resampled()       const noexcept { return resampler_ != nullptr; }
+    int    native_sample_rate() const noexcept {
+        return resampler_ ? resampler_->source_sample_rate() : sample_rate_;
+    }
+    // Native frames [first, last) that engine frames [offset, offset + count)
+    // read, clamped to the file. Identity for a source that is not resampled.
+    void   native_span(Frame offset_frames, Frame frame_count,
+                       Frame& first, Frame& last) const noexcept;
 
     SourcePeakOverview peaks(int resolution_frames) const;
 
@@ -86,6 +112,14 @@ public:
     }
 
 private:
+    // read() / is_range_ready() on the frames actually stored: native frames
+    // for a resampled source, engine frames otherwise.
+    int  read_stored(Frame offset_frames, int frame_count,
+                     float** out, int out_channels) const noexcept;
+    bool is_stored_range_ready(Frame offset_frames, int frame_count) const noexcept;
+    int  read_resampled(Frame offset_frames, int frame_count,
+                        float** out, int out_channels) const noexcept;
+
     Id                 source_id_;
     std::vector<float> samples_;
     BlockCache*        cache_ = nullptr;
@@ -114,6 +148,9 @@ private:
     int    channel_count_   = 0;
     int    sample_rate_      = 0;
     Frame  duration_frames_  = 0;
+    // Set only for a source whose file rate differs from the engine's.
+    std::shared_ptr<const SincInterpolator> resampler_;
+    Frame  native_duration_frames_ = 0;
 };
 
 } // namespace lt

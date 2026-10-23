@@ -3,6 +3,7 @@
 #include <lt_engine/core/types.h>
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 namespace lt {
@@ -73,5 +74,15 @@ private:
     // table_ with every coefficient duplicated, for interleaved stereo.
     std::vector<float> stereo_table_;
 };
+
+// Kernel length used for playback: the only setting that passes the plan's
+// quality gate (-132 dB images, test_sinc_interpolator.cpp).
+inline constexpr int kRealtimeResampleTaps = 64;
+
+// One immutable table per (rates, taps), shared by every source that needs it:
+// each table is 120 KB for 44.1 -> 48k, too much to repeat per stem. Builds the
+// table on first use, so call it off the audio thread.
+std::shared_ptr<const SincInterpolator> shared_sinc_interpolator(
+    int source_sample_rate, int target_sample_rate, int taps);
 
 } // namespace lt
