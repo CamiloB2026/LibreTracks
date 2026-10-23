@@ -5,7 +5,7 @@
 
 use std::collections::HashSet;
 
-use libretracks_core::{source_seconds_at_view, Clip, Song, Track, TrackKind};
+use libretracks_core::{source_seconds_at_view, Song, Track, TrackKind};
 
 use crate::audio::engine::AudioController;
 use crate::infra::error::DesktopError;
@@ -19,7 +19,8 @@ use super::{
     append_clip_to_song, apply_clip_moves_with_region_reshape, delete_track_and_repair_hierarchy,
     ensure_region_covers_clip, file_stem_for_auto_track, insert_track,
     normalize_timeline_start_seconds, normalize_ui_color, prune_auto_created_empty_tracks,
-    prune_empty_regions, refresh_song_duration, reparent_track, timestamp_suffix, ui_locale,
+    prune_empty_regions, refresh_song_duration, reparent_track, split_clip_at_source,
+    timestamp_suffix, ui_locale,
     validate_clip_window, AudioChangeImpact, ClipMoveRequest, CreateAudioTrackWithClipRequest,
     UpdatePhase,
     CreateClipRequest, CreateClipWithAutoTrackRequest, DesktopSession,
@@ -1171,50 +1172,24 @@ impl DesktopSession {
             return Err(DesktopError::ClipNotFound(String::new()));
         }
 
-        // `timeline_start_seconds` and `duration_seconds` are stored in
-        // view-time, so the split point comparison stays in view-time too.
-        // We only convert to source-time when computing the right-hand
-        // clip's `source_start_seconds`, which is the only field that
-        // actually lives in the underlying audio file's clock.
+        // Clips are stored in source time; the cursor arrives in view time.
+        // Convert once and cut in source time (see `split_clip_at_source`).
         let split_seconds_source = source_seconds_at_view(&song, split_seconds_view);
         let suffix_base = timestamp_suffix();
         let mut any_split = false;
-        let mut last_invalid_clip: Option<String> = None;
 
         for (offset, clip_id) in clip_ids.iter().enumerate() {
             let clip_index = match song.clips.iter().position(|clip| clip.id == *clip_id) {
                 Some(index) => index,
                 None => continue,
             };
-            let clip = song.clips[clip_index].clone();
-            let clip_end = clip.timeline_start_seconds + clip.duration_seconds;
-            if split_seconds_view <= clip.timeline_start_seconds || split_seconds_view >= clip_end {
-                last_invalid_clip = Some(clip_id.clone());
+            let Some((left_clip, right_clip)) = split_clip_at_source(
+                &song.clips[clip_index],
+                split_seconds_source,
+                format!("clip_{}_{}_l", suffix_base, offset),
+                format!("clip_{}_{}_r", suffix_base, offset),
+            ) else {
                 continue;
-            }
-
-            let left_duration = split_seconds_view - clip.timeline_start_seconds;
-            let right_duration = clip_end - split_seconds_view;
-            // Source-time offset of the cut inside the original audio. With
-            // warp off this collapses to `left_duration`; with warp on it
-            // accounts for the stretch ratio in this region.
-            let split_seconds_source_clip =
-                source_seconds_at_view(&song, clip.timeline_start_seconds + left_duration);
-            let source_left_duration = (split_seconds_source_clip
-                - source_seconds_at_view(&song, clip.timeline_start_seconds))
-            .max(0.0);
-
-            let left_clip = Clip {
-                id: format!("clip_{}_{}_l", suffix_base, offset),
-                duration_seconds: left_duration,
-                ..clip.clone()
-            };
-            let right_clip = Clip {
-                id: format!("clip_{}_{}_r", suffix_base, offset),
-                timeline_start_seconds: split_seconds_view,
-                source_start_seconds: clip.source_start_seconds + source_left_duration,
-                duration_seconds: right_duration,
-                ..clip
             };
 
             song.clips
@@ -1227,10 +1202,6 @@ impl DesktopSession {
             // instead of an opaque engine roundtrip with no-op state.
             return Err(DesktopError::InvalidSplitPoint);
         }
-
-        // Suppress an unused-variable warning on the diagnostic-only path
-        // where every clip in the batch was outside the cursor.
-        let _ = (split_seconds_source, last_invalid_clip);
 
         self.persist_song_update(song, audio, AudioChangeImpact::StructureRebuild, true)?;
         Ok(self.snapshot())

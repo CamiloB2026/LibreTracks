@@ -1344,7 +1344,7 @@ impl DesktopSession {
         // A clip may not cross a region boundary (the engine rejects it). Any
         // clip straddling the cut is split there too, so each half stays inside
         // its song — exactly what split_clips does at the cursor.
-        split_clips_crossing_point(&mut song, split_seconds_view);
+        split_clips_crossing_point(&mut song, split_seconds);
 
         let right = SongRegion {
             id: format!("region_{}_{}", timestamp_suffix(), song.regions.len()),

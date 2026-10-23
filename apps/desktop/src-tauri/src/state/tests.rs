@@ -3867,6 +3867,52 @@ fn splitting_a_song_region_divides_it_in_two_at_the_cursor() {
 }
 
 #[test]
+fn splitting_a_song_after_a_stretched_song_cuts_its_clips_at_the_cursor() {
+    // Issue: varias canciones con distinto BPM, warp/transposición. Los clips
+    // se guardan en tiempo de fuente; el cursor llega en tiempo de vista. Con
+    // una canción estirada delante, los dos relojes se separan y el corte de
+    // los clips caía antes que el de la canción.
+    let mut song = demo_song_with_region_changes_and_sections();
+    // +12 semitonos sin warp → varispeed ×2: region_1 [0,8] dura 4s en vista,
+    // así que region_2 [8,14] se ve en [4,10].
+    song.regions[0].transpose_semitones = 12;
+    song.clips[0].timeline_start_seconds = 9.0;
+    song.clips[0].duration_seconds = 4.0;
+    let mut session = session_with_song_dir("region-split-after-stretch", song);
+    let audio = crate::audio::engine::AudioController::default();
+
+    // Vista 6 = fuente 10, dentro del clip [9,13].
+    session
+        .split_song_region("region_2", 6.0, &audio)
+        .expect("region should split");
+    let song_view = session
+        .song_view()
+        .expect("song view should build")
+        .expect("song summary should exist");
+
+    let right = song_view
+        .regions
+        .iter()
+        .find(|r| r.name == "Bridge (2)")
+        .expect("right half exists");
+    assert!((right.start_seconds - 6.0).abs() < 0.0001);
+
+    let mut clips: Vec<(f64, f64)> = song_view
+        .clips
+        .iter()
+        .map(|clip| (clip.timeline_start_seconds, clip.source_start_seconds))
+        .collect();
+    clips.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    assert_eq!(clips.len(), 2, "the clip crossing the cut is split");
+    assert!((clips[0].0 - 5.0).abs() < 0.0001);
+    assert!((clips[1].0 - 6.0).abs() < 0.0001, "cut lands on the cursor");
+    assert!(
+        (clips[1].1 - (clips[0].1 + 1.0)).abs() < 0.0001,
+        "right half resumes the audio 1 source second later"
+    );
+}
+
+#[test]
 fn splitting_a_song_region_outside_its_range_is_rejected() {
     let mut session = session_with_song_dir(
         "region-split-invalid",

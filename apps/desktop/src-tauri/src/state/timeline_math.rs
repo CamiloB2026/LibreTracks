@@ -752,42 +752,56 @@ pub(super) fn sort_song_regions(regions: &mut Vec<SongRegion>) {
     });
 }
 
-/// Split every clip whose span strictly contains `split_seconds_view` into two
-/// clips at that point. Same cut math as `split_clips` (warp-aware via
-/// `source_seconds_at_view`), but applied to whichever clips cross the point
-/// rather than a caller-chosen set. Used when splitting a song region so no clip
-/// straddles the new song boundary (the engine rejects boundary-crossing clips).
-pub(super) fn split_clips_crossing_point(song: &mut Song, split_seconds_view: f64) {
+/// Cut `clip` at `split_seconds_source`, or `None` if the point isn't strictly
+/// inside it. Clip positions and durations are stored in source time (the view
+/// maps them through `warp_timeline_seconds_at`), so the cut point must be
+/// converted from view time by the caller — comparing a view-time cursor
+/// against them lands the cut early once a stretched song precedes the clip.
+pub(super) fn split_clip_at_source(
+    clip: &Clip,
+    split_seconds_source: f64,
+    left_id: String,
+    right_id: String,
+) -> Option<(Clip, Clip)> {
+    let clip_end = clip.timeline_start_seconds + clip.duration_seconds;
+    if split_seconds_source <= clip.timeline_start_seconds || split_seconds_source >= clip_end {
+        return None;
+    }
+    let left_duration = split_seconds_source - clip.timeline_start_seconds;
+    let left_clip = Clip {
+        id: left_id,
+        duration_seconds: left_duration,
+        ..clip.clone()
+    };
+    let right_clip = Clip {
+        id: right_id,
+        timeline_start_seconds: split_seconds_source,
+        source_start_seconds: clip.source_start_seconds + left_duration,
+        duration_seconds: clip_end - split_seconds_source,
+        ..clip.clone()
+    };
+    Some((left_clip, right_clip))
+}
+
+/// Split every clip whose span strictly contains `split_seconds_source` into
+/// two clips at that point. Same cut as `split_clips`, but applied to whichever
+/// clips cross the point rather than a caller-chosen set. Used when splitting a
+/// song region (and reconciling imports) so no clip straddles a song boundary
+/// (the engine rejects boundary-crossing clips). Takes source time, like the
+/// region bounds it is cut against.
+pub(super) fn split_clips_crossing_point(song: &mut Song, split_seconds_source: f64) {
     let suffix_base = timestamp_suffix();
     let mut index = 0;
     let mut counter = 0;
     while index < song.clips.len() {
-        let clip = song.clips[index].clone();
-        let clip_end = clip.timeline_start_seconds + clip.duration_seconds;
-        if split_seconds_view <= clip.timeline_start_seconds || split_seconds_view >= clip_end {
+        let Some((left_clip, right_clip)) = split_clip_at_source(
+            &song.clips[index],
+            split_seconds_source,
+            format!("clip_{}_{}_l", suffix_base, counter),
+            format!("clip_{}_{}_r", suffix_base, counter),
+        ) else {
             index += 1;
             continue;
-        }
-
-        let left_duration = split_seconds_view - clip.timeline_start_seconds;
-        let right_duration = clip_end - split_seconds_view;
-        let split_seconds_source_clip =
-            source_seconds_at_view(song, clip.timeline_start_seconds + left_duration);
-        let source_left_duration = (split_seconds_source_clip
-            - source_seconds_at_view(song, clip.timeline_start_seconds))
-        .max(0.0);
-
-        let left_clip = Clip {
-            id: format!("clip_{}_{}_l", suffix_base, counter),
-            duration_seconds: left_duration,
-            ..clip.clone()
-        };
-        let right_clip = Clip {
-            id: format!("clip_{}_{}_r", suffix_base, counter),
-            timeline_start_seconds: split_seconds_view,
-            source_start_seconds: clip.source_start_seconds + source_left_duration,
-            duration_seconds: right_duration,
-            ..clip
         };
 
         song.clips.splice(index..=index, [left_clip, right_clip]);
