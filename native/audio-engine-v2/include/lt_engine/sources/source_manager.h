@@ -106,6 +106,25 @@ std::string cache_identity_path(
     const std::function<std::string(const std::string&)>& read_link);
 std::string cache_identity_path(const std::string& path);
 
+// Does a random read of `path` pay a mechanical seek (a spinning disk)?
+//
+// Streaming a native WAV in place is only free when the disk under it can
+// serve scattered reads. A jump asks every playing track for audio at a new
+// position at once; on an HDD that is one head movement per track, and a
+// 20-stem song starved for seconds after each jump (measured on a 5400 rpm
+// Barracuda) while the same song converted to the PCM cache on the NVMe played
+// clean. Windows asks the storage stack (StorageDeviceSeekPenaltyProperty),
+// Linux reads /sys/dev/block/<dev>/queue/rotational. Returns false whenever the
+// answer is unknown (network share, macOS, a failed query): unknown keeps the
+// old behaviour. Cached per volume, so it is cheap to ask per source.
+bool path_has_seek_penalty(const std::string& path);
+
+// Stream an original file in place, or convert it to the PCM cache first?
+// Converting only helps when the cache does NOT sit on a slow disk too — then
+// the conversion just moves the seeks somewhere else and costs a copy.
+bool native_stream_in_place_allowed(bool source_has_seek_penalty,
+                                    bool cache_has_seek_penalty);
+
 // The PCM cache file the engine uses (or would use) for `source_id` at
 // `sample_rate`. Deterministic: it is keyed by the source's identity, its size
 // and mtime and the cache sample format, so anyone can find a conversion the
@@ -173,6 +192,10 @@ public:
     ~SourceManager();
 
     void set_source_ready_callback(SourceReadyCallback callback);
+
+    // Replace the disk model try_install_native_file consults. Tests use it to
+    // stand a file on an "HDD" without owning one; empty restores the real probe.
+    void set_seek_penalty_probe(std::function<bool(const std::string&)> probe);
 
     // Register a source file.  Does not decode yet.
     void register_source(const Id& source_id, const std::string& file_path);
@@ -373,6 +396,8 @@ private:
 #endif
     std::deque<std::shared_ptr<const EntryMap>> retired_entries_;
     SourceReadyCallback             source_ready_callback_;
+    // path_has_seek_penalty unless a test injects its own disk model.
+    std::function<bool(const std::string&)> seek_penalty_probe_;
     mutable BlockCache              block_cache_;
     mutable std::mutex              fill_mtx_;
     mutable std::condition_variable fill_cv_;

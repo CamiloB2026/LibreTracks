@@ -1885,3 +1885,65 @@ TEST_CASE("dropping read-ahead spares the lane a jump is blocking on") {
     const auto requeued = manager.take_fill_io_stats();
     CHECK(requeued.queue_normal == 2);
 }
+
+TEST_CASE("native_stream_in_place_allowed converts only when the cache is the faster disk") {
+    CHECK(native_stream_in_place_allowed(false, false));
+    CHECK(native_stream_in_place_allowed(false, true));
+    CHECK_FALSE(native_stream_in_place_allowed(true, false));
+    // Both on spinning disks: a conversion only moves the seeks around.
+    CHECK(native_stream_in_place_allowed(true, true));
+}
+
+TEST_CASE("a native WAV on a seek-penalty disk goes to the PCM cache instead of streaming in place") {
+    ScopedCacheDir scope("hdd_native");
+    constexpr int kChannels = 2;
+    constexpr int kSampleRate = 44100;
+    constexpr Frame kFrames = kDefaultBlockFrames * 3 + 257;
+    const auto wav_path = make_temp_wav_path("hdd_native");
+    REQUIRE(write_wav_pcm_float(wav_path, make_reference_audio(kFrames, kChannels),
+                                kChannels, kSampleRate));
+
+    SourceManager manager;
+    const Id source_id = "hdd-native-source";
+    manager.register_source(source_id, wav_path);
+    // Only the original sits on the "HDD"; the cache directory is fast.
+    manager.set_seek_penalty_probe(
+        [&](const std::string& path) { return path == wav_path; });
+    CHECK_FALSE(manager.try_install_native_file(source_id, kSampleRate));
+
+    // The caller's fallback — the decode route — then serves it from the cache.
+    REQUIRE(manager.decode_and_store_streaming(source_id, wav_path, kSampleRate).is_ok());
+    const auto stats = stat_cache_dir(
+        scope.path() + std::string(1, kTestPathSep) + "source-cache");
+    CHECK(stats.file_count == 1);
+    const auto diags = manager.diagnostics();
+    REQUIRE(diags.size() == 1);
+    CHECK(diags[0].disk_cache_bytes > 0);
+
+    std::remove(wav_path.c_str());
+}
+
+TEST_CASE("a native WAV keeps streaming in place when the cache is on a slow disk too, or when forced") {
+    constexpr int kChannels = 2;
+    constexpr int kSampleRate = 44100;
+    const auto wav_path = make_temp_wav_path("hdd_native_both_slow");
+    REQUIRE(write_wav_pcm_float(wav_path, make_reference_audio(1024, kChannels),
+                                kChannels, kSampleRate));
+
+    {
+        SourceManager manager;
+        manager.register_source("both-slow", wav_path);
+        manager.set_seek_penalty_probe([](const std::string&) { return true; });
+        CHECK(manager.try_install_native_file("both-slow", kSampleRate));
+    }
+    {
+        ScopedEnv force("LIBRETRACKS_STREAM_HDD_IN_PLACE", "1");
+        SourceManager manager;
+        manager.register_source("forced", wav_path);
+        manager.set_seek_penalty_probe(
+            [&](const std::string& path) { return path == wav_path; });
+        CHECK(manager.try_install_native_file("forced", kSampleRate));
+    }
+
+    std::remove(wav_path.c_str());
+}

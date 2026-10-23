@@ -27,12 +27,16 @@
 #    define NOMINMAX
 #  endif
 #  include <windows.h>
+#  include <winioctl.h>
 #  include <shlobj.h>
 #else
 #  include <dirent.h>
 #  include <sys/statvfs.h>
 #  include <sys/time.h>
 #  include <unistd.h>
+#  if defined(__linux__)
+#    include <sys/sysmacros.h>
+#  endif
 #endif
 
 #if defined(_WIN32)
@@ -567,6 +571,113 @@ std::string cache_identity_path(const std::string& path) {
 #endif
 }
 
+namespace {
+
+#if defined(_WIN32)
+// The volume `path` lives on ("D:\", or the mount folder), or empty.
+std::wstring volume_root_for(const std::string& path) {
+    std::string normalized = path;
+    std::replace(normalized.begin(), normalized.end(), '/', '\\');
+    // "\\?\D:\x" → "D:\x". UNC long paths keep their prefix: the volume calls
+    // below fail on them, which is the "unknown" answer we want for a share.
+    if (normalized.rfind("\\\\?\\", 0) == 0 && normalized.rfind("\\\\?\\UNC\\", 0) != 0)
+        normalized.erase(0, 4);
+    const std::wstring wide = to_wide(normalized);
+    if (wide.empty())
+        return {};
+    wchar_t root[MAX_PATH + 1] = {};
+    if (!GetVolumePathNameW(wide.c_str(), root, MAX_PATH))
+        return {};
+    return root;
+}
+
+bool query_volume_seek_penalty(const std::wstring& root) {
+    wchar_t volume_name[MAX_PATH + 1] = {};
+    if (!GetVolumeNameForVolumeMountPointW(root.c_str(), volume_name, MAX_PATH))
+        return false;  // network share, subst drive...: unknown
+    std::wstring device = volume_name;
+    if (!device.empty() && device.back() == L'\\')
+        device.pop_back();  // "\\?\Volume{...}" opens the volume, with the slash its root dir
+    // Zero access rights: a property query needs no read permission, so this
+    // works without elevation.
+    HANDLE handle = CreateFileW(device.c_str(), 0,
+                                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                                OPEN_EXISTING, 0, nullptr);
+    if (handle == INVALID_HANDLE_VALUE)
+        return false;
+    STORAGE_PROPERTY_QUERY query{};
+    query.PropertyId = StorageDeviceSeekPenaltyProperty;
+    query.QueryType = PropertyStandardQuery;
+    DEVICE_SEEK_PENALTY_DESCRIPTOR descriptor{};
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(handle, IOCTL_STORAGE_QUERY_PROPERTY,
+                                    &query, sizeof(query),
+                                    &descriptor, sizeof(descriptor),
+                                    &returned, nullptr);
+    CloseHandle(handle);
+    return ok && returned >= sizeof(descriptor) && descriptor.IncursSeekPenalty;
+}
+#elif defined(__linux__)
+bool query_device_rotational(unsigned major_id, unsigned minor_id) {
+    const std::string base = "/sys/dev/block/" + std::to_string(major_id) + ":" +
+                             std::to_string(minor_id);
+    // A partition has no queue/ of its own; its parent disk does.
+    for (const char* suffix : {"/queue/rotational", "/../queue/rotational"}) {
+        std::ifstream in(base + suffix);
+        int value = 0;
+        if (in >> value)
+            return value == 1;
+    }
+    return false;
+}
+#endif
+
+} // namespace
+
+bool path_has_seek_penalty(const std::string& path) {
+    if (path.empty())
+        return false;
+#if defined(_WIN32)
+    const std::wstring root = volume_root_for(path);
+    if (root.empty())
+        return false;
+    static std::mutex mtx;
+    static std::unordered_map<std::wstring, bool> by_volume;
+    {
+        std::lock_guard lock(mtx);
+        if (auto it = by_volume.find(root); it != by_volume.end())
+            return it->second;
+    }
+    const bool penalty = query_volume_seek_penalty(root);
+    std::lock_guard lock(mtx);
+    by_volume.emplace(root, penalty);
+    return penalty;
+#elif defined(__linux__)
+    struct stat st{};
+    if (::stat(path.c_str(), &st) != 0)
+        return false;
+    static std::mutex mtx;
+    static std::unordered_map<unsigned long long, bool> by_device;
+    const auto device = static_cast<unsigned long long>(st.st_dev);
+    {
+        std::lock_guard lock(mtx);
+        if (auto it = by_device.find(device); it != by_device.end())
+            return it->second;
+    }
+    const bool penalty = query_device_rotational(major(st.st_dev), minor(st.st_dev));
+    std::lock_guard lock(mtx);
+    by_device.emplace(device, penalty);
+    return penalty;
+#else
+    return false;
+#endif
+}
+
+bool native_stream_in_place_allowed(bool source_has_seek_penalty,
+                                    bool cache_has_seek_penalty) {
+    return !source_has_seek_penalty || cache_has_seek_penalty;
+}
+
 // Total size in bytes of every .rf64 PCM cache file currently on disk.
 unsigned long long source_cache_dir_size_bytes() {
     const std::string dir = source_cache_dir();
@@ -803,6 +914,12 @@ SourceManager::~SourceManager() {
 void SourceManager::set_source_ready_callback(SourceReadyCallback callback) {
     std::lock_guard lock(write_mutex_);
     source_ready_callback_ = std::move(callback);
+}
+
+void SourceManager::set_seek_penalty_probe(
+    std::function<bool(const std::string&)> probe) {
+    std::lock_guard lock(write_mutex_);
+    seek_penalty_probe_ = std::move(probe);
 }
 
 void SourceManager::publish_locked(EntryMap entries) {
@@ -2420,6 +2537,28 @@ bool SourceManager::try_install_native_file(const Id& source_id,
     const int channel_count = info.channels;
     const Frame duration_frames = static_cast<Frame>(info.frames);
     sf_close(sf);
+
+    // On a spinning disk the in-place stream is the slow path, not the free
+    // one: send the file through the decode route so it plays from the cache
+    // instead. See path_has_seek_penalty. LIBRETRACKS_STREAM_HDD_IN_PLACE=1
+    // restores streaming for A/B.
+    if (!lt_env_flag_enabled("LIBRETRACKS_STREAM_HDD_IN_PLACE")) {
+        std::function<bool(const std::string&)> probe;
+        {
+            std::lock_guard lock(write_mutex_);
+            probe = seek_penalty_probe_;
+        }
+        if (!probe)
+            probe = path_has_seek_penalty;
+        const bool source_slow = probe(file_path);
+        if (source_slow &&
+            !native_stream_in_place_allowed(source_slow, probe(source_cache_dir()))) {
+            lt_debug_log("[LT_STORAGE] %s is on a disk with seek penalty; "
+                         "converting it to the PCM cache instead of streaming in place\n",
+                         file_path.c_str());
+            return false;
+        }
+    }
 
     SourceReadyCallback ready_callback;
     {
