@@ -13,20 +13,46 @@ import rehypeGuideImageSize from "./src/plugins/rehypeGuideImageSize.mjs";
 // signal is meant to say when the *content* changed, not when the chrome moved.
 const lastCommitCache = new Map();
 
+const git = (args) =>
+  execFileSync("git", args, {
+    cwd: new URL(".", import.meta.url),
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
+
+// Cloudflare Pages builds from a shallow clone, and there `git log -1 -- <path>`
+// does not fail: the clone's boundary commit looks like it added every file, so
+// all URLs got the date of whatever commit happened to be HEAD (the 2026-10-19
+// deploy stamped 82 pages with an unrelated song-analysis fix). Fetch the
+// history first — commits and trees only, no file contents — and if that is not
+// possible, publish no lastmod rather than a wrong one.
+let historyUsable;
+const hasHistory = () => {
+  if (historyUsable !== undefined) return historyUsable;
+  try {
+    if (git(["rev-parse", "--is-shallow-repository"]) === "true") {
+      git(["fetch", "--unshallow", "--filter=blob:none", "--quiet"]);
+    }
+    historyUsable = git(["rev-parse", "--is-shallow-repository"]) === "false";
+  } catch {
+    historyUsable = false;
+  }
+  return historyUsable;
+};
+
 const lastCommitDate = (relativePath) => {
   if (lastCommitCache.has(relativePath)) return lastCommitCache.get(relativePath);
+  if (!hasHistory()) {
+    lastCommitCache.set(relativePath, undefined);
+    return undefined;
+  }
   let iso;
   try {
-    iso =
-      execFileSync("git", ["log", "-1", "--format=%cI", "--", relativePath], {
-        cwd: new URL(".", import.meta.url),
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "ignore"],
-      }).trim() || undefined;
+    iso = git(["log", "-1", "--format=%cI", "--", relativePath]) || undefined;
   } catch {
-    // No git binary, a shallow clone with no commit for this path, or a build
-    // from a tarball. Dropping lastmod is valid and leaves the sitemap exactly
-    // as it was before, so a build host without history degrades quietly.
+    // No git binary or a build from a tarball. Dropping lastmod is valid and
+    // leaves the sitemap exactly as it was before, so a build host without
+    // history degrades quietly.
     iso = undefined;
   }
   lastCommitCache.set(relativePath, iso);
