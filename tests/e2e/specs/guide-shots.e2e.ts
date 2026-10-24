@@ -74,9 +74,12 @@ async function viewport() {
   }));
 }
 
+/** Where shot() writes; the phone-layout step points it at the mobile set. */
+let shotDir = outDir;
+
 async function shot(name: string, crop?: Crop, drawn: Box[] = []) {
   await browser.pause(600);
-  const file = path.join(outDir, `${name}.png`);
+  const file = path.join(shotDir, `${name}.png`);
   const png = Buffer.from(await browser.takeScreenshot(), "base64");
   if (!crop) {
     await sharp(png).toFile(file);
@@ -2167,5 +2170,84 @@ describe("user guide screenshots", function () {
     }
     await (await $(viewBtn(1))).click();
     await browser.pause(1200);
+  });
+
+  // The PHONE layout from this desktop build: the frontend switches to it from
+  // an Android user agent. For the mobile images that only need the phone UI
+  // (the selection bar) when no debug APK can be built — whisper-rs-sys does
+  // not cross-compile for Android on Windows. Same marks as
+  // tests/android/guide-shots/shots.ts (trackSelect, clipSelect), same demo
+  // song, and a 915x412 @2 viewport, the emulator's 1828x822 frames. It
+  // changes the page for good, so it is the LAST step.
+  it("mobile 1.15: selection bar (phone layout)", async () => {
+    const phoneDir = path.join(repoRoot, "apps", "website", "public", "guide", UI_LANG === "en" ? "mobile-en" : "mobile");
+    mkdirSync(phoneDir, { recursive: true });
+    shotDir = phoneDir;
+    await cdp("Emulation.setUserAgentOverride", {
+      userAgent:
+        "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36",
+      platform: "Linux armv8l",
+    });
+    await cdp("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+    await cdp("Emulation.setDeviceMetricsOverride", { width: 915, height: 412, deviceScaleFactor: 2, mobile: true });
+    await runInPage(() => window.location.reload());
+    await browser.pause(5000);
+    await AppPage.waitUntilBooted();
+    // The reload puts the stored language back: pin English again.
+    if (UI_LANG === "en") {
+      await useAppLocale("en");
+      await AppPage.waitUntilBooted();
+    }
+    // The phone landing, then its demo song (the one the mobile set shows).
+    if (await rectOf(".lt-timeline-shell")) {
+      await (await $(`${tour("side-nav-sessions")}`)).click().catch(() => undefined);
+    }
+    for (let i = 0; i < 20 && !(await rectOf(tour("landing-demo-song"))); i++) await browser.pause(500);
+    await (await $(tour("landing-demo-song"))).click();
+    for (let i = 0; i < 60 && !(await rectOf(".lt-timeline-shell")); i++) await browser.pause(500);
+    await browser.pause(6000);
+    await dismissVideoNotice();
+    const tap = async (x: number, y: number) => {
+      await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x, y }] });
+      await cdp("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      await browser.pause(900);
+    };
+    const centre = async (selector: string) => {
+      const r = await rectOf(selector);
+      if (!r) throw new Error(`${selector} not visible`);
+      return { x: r.x + r.w / 2, y: r.y + r.h / 2 };
+    };
+
+    // A selected track and its action bar.
+    const name = await tag(".lt-track-header .lt-track-title-row strong", "phone-track");
+    const n = await centre(name);
+    await tap(n.x, n.y);
+    const bar = ".lt-mobile-selection-actions";
+    await annotatedShot("track-selected", [
+      { selector: ".lt-track-header.is-selected", n: 1 },
+      { selector: `${bar} .lt-mobile-selection-actions-title`, n: 2, badge: "above" },
+      { selector: `${bar} .lt-mobile-selection-action`, nth: 0, n: 3, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Más acciones")}"]`, n: 4, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Mezcla")}"]`, n: 5, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Seleccionar por área")}"]`, n: 6, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Quitar selección")}"]`, n: 7, badge: "above" },
+      { selector: `${bar} button[aria-label="${L("Ocultar acciones")}"]`, n: 8, badge: "above" },
+    ]);
+    await (await $(`${bar} button[aria-label="${L("Mezcla")}"]`)).click();
+    await browser.pause(800);
+    await annotatedShot("track-mix", [{ selector: ".lt-mobile-selection-mix", pad: 2 }], { style: "spotlight" });
+    await (await $(`${bar} button[aria-label="${L("Mezcla")}"]`)).click();
+    await browser.pause(500);
+    await (await $(`${bar} button[aria-label="${L("Quitar selección")}"]`)).click();
+    await browser.pause(800);
+
+    // A selected clip.
+    const row = await rectOf(".lt-track-header");
+    const song = await rectOf(".lt-region-hotspot");
+    if (!row || !song) throw new Error("no row/song on the phone screen");
+    await tap(song.x + song.w * 0.4, row.y + row.h / 2);
+    await annotatedShot("clip-selected", [{ selector: ".lt-mobile-selection-actions", pad: 2 }], { style: "spotlight" });
+    await (await $(`${bar} button[aria-label="${L("Quitar selección")}"]`)).click().catch(() => undefined);
+    shotDir = outDir;
   });
 });
