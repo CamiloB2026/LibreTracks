@@ -563,21 +563,48 @@ describe("release video (desktop scenes)", function () {
       if (await rectOf(style)) {
         await rec.moveTo(style, 700);
         await rec.hold(1);
-        // A native <select> draws its list outside the page, where no frame
-        // can see it: step through the styles instead, so each one shows in
-        // the field, and put the user's back at the end (it is a real setting).
+        // A native <select> draws its open list outside the page, where no
+        // frame can see it. Show the same element as an in-page list (`size`)
+        // while it is on camera, pick each style in turn, then put the user's
+        // value back (it is a real setting) and the dropdown back to normal.
         const select = await $(style);
         const original = await select.getValue();
         const count = (await runInPage(
-          (sel: string) => (document.querySelector(sel) as HTMLSelectElement | null)?.options.length ?? 0,
+          (sel: string) => {
+            const el = document.querySelector(sel) as HTMLSelectElement | null;
+            if (!el) return 0;
+            el.size = el.options.length;
+            el.style.height = "auto";
+            el.style.overflow = "hidden";
+            return el.options.length;
+          },
           style,
         )) as number;
+        await browser.pause(300);
+        await rec.hold(1.5);
         for (let i = 0; i < count; i++) {
+          const option = await runInPage(
+            (sel: string, index: number) => {
+              const el = document.querySelector(sel) as HTMLSelectElement | null;
+              const r = el?.options[index]?.getBoundingClientRect();
+              return r ? { x: r.left + Math.min(60, r.width / 2), y: r.top + r.height / 2 } : null;
+            },
+            style,
+            i,
+          );
+          if (option) await rec.moveTo(option as { x: number; y: number }, 500);
           await select.selectByIndex(i);
-          await browser.pause(400);
-          await rec.hold(1.4);
+          await browser.pause(300);
+          await rec.hold(1.6);
         }
         await select.selectByAttribute("value", original);
+        await runInPage((sel: string) => {
+          const el = document.querySelector(sel) as HTMLSelectElement | null;
+          if (!el) return;
+          el.size = 0;
+          el.style.height = "";
+          el.style.overflow = "";
+        }, style);
         await browser.pause(400);
       }
       await rec.zoomOut(500);
@@ -592,7 +619,19 @@ describe("release video (desktop scenes)", function () {
       // click on an item that opens a submenu can land on its first entry).
       await runInPage((sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click(), countItem);
       await browser.pause(500);
-      await rec.hold(3);
+      await rec.hold(1.2);
+      // Run the cursor down the per-song options so each one is read.
+      const entries = (await runInPage(() =>
+        Array.from(document.querySelectorAll(".lt-context-menu button"))
+          .map((b) => b.getBoundingClientRect())
+          .filter((r) => r.width > 0 && r.height > 0)
+          .map((r) => ({ x: r.left + Math.min(80, r.width / 2), y: r.top + r.height / 2 })),
+      )) as Array<{ x: number; y: number }>;
+      for (const entry of entries) {
+        await rec.moveTo(entry, 450);
+        await rec.hold(1.1);
+      }
+      await rec.hold(1.5);
       await browser.keys(["Escape"]);
       await browser.pause(300);
       if (await rectOf(".lt-context-menu")) await browser.keys(["Escape"]);
