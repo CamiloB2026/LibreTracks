@@ -22,16 +22,16 @@ on:
   workflow_dispatch:
     inputs:
       track:
-        description: "library = upload the AAB only and build the release by hand in Play Console; a track also assigns it (production as a draft); none = build only"
+        description: "production = the release as a draft in Play Console (the default); library = upload the AAB only; a testing track rolls it out at once; none = build only"
         type: choice
         options:
+          - production
           - library
           - internal
           - alpha
           - beta
-          - production
           - none
-        default: library
+        default: production
 
 permissions:
   contents: read

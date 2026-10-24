@@ -675,19 +675,19 @@ git tag -f v<NEW>
 git push origin v<NEW> --force
 ```
 
-### The tag also fires the two iOS workflows
+### The iOS and Android builds are started by hand
 
-A `v*` tag starts `ios-smoke.yml` (the unsigned AltStore IPA) and
-`ios-release.yml` (the signed App Store build) alongside the desktop release.
-Neither blocks the release, and neither uploads anything to Apple on its own:
+The tag only starts `release.yml`. `ios-smoke.yml` (the unsigned AltStore
+IPA), `ios-release.yml` (the signed App Store build) and `android-release.yml`
+(the signed Play build) are `workflow_dispatch` only: run them from the tag,
+`gh workflow run <file> --ref v<NEW>`. None of them blocks the desktop release:
 
 - `ios-release.yml` **skips itself with a warning** when the Apple secrets are
-  missing, and when they are present it builds, verifies and validates the IPA
-  but does **not** upload — uploading on a tag is opt-in through the repository
-  variable `IOS_UPLOAD_ON_TAG`.
-- To put the build in TestFlight, run *iOS Release (signed App Store build)*
-  by hand with `upload` ticked. Setup lives in
+  missing. With them it builds, verifies and validates the IPA, and its
+  `upload` input (on by default) sends it to TestFlight. Setup lives in
   [APPLE_SIGNING.md](./APPLE_SIGNING.md).
+- `android-release.yml` checks the `versionCode` against Play first, then
+  builds the AAB and sends it to the chosen `track` (see step 14).
 
 For a release that goes to the App Store, upload the build made **from the
 tag**, not one from a later commit on `main`: the version App Store Connect
@@ -1188,11 +1188,11 @@ of `release.yml`, so the desktop release never waits for them.
 
 The Play upload goes through `scripts/google-play.mjs` (service account
 `github-play-upload@libretracks.iam.gserviceaccount.com`, secret
-`PLAY_SERVICE_ACCOUNT_JSON`). The default `track: library` only uploads the
-AAB: create the production release by hand in Play Console (*Production →
-Create new release → Add from library*) and paste `play-release-notes.txt`
-there. A testing track (`internal`, `alpha`, `beta`) also creates a release
-that rolls out at once; `production` creates it as a **draft**. Submitting for review in Play Console /
+`PLAY_SERVICE_ACCOUNT_JSON`). The default `track: production` uploads the AAB
+and creates the production release as a **draft** in Play Console: paste
+`play-release-notes.txt` into it there. `library` only uploads the AAB (then
+*Production → Create new release → Add from library* by hand), and a testing
+track (`internal`, `alpha`, `beta`) creates a release that rolls out at once. Submitting for review in Play Console /
 App Store Connect is done by hand.
 When desktop ships, tag that same commit `v<NEW>` so the three platforms carry
 the same build.
