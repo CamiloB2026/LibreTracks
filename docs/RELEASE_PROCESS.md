@@ -733,8 +733,15 @@ platform tags of its bullets in `docs/releases/v<NEW>.md` and the code:
 - Only desktop → only desktop. Only mobile → only mobile.
 
 Structure: intro card (feature name + one line of what it is for) → the
-scenes, one action per scene, each with its sentence of narration → end card
-(`libretracks.com` + where to download). The narration explains the HOW with
+scenes, one action per scene, each with its sentence of narration → **fixes
+card** → end card (`libretracks.com` + where to download).
+
+The **fixes card** lists the release's user-visible fixes (the ones in the
+"🔧 Y además" bullet and the Facebook post's "Correcciones" block), one short
+line each, on screen long enough to read. The narration does not read them
+out: one sentence for the whole card ("Y además, un buen montón de
+correcciones…") is enough. The user wants them seen, not explained. In the
+desktop recorder it is a `listCard()` fed by a `FIXES` list. The narration explains the HOW with
 the same gestures as the release notes; on mobile it says tap / long-press,
 not click.
 
@@ -799,7 +806,22 @@ start and the result, drop the middle). In 1.14.0, «Nivelar canciones» went
 from 97 s to 17 s that way.
 
 **What the video covers.** Every user-visible novelty of the release, not
-just the headline: go through the release notes bullet by bullet. A feature
+just the headline: go through the release notes bullet by bullet.
+
+**Record the first-run state, not your machine's.** A one-time step that a
+new user will meet (a download, a permission, a setup notice) must appear in
+the video and be explained, including what happens if they skip it, even
+though the development machine already went through it. In 1.15.0 the
+speech recognition model for «Analizar canción» was already on disk, so the
+recorder sets the model file aside in `before()`, the scene shows the
+download notice, says what the model is for and what is lost without it,
+downloads it on camera (the wait is cut), and `after()` puts the original
+back if the download did not finish.
+
+**Modifier clicks (Ctrl/Shift) go in ONE `performActions` call** with the key
+and the pointer as two sources. `Recorder.clickAt()` ends with `perform()`,
+which releases every key, so a Ctrl pressed before two `clickAt()` calls only
+reaches the first click (1.15.0 selected two markers out of three). A feature
 that exists on desktop AND mobile is shown once (desktop) unless the mobile
 gesture is genuinely different; mobile-only features get their own mobile
 scene. For a mobile feature that is only a menu away, a short scene saying

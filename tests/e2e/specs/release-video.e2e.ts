@@ -1,5 +1,5 @@
 import { browser, $ } from "@wdio/globals";
-import { cpSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import AppPage from "../pageobjects/app.page.js";
@@ -39,7 +39,27 @@ const TITLES = {
   intro: ["Novedades de LibreTracks 1.15.0", "Letra y acordes, Analizar canción, cambios de nota y rampas de tempo"],
   mobile: ["También en el móvil", "Android e iOS · Seleccionar por área"],
   end: ["LibreTracks 1.15.0", "Gratis en libretracks.com"],
+  fixes: "Y además, correcciones",
 };
+/** The fixes card: the user-visible fixes of the release, shown, not narrated one by one. */
+const FIXES = [
+  "Las cues y los clips en la marca de destino de un salto ya no se saltan",
+  "El click ya no suena doble donde empieza un tempo nuevo",
+  "Partir una canción con warp corta justo en el cursor",
+  "Los WAV en un disco duro mecánico ya no petardean",
+  "Los audios que faltan se pueden quitar de la sesión",
+  "En iPhone y iPad el tono es correcto aunque el iPhone trabaje a otra frecuencia",
+  "Ctrl + rueda fuera del timeline ya no hace zoom de toda la app",
+];
+// The speech recognition model, set aside while recording so the analysis
+// scene shows its download notice, and put back afterwards.
+const speechModel = path.join(
+  process.env.LOCALAPPDATA ?? path.join(os.homedir(), "AppData", "Local"),
+  "com.libretracks.desktop",
+  "models",
+  "ggml-base-q5_1.bin",
+);
+const speechModelAside = `${speechModel}.release-video`;
 
 const tour = (id: string) => `[data-lt-tour="${id}"]`;
 const W = 1920;
@@ -167,6 +187,32 @@ async function titleCard(text: string, sub: string) {
   );
 }
 
+/** A title over a list (the release's fixes). */
+async function listCard(title: string, items: string[]) {
+  await runInPage(
+    (t: string, list: string[]) => {
+      const el = document.createElement("div");
+      el.id = "lt-tutorial-title";
+      el.style.cssText =
+        "position:fixed;inset:0;z-index:2147483646;display:flex;flex-direction:column;align-items:center;" +
+        "justify-content:center;background:rgba(8,10,12,.9);font-family:Inter,Segoe UI,sans-serif;color:#fff";
+      const rows = list
+        .map(
+          (item) =>
+            `<li style="margin:10px 0;padding-left:34px;position:relative">` +
+            `<span style="position:absolute;left:0;color:#57f1db">✓</span>${item}</li>`,
+        )
+        .join("");
+      el.innerHTML =
+        `<div style="font-size:52px;font-weight:800;letter-spacing:-1px;margin-bottom:28px">${t}</div>` +
+        `<ul style="list-style:none;margin:0;padding:0;font-size:26px;max-width:1300px">${rows}</ul>`;
+      document.body.appendChild(el);
+    },
+    title,
+    items,
+  );
+}
+
 async function removeTitleCard() {
   await runInPage(() => document.getElementById("lt-tutorial-title")?.remove());
 }
@@ -180,6 +226,7 @@ describe("release video (desktop scenes)", function () {
     mkdirSync(scenesDir, { recursive: true });
     rmSync(workDir, { recursive: true, force: true });
     cpSync(path.dirname(golden), workDir, { recursive: true });
+    if (existsSync(speechModel)) renameSync(speechModel, speechModelAside);
     await AppPage.waitUntilBooted();
     await AppPage.reopenSessionUntil(session, (s) => s.tracks.length >= 5, 180_000);
     await AppPage.resetShell();
@@ -199,6 +246,14 @@ describe("release video (desktop scenes)", function () {
   });
 
   beforeEach(() => parkOsCursor());
+
+  after(() => {
+    // The scene downloads the model again; if it did not finish, put the
+    // original back.
+    if (!existsSync(speechModelAside)) return;
+    if (existsSync(speechModel)) rmSync(speechModelAside);
+    else renameSync(speechModelAside, speechModel);
+  });
 
   afterEach(async function () {
     if (this.currentTest?.state === "failed") {
@@ -343,6 +398,24 @@ describe("release video (desktop scenes)", function () {
       await done();
     }
 
+    // 04b — the speech recognition download: what it is for, and the download
+    // itself (the wait is cut).
+    {
+      const { rec, done } = scene("04b-voz");
+      const callout = `${modal} .lt-song-analysis-callout`;
+      if (await rectOf(callout)) {
+        await rec.moveTo(callout, 700);
+        await rec.hold(Math.max(2, (durations["04b-voz"] ?? 8) - 5));
+        await rec.click(`${callout} .lt-song-analysis-button`, 300);
+        await rec.hold(1.5);
+        for (let i = 0; i < 300 && (await rectOf(callout)); i++) await browser.pause(1000);
+        await rec.hold(2.5);
+      } else {
+        console.log("[release-video] 04b-voz: no download notice (is the model still on disk?)");
+      }
+      await done();
+    }
+
     // 05 — Analyze; the wait is cut (no frames), then the review and Apply.
     {
       const { rec, done } = scene("05-revisar");
@@ -447,11 +520,41 @@ describe("release video (desktop scenes)", function () {
       if (marks.length < 4) throw new Error("09-marcas: not enough markers on screen");
       await rec.zoomTo({ x: marks[1].x - 120, y: marks[1].y - 150, w: 1100, h: 300 }, { margin: 20, maxZoom: 1.8 });
       await rec.clickAt(marks[1], 500);
-      await browser.performActions([{ type: "key", id: "rv-kb", actions: [{ type: "keyDown", value: "\uE009" }] }]);
-      await rec.clickAt(marks[2], 500);
-      await rec.clickAt(marks[3], 500);
-      await browser.performActions([{ type: "key", id: "rv-kb", actions: [{ type: "keyUp", value: "\uE009" }] }]);
-      await browser.releaseActions();
+      // Ctrl and the click in ONE action: Recorder.clickAt's perform() releases
+      // every key when it ends, so a Ctrl held across two clicks only reached
+      // the first one.
+      for (const mark of [marks[2], marks[3]]) {
+        await rec.moveTo(mark, 600);
+        await browser.performActions([
+          {
+            type: "key",
+            id: "rv-kb",
+            actions: [
+              { type: "keyDown", value: "\uE009" },
+              { type: "pause", duration: 0 },
+              { type: "pause", duration: 0 },
+              { type: "pause", duration: 0 },
+              { type: "keyUp", value: "\uE009" },
+            ],
+          },
+          {
+            type: "pointer",
+            id: "rv-mouse",
+            parameters: { pointerType: "mouse" },
+            actions: [
+              { type: "pause", duration: 0 },
+              { type: "pointerMove", duration: 0, x: Math.round(mark.x), y: Math.round(mark.y), origin: "viewport" },
+              { type: "pointerDown", button: 0 },
+              { type: "pointerUp", button: 0 },
+              { type: "pause", duration: 0 },
+            ],
+          },
+        ]);
+        await browser.releaseActions();
+        await rec.hold(0.6);
+      }
+      const selected = await runInPage(() => document.querySelectorAll(".lt-marker-hotspot.is-selected").length);
+      console.log(`[release-video] 09-marcas: ${selected} markers selected`);
       await rec.hold(3);
       await browser.keys(["Escape"]);
       await rec.zoomOut(500);
@@ -466,12 +569,21 @@ describe("release video (desktop scenes)", function () {
       await done();
     }
 
-    // 11 — end card.
+    // 11 — the fixes, shown on a card (narrated only as a whole).
     {
-      const { rec, done } = scene("11-final");
+      const { rec, done } = scene("11-correcciones");
+      await runInPage(() => document.getElementById("lt-tutorial-title")?.remove());
+      await listCard(TITLES.fixes, FIXES);
+      await rec.hold(Math.max(6, durations["11-correcciones"] ?? 6));
+      await done();
+    }
+
+    // 12 — end card.
+    {
+      const { rec, done } = scene("12-final");
       await runInPage(() => document.getElementById("lt-tutorial-title")?.remove());
       await titleCard(TITLES.end[0], TITLES.end[1]);
-      await rec.hold(durations["11-final"]);
+      await rec.hold(durations["12-final"]);
       await done();
       await removeTitleCard();
     }

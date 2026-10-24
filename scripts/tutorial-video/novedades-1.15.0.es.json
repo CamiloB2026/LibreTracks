@@ -6,7 +6,8 @@
     "Libre Tracks": "LibreTracks",
     "uno punto quince punto cero": "1.15.0",
     "libretracks punto com": "libretracks.com",
-    "Cord Pro": "ChordPro"
+    "Cord Pro": "ChordPro",
+    "cincuenta y siete megas": "57 MB"
   },
   "scenes": [
     {
@@ -24,6 +25,10 @@
     {
       "id": "04-analizar",
       "text": "Y llega Analizar canción. Haz clic derecho sobre la canción, y elige Analizar canción. Libre Tracks elige solo la pista de click, las pistas para la nota, y la pista de guía."
+    },
+    {
+      "id": "04b-voz",
+      "text": "La primera vez, Libre Tracks te ofrece descargar el reconocimiento de voz, unos cincuenta y siete megas, una sola vez. Con él entiende los anuncios de la guía con cualquier voz, en español o en inglés. Si no lo descargas, solo reconoce las guías grabadas con la misma voz que usa la app."
     },
     {
       "id": "05-revisar",
@@ -50,7 +55,11 @@
       "text": "Todo esto funciona también en Android e iOS. Y en el móvil llega Seleccionar por área: dibuja un recuadro con el dedo para elegir varias pistas o clips de una vez."
     },
     {
-      "id": "11-final",
+      "id": "11-correcciones",
+      "text": "Y además, un buen montón de correcciones. Aquí tienes las más importantes."
+    },
+    {
+      "id": "12-final",
       "text": "Descarga Libre Tracks gratis en libretracks punto com."
     }
   ]
