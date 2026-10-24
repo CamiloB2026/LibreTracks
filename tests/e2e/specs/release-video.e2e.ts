@@ -47,6 +47,7 @@ const TITLES = {
 };
 /** The fixes card: the user-visible fixes of the release, shown, not narrated one by one. */
 const FIXES = [
+  "Una canción exportada vuelve con su warp, su volumen, sus fades y su conteo",
   "Las cues y los clips en la marca de destino de un salto ya no se saltan",
   "El click ya no suena doble donde empieza un tempo nuevo",
   "Partir una canción con warp corta justo en el cursor",
