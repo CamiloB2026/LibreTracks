@@ -1,4 +1,4 @@
-import { browser, expect, $ } from "@wdio/globals";
+import { browser, expect, $, $$ } from "@wdio/globals";
 import AppPage from "../../pageobjects/app.page.js";
 
 /**
@@ -25,6 +25,11 @@ export function registerSessionAutomationFlows() {
       return;
     }
 
+    // An earlier flow leaves the toolbar's «Warp y tempo» popover open, and it
+    // is tall enough to cover the first track header: close it first.
+    for (const trigger of await $$('.lt-control-popover-trigger[aria-expanded="true"]')) {
+      await trigger.click();
+    }
     const header = await $(
       `.lt-track-header-row[data-track-id="${anchor.id}"] .lt-track-header`,
     );
