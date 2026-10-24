@@ -132,6 +132,16 @@ struct SongPackageManifest {
     /// zero). Absent in older packages.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     region_key_changes: Vec<libretracks_core::KeyChange>,
+    /// The song's warp, its master and its voice-guide count style. Absent in
+    /// older packages, which imported every song unwarped.
+    #[serde(default)]
+    region_warp_enabled: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    region_warp_source_bpm: Option<f64>,
+    #[serde(default)]
+    region_master: libretracks_core::SongMaster,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    region_voice_guide_count_style: Option<libretracks_core::VoiceGuideCountStyle>,
     #[serde(default)]
     tracks: Vec<Track>,
     #[serde(default)]
@@ -514,6 +524,10 @@ pub fn export_region_as_package_with_progress(
         region_transpose_semitones: region.transpose_semitones,
         region_key: region.key.clone(),
         region_key_changes: region.key_changes.clone(),
+        region_warp_enabled: region.warp_enabled,
+        region_warp_source_bpm: region.warp_source_bpm,
+        region_master: region.master.clone(),
+        region_voice_guide_count_style: region.voice_guide_count_style,
         tracks,
         clips: clips.clone(),
         midi_clips,
@@ -1251,12 +1265,12 @@ pub fn merge_extracted_song_package(
         transpose_semitones: manifest.region_transpose_semitones,
         key: manifest.region_key.clone(),
         key_changes: manifest.region_key_changes.clone(),
-        warp_enabled: false,
-        warp_source_bpm: None,
-        master: libretracks_core::SongMaster::default(),
+        warp_enabled: manifest.region_warp_enabled,
+        warp_source_bpm: manifest.region_warp_source_bpm,
+        master: manifest.region_master.clone(),
         compact_column_width_rem: None,
         chart: manifest.region_chart.clone(),
-        voice_guide_count_style: None,
+        voice_guide_count_style: manifest.region_voice_guide_count_style,
         structure: manifest
             .structure
             .clone()
@@ -2252,6 +2266,42 @@ mod tests {
             SongImportTrackMode::default()
         )
         .is_err());
+    }
+
+    /// Field report: a warped song at -1 st came back at -1 st but unwarped,
+    /// so its audio, grid and video no longer matched the original.
+    #[test]
+    fn warp_master_and_count_style_travel_with_the_song() {
+        let dir = tempdir().expect("tempdir");
+        let song_dir = dir.path();
+        let mut source = song();
+        source.regions[0].transpose_semitones = -1;
+        source.regions[0].warp_enabled = true;
+        source.regions[0].warp_source_bpm = Some(70.0);
+        source.regions[0].master = libretracks_core::SongMaster {
+            gain: 0.5,
+            fade_in_seconds: 1.0,
+            fade_out_seconds: 2.0,
+        };
+        source.regions[0].voice_guide_count_style = Some(libretracks_core::VoiceGuideCountStyle::default());
+        let package_path = song_dir.join("warped.ltpkg");
+        export_region_as_package(song_dir, song_dir, &source, "r1", &package_path, false)
+            .expect("export");
+
+        let result = import_song_package(
+            song_dir,
+            &empty_destination(),
+            &package_path,
+            0.0,
+            SongImportTrackMode::default(),
+        )
+        .expect("import");
+        let region = &result.song.regions[0];
+        assert_eq!(region.transpose_semitones, -1);
+        assert!(region.warp_enabled);
+        assert_eq!(region.warp_source_bpm, Some(70.0));
+        assert_eq!(region.master, source.regions[0].master);
+        assert_eq!(region.voice_guide_count_style, source.regions[0].voice_guide_count_style);
     }
 
     #[test]

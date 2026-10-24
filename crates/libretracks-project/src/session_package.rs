@@ -2223,7 +2223,12 @@ mod tests {
         let src = tempfile::tempdir().expect("src");
         let song_dir = src.path();
         write_session_dir(song_dir);
-        let song = session();
+        let mut song = session();
+        // A warped song at -1 st must come back warped (field report on .ltpkg).
+        song.regions[1].warp_enabled = true;
+        song.regions[1].warp_source_bpm = Some(70.0);
+        song.regions[1].transpose_semitones = -1;
+        song.regions[1].master.gain = 0.5;
         let package_path = song_dir.join("set.ltset");
 
         export_session_as_package(
@@ -2249,6 +2254,7 @@ mod tests {
         // Session document landed and loads with BOTH regions intact.
         let loaded = crate::load_song_from_file(&extracted.song_file).expect("load session");
         assert_eq!(loaded.regions.len(), 2);
+        assert_eq!(loaded.regions, song.regions, "warp, transpose and master travel");
         assert_eq!(loaded.clips.len(), 2);
         // Full package bundled the clip audio AND every clip points at a bundled
         // copy that exists in the new project — the portability guarantee.
