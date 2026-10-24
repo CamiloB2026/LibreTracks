@@ -52,7 +52,8 @@
     },
     {
       "id": "10-movil",
-      "text": "Todo esto funciona también en Android e iOS. Y en el móvil llega Seleccionar por área: dibuja un recuadro con el dedo para elegir varias pistas o clips de una vez."
+      "text": "Todo esto funciona también en Android e iOS. Y en el móvil llega Seleccionar por área: dibuja un recuadro con el dedo para elegir varias pistas o clips de una vez.",
+      "subtitles": "mobile"
     },
     {
       "id": "11-correcciones",

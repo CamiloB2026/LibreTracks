@@ -1,4 +1,5 @@
 import { browser, $ } from "@wdio/globals";
+import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -21,8 +22,11 @@ import { L } from "../utils/uiText.js";
  * The session is copied to a temp folder first (applying the analysis
  * writes to it); it must be TestMultiplesAnalisis, with lyrics on «Eres
  * Todopoderoso». Script: scripts/tutorial-video/novedades-1.15.0.es.json.
- * 1.15.0 has no phone recording (a debug APK with Whisper cannot be built on
- * Windows): the mobile scene is a title card recorded here.
+ * 1.15.0 has no phone recording from a device (a debug APK with Whisper cannot
+ * be built on Windows): the mobile scene is THIS app with the WebView reporting
+ * an Android phone (user agent, touch, a landscape phone viewport), which is
+ * what switches the frontend to its phone layout. It is recorded last, so the
+ * desktop scenes never see the phone emulation.
  *
  * Optional LT_TUTORIAL_SCENES=04-montar,06-vamp re-encodes only those scenes
  * (the rest still run, so the app reaches the right state).
@@ -211,6 +215,66 @@ async function listCard(title: string, items: string[]) {
     title,
     items,
   );
+}
+
+/** The phone layout: the frontend picks it from an Android user agent. */
+const PHONE = { w: 915, h: 412, dpr: 2.6 };
+async function toPhone() {
+  await cdp("Emulation.setUserAgentOverride", {
+    userAgent:
+      "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36",
+    platform: "Linux armv8l",
+  });
+  await cdp("Emulation.setTouchEmulationEnabled", { enabled: true, maxTouchPoints: 5 });
+  await cdp("Emulation.setDeviceMetricsOverride", { width: PHONE.w, height: PHONE.h, deviceScaleFactor: PHONE.dpr, mobile: true });
+  await runInPage(() => window.location.reload());
+  await browser.pause(5000);
+  await AppPage.waitUntilBooted();
+  await AppPage.reopenSessionUntil(session, (s) => s.tracks.length >= 5, 180_000);
+  await browser.pause(5000);
+  await runInPage(() => {
+    const notice = document.querySelector(".lt-video-setup-notice");
+    const buttons = notice ? Array.from(notice.querySelectorAll("button")) : [];
+    (buttons[buttons.length - 1] as HTMLButtonElement | undefined)?.click();
+  });
+  // A finger, not a mouse: hide the recorder's arrow and leave a round dot.
+  await runInPage(() => {
+    const style = document.createElement("style");
+    style.textContent =
+      "#lt-guide-cursor svg{display:none}#lt-guide-cursor::after{content:'';position:absolute;left:-15px;top:-15px;" +
+      "width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.3);border:2px solid #fff}";
+    document.head.appendChild(style);
+  });
+}
+
+/** A one-finger drag through CDP touch events (the area selection only answers to touch). */
+async function touchDrag(rec: Recorder, from: { x: number; y: number }, to: { x: number; y: number }, ms = 1100) {
+  rec.cursor = { ...from };
+  await rec.hold(0.3);
+  await cdp("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: from.x, y: from.y }] });
+  const steps = Math.max(2, Math.round((ms / 1000) * 30));
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const point = { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t };
+    await cdp("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [point] });
+    rec.cursor = point;
+    await rec.hold(1 / 30);
+  }
+  await cdp("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await browser.pause(300);
+}
+
+/** Letterboxes a phone-shaped clip into 16:9, the band compose's "mobile" subtitles use. */
+function letterbox(name: string) {
+  const mp4 = path.join(scenesDir, `${name}.mp4`);
+  const out = path.join(scenesDir, `${name}.169.mp4`);
+  execFileSync("ffmpeg", [
+    "-y", "-loglevel", "error", "-i", mp4,
+    "-vf", "scale=1920:-2:flags=lanczos,pad=1920:1080:0:(oh-ih)/2:black,setsar=1",
+    "-c:v", "libx264", "-preset", "slow", "-crf", "18", "-pix_fmt", "yuv420p", "-movflags", "+faststart", out,
+  ]);
+  rmSync(mp4);
+  renameSync(out, mp4);
 }
 
 async function removeTitleCard() {
@@ -498,7 +562,23 @@ describe("release video (desktop scenes)", function () {
       const style = `.lt-pads-popover select[aria-label="${L("Estilo de conteo")}"]`;
       if (await rectOf(style)) {
         await rec.moveTo(style, 700);
-        await rec.hold(3);
+        await rec.hold(1);
+        // A native <select> draws its list outside the page, where no frame
+        // can see it: step through the styles instead, so each one shows in
+        // the field, and put the user's back at the end (it is a real setting).
+        const select = await $(style);
+        const original = await select.getValue();
+        const count = (await runInPage(
+          (sel: string) => (document.querySelector(sel) as HTMLSelectElement | null)?.options.length ?? 0,
+          style,
+        )) as number;
+        for (let i = 0; i < count; i++) {
+          await select.selectByIndex(i);
+          await browser.pause(400);
+          await rec.hold(1.4);
+        }
+        await select.selectByAttribute("value", original);
+        await browser.pause(400);
       }
       await rec.zoomOut(500);
       await browser.keys(["Escape"]);
@@ -506,9 +586,16 @@ describe("release video (desktop scenes)", function () {
       const band = await songBand();
       await rec.rightClick({ x: band.x + 300, y: band.y + band.h / 2 });
       await rec.hold(0.6);
-      await rec.moveTo(await tagByText(".lt-context-menu button", L("Conteo de la voz guía"), "rv-count"), 600);
-      await rec.hold(2);
+      const countItem = await tagByText(".lt-context-menu button", L("Conteo de la voz guía"), "rv-count");
+      await rec.moveTo(countItem, 600);
+      // The per-song submenu, with its options: a plain DOM click (a WebDriver
+      // click on an item that opens a submenu can land on its first entry).
+      await runInPage((sel: string) => (document.querySelector(sel) as HTMLElement | null)?.click(), countItem);
+      await browser.pause(500);
+      await rec.hold(3);
       await browser.keys(["Escape"]);
+      await browser.pause(300);
+      if (await rectOf(".lt-context-menu")) await browser.keys(["Escape"]);
       await rec.hold(0.4);
       await done();
     }
@@ -561,14 +648,6 @@ describe("release video (desktop scenes)", function () {
       await done();
     }
 
-    // 10 — mobile, as a title: no recording of the phone this release.
-    {
-      const { rec, done } = scene("10-movil");
-      await titleCard(TITLES.mobile[0], TITLES.mobile[1]);
-      await rec.hold(durations["10-movil"]);
-      await done();
-    }
-
     // 11 — the fixes, shown on a card (narrated only as a whole).
     {
       const { rec, done } = scene("11-correcciones");
@@ -586,6 +665,44 @@ describe("release video (desktop scenes)", function () {
       await rec.hold(durations["12-final"]);
       await done();
       await removeTitleCard();
+    }
+
+    // 10 — the phone layout and «Seleccionar por área», recorded LAST (see
+    // the header): a box over the track headers, then one over the clips.
+    {
+      await toPhone();
+      const rec = new Recorder(cdp, "10-movil", { x: 0, y: 0, w: PHONE.w, h: PHONE.h }, scenesDir,
+        { x: PHONE.w * 0.7, y: PHONE.h * 0.6 },
+        { width: 1920, height: Math.round((1920 * PHONE.h) / PHONE.w / 2) * 2, dpr: PHONE.dpr, viewport: { w: PHONE.w, h: PHONE.h } });
+      const record = only.length === 0 || only.includes("10-movil");
+      console.log("[release-video] scene 10-movil");
+      await rec.hold(1.5);
+      const areaButton = `.lt-mobile-selection-actions button[aria-label="${L("Seleccionar por área")}"]`;
+      await rec.click(areaButton, 800);
+      await rec.hold(1.2);
+      const headers = (await runInPage(() =>
+        Array.from(document.querySelectorAll(".lt-track-header"))
+          .map((e) => e.getBoundingClientRect())
+          .filter((r) => r.height > 0 && r.top >= 0 && r.bottom <= window.innerHeight)
+          .map((r) => ({ x: r.left, y: r.top, w: r.width, h: r.height })),
+      )) as Array<{ x: number; y: number; w: number; h: number }>;
+      if (headers.length >= 2) {
+        const a = headers[0];
+        const b = headers[Math.min(2, headers.length - 1)];
+        await touchDrag(rec, { x: a.x + 10, y: a.y + 6 }, { x: a.x + a.w - 10, y: b.y + b.h - 6 });
+        await rec.hold(1.8);
+        // Then the clips on those lanes.
+        const laneX = a.x + a.w + 30;
+        await touchDrag(rec, { x: laneX, y: a.y + 8 }, { x: laneX + 260, y: b.y + b.h - 8 });
+        await rec.hold(2);
+      } else {
+        console.log("[release-video] 10-movil: no track headers on the phone screen");
+      }
+      await rec.holdUntil((durations["10-movil"] ?? 10) + 0.7);
+      if (record) {
+        await rec.encode();
+        letterbox("10-movil");
+      }
     }
   });
 });

@@ -818,6 +818,22 @@ download notice, says what the model is for and what is lost without it,
 downloads it on camera (the wait is cut), and `after()` puts the original
 back if the download did not finish.
 
+**A native `<select>` never shows its list in a frame**: WebView2 draws it
+outside the page. To show the options, step through them with
+`selectByIndex()` (each one shows in the field) and put the user's value back;
+the app's own context submenus are DOM and do show.
+
+**No debug APK? Record the phone layout from the desktop app.** The frontend
+switches to its phone layout from an Android user agent, so CDP
+`Emulation.setUserAgentOverride` + `setTouchEmulationEnabled` + a landscape
+phone `setDeviceMetricsOverride` (915x412 @2.6), then a reload and the session
+reopened, give the real phone UI on the desktop engine. Gestures that only
+answer to touch (area selection) need `Input.dispatchTouchEvent`. Record that
+scene LAST (it changes the page for good) and letterbox it to 16:9, with
+`"subtitles": "mobile"`. 1.15.0 did this because whisper-rs-sys cannot be
+cross-compiled for Android on Windows; desktop-only backends mean anything that
+needs the phone's own storage or hardware still needs the emulator.
+
 **Modifier clicks (Ctrl/Shift) go in ONE `performActions` call** with the key
 and the pointer as two sources. `Recorder.clickAt()` ends with `perform()`,
 which releases every key, so a Ctrl pressed before two `clickAt()` calls only
