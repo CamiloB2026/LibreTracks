@@ -1109,6 +1109,8 @@ TEST_CASE("con el presupuesto rebasado, el audio del usuario sobrevive") {
     REQUIRE(write_wav_pcm_float(user_wav, samples, kChannels, kSampleRate));
 
     SourceManager manager;
+    // In place regardless of the runner's disk (see path_has_seek_penalty).
+    manager.set_seek_penalty_probe([](const std::string&) { return false; });
     manager.register_source("del-usuario", user_wav);
     REQUIRE(manager.try_install_native_file("del-usuario", kSampleRate));
 

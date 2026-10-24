@@ -135,18 +135,25 @@ bool identical(const std::vector<float>& a, const std::vector<float>& b) {
 
 } // namespace
 
+// These tests are about streaming in place, not about the disk: pin a fast
+// disk, or a CI runner whose disk reports itself rotational sends every
+// file to the PCM cache instead (see path_has_seek_penalty).
+static bool fast_disk(const std::string&) { return false; }
+
 TEST_CASE("realtime resample: the flag decides whether a 44.1k file streams in place") {
     const auto path = temp_wav("flag");
     REQUIRE(write_float_wav(path, make_audio(4096, 2), 2, kFileRate));
     {
         RealtimeResampleFlag off(false);
         SourceManager manager;
+        manager.set_seek_penalty_probe(fast_disk);
         manager.register_source("a", path);
         CHECK_FALSE(manager.try_install_native_file("a", kEngineRate));
     }
     {
         RealtimeResampleFlag on(true);
         SourceManager manager;
+        manager.set_seek_penalty_probe(fast_disk);
         manager.register_source("b", path);
         REQUIRE(manager.try_install_native_file("b", kEngineRate));
         const auto source = manager.get_shared("b");
@@ -179,6 +186,7 @@ TEST_CASE("realtime resample: reads through the block cache match the interpolat
         REQUIRE(write_float_wav(path, file, channels, rates.file));
 
         SourceManager manager;
+        manager.set_seek_penalty_probe(fast_disk);
         const Id id = "src";
         manager.register_source(id, path);
         REQUIRE(manager.try_install_native_file(id, rates.engine));
@@ -212,6 +220,7 @@ TEST_CASE("realtime resample: positions stay exact across the file") {
     REQUIRE(write_float_wav(path, file, 1, kFileRate));
 
     SourceManager manager;
+    manager.set_seek_penalty_probe(fast_disk);
     manager.register_source("imp", path);
     REQUIRE(manager.try_install_native_file("imp", kEngineRate));
     const auto source = manager.get_shared("imp");
@@ -238,6 +247,7 @@ TEST_CASE("realtime resample: a jump renders the same samples as playing through
     REQUIRE(write_float_wav(path, file, 2, kFileRate));
 
     SourceManager manager;
+    manager.set_seek_penalty_probe(fast_disk);
     manager.register_source("song", path);
     REQUIRE(manager.try_install_native_file("song", kEngineRate));
     const Frame total = manager.get_shared("song")->duration_frames();
@@ -291,6 +301,7 @@ TEST_CASE("realtime resample: a warp voice seeking into a resampled source does 
     REQUIRE(write_float_wav(path, make_audio(static_cast<Frame>(kFileRate) * kSeconds, 2),
                             2, kFileRate));
     SourceManager sm;
+    sm.set_seek_penalty_probe(fast_disk);
     sm.register_source("src1", path);
     REQUIRE(sm.try_install_native_file("src1", kEngineRate));
     const Frame length = sm.get_shared("src1")->duration_frames();
