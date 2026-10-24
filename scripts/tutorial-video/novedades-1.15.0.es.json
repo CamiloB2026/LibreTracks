@@ -1,0 +1,57 @@
+{
+  "title": "Novedades de LibreTracks 1.15.0",
+  "voice": "es-ES-AlvaroNeural",
+  "rate": "+5%",
+  "display": {
+    "Libre Tracks": "LibreTracks",
+    "uno punto quince punto cero": "1.15.0",
+    "libretracks punto com": "libretracks.com",
+    "Cord Pro": "ChordPro"
+  },
+  "scenes": [
+    {
+      "id": "01-intro",
+      "text": "Libre Tracks uno punto quince punto cero trae la letra y los acordes en la vista Live, Analizar canción, cambios de nota, rampas de tempo, y más."
+    },
+    {
+      "id": "02-letra",
+      "text": "En la vista Live, pulsa el botón Letra. La letra sigue a la canción línea a línea, con los acordes encima, y salta de sección con las marcas."
+    },
+    {
+      "id": "03-letra-anadir",
+      "text": "Para añadirla, importa el PDF de acordes o un archivo Cord Pro, o pega el texto. Libre Tracks lo convierte en texto, y en el editor enlazas cada marca con su sección."
+    },
+    {
+      "id": "04-analizar",
+      "text": "Y llega Analizar canción. Haz clic derecho sobre la canción, y elige Analizar canción. Libre Tracks elige solo la pista de click, las pistas para la nota, y la pista de guía."
+    },
+    {
+      "id": "05-revisar",
+      "text": "Pulsa Analizar. Lee el tempo y el compás del click, la nota y sus cambios, y escucha la voz guía para colocar cada marca. Revisa la propuesta, y pulsa Aplicar."
+    },
+    {
+      "id": "06-nota",
+      "text": "Una canción ya puede cambiar de nota a mitad, como el último coro un tono arriba. Pon el cursor donde cambia, clic derecho sobre la canción, y Cambio de nota en el cursor. El cambio se ve como una muesca en la banda de la canción."
+    },
+    {
+      "id": "07-tempo",
+      "text": "Las marcas de tempo pueden subir o bajar poco a poco hasta la siguiente: clic derecho sobre la marca, y Rampa hasta la siguiente marca. Y para acelerar o frenar una canción sin cambiar el tono, abre Warp y tempo, y cambia su tempo."
+    },
+    {
+      "id": "08-conteo",
+      "text": "La voz guía puede contar la entrada a medio tiempo, ideal para canciones rápidas. Elige el estilo de conteo en su ventana, o para una sola canción desde su menú."
+    },
+    {
+      "id": "09-marcas",
+      "text": "Y para editar más rápido, selecciona varias marcas con Control y clic, para moverlas, duplicarlas o borrarlas a la vez."
+    },
+    {
+      "id": "10-movil",
+      "text": "Todo esto funciona también en Android e iOS. Y en el móvil llega Seleccionar por área: dibuja un recuadro con el dedo para elegir varias pistas o clips de una vez."
+    },
+    {
+      "id": "11-final",
+      "text": "Descarga Libre Tracks gratis en libretracks punto com."
+    }
+  ]
+}
