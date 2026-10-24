@@ -64,6 +64,65 @@ Para cortar la canción que suena con un fundido, usa **Fade out y parar** en
 la barra de transporte de arriba. Ver
 [Fade out y parar](/es/docs/interface/main-screen/#fade-out-y-parar).
 
+## Letra y acordes
+
+La Vista Live puede enseñar la **letra con sus acordes** junto a las marcas,
+para que el cantante y la banda la sigan sin papeles ni otra app. La letra
+**sigue a la canción**: resalta la línea que suena y salta de sección con las
+marcas (también con un salto o un Vamp).
+
+![Letra y acordes en la Vista Live](/guide/desktop/live-lyrics.png)
+
+<Legend>
+
+1. **Letra**: muestra u oculta la letra. La app recuerda tu elección.
+2. **Herramientas**: letra más pequeña o más grande, mostrar u ocultar los
+   acordes, grabar los tiempos de las líneas, editar la letra, ver solo la
+   letra a todo el ancho y cerrar.
+3. **La letra**: cada sección con su nombre, la línea que suena resaltada, y
+   los acordes encima de la sílaba en la que caen.
+
+</Legend>
+
+### Añadir la letra de una canción
+
+Si la canción no tiene letra, el panel te ofrece dos caminos:
+
+![Una canción sin letra](/guide/desktop/live-lyrics-empty.png)
+
+- **Importar archivo…**: un **PDF** de acordes, un archivo **ChordPro**
+  (`.cho`, `.pro`) o un texto con los acordes encima de la letra. LibreTracks
+  lo convierte en texto: el PDF no se guarda en la sesión, solo la letra. Un
+  PDF escaneado (una imagen, sin texto) no se puede convertir; en ese caso,
+  pega la letra a mano.
+- **Escribir o pegar**: abre el editor vacío.
+
+### Editar la letra y la sincronía
+
+El botón de editar abre la letra en formato ChordPro y el enlace con las
+marcas:
+
+![El editor de letra y acordes](/guide/desktop/lyrics-editor.png)
+
+- **Texto (ChordPro)**: cada sección empieza con `{section: Nombre}` y los
+  acordes van entre corchetes justo antes de la sílaba: `[Am]letra`. El tiempo
+  de la izquierda de cada línea, `[m:ss.d]`, dice cuándo empieza; cámbialo, o
+  bórralo para que las líneas se repartan solas a lo largo de la sección.
+- **Qué sección suena en cada marca**: une cada marca de la canción con una
+  sección de la letra. **Enlazar automáticamente** lo hace por los nombres;
+  una marca sin letra (un solo de guitarra) se deja en **— Sin letra —**.
+- **Quitar letra** la borra de la canción.
+
+Para ajustar los tiempos de oído, pulsa el botón de **grabar tiempos**,
+reproduce la canción y pulsa **Siguiente línea** cuando empiece cada una. Al
+terminar se guardan como tiempos personalizados.
+
+Los acordes **se transponen con la canción** y se escriben en la nota que suena
+en cada parte: si el último coro [sube de nota](/es/docs/tasks/songs/#cambios-de-nota),
+sus acordes salen en la nota nueva. La letra también se puede ver en el
+[Remote](/es/docs/remote-control/#diseñar-tus-pestañas), con el widget
+**Letra y acordes**.
+
 ## En Móvil Y Tablet
 
 La Vista Live se adapta a la pantalla: en escritorio y tablet las marcas se reparten en tres columnas con el repertorio al lado, y en un móvil pasan a dos columnas con el repertorio abajo, siempre accesible.

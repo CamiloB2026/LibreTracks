@@ -1,0 +1,99 @@
+---
+title: Analyze song
+description: "How LibreTracks reads the tempo and time signature from the click, the song's key and its modulations, and places the section markers by listening to the voice guide, with a proposal you review before applying it."
+---
+
+import Legend from "../../../components/guide/Legend.astro";
+
+Preparing a song by hand takes a while: set the tempo, check the time
+signature, find the key and listen to the guide to place each marker.
+**Analyze song** does it for you from the multitrack's own audio:
+
+- the **tempo and time signature**, read from the **click** track;
+- the song's **key**, and its **key changes** if it modulates, from the tracks
+  with harmony;
+- the **section markers** (Intro, Verse, Chorus…), by listening to what the
+  **voice guide** says.
+
+It changes nothing without asking: it shows you a proposal, you review it and
+choose what to apply. And it can be undone.
+
+## Opening it
+
+Right-click the song (long-press on mobile) ›
+**Analyze song (tempo, key and sections)…**. It works on the computer, on
+Android and on iOS.
+
+![The Analyze song window before starting](/guide/desktop-en/song-analysis-setup.png)
+
+<Legend>
+
+1. **Click track**: where the tempo comes from. LibreTracks picks the track by
+   its name; change it if it is not the click. If the song has no click,
+   choose **No click: estimate it from the music**, or **Don't analyze the
+   tempo**.
+2. **Analyze the key**: the tracks listened to for the key. The click, the
+   guide and the percussion are already left out, since they blur the key.
+3. **Guide track**: the voice that announces the sections. **Don't analyze the
+   guide** leaves the markers as they are.
+4. **Analyze**: starts. It takes a few seconds per song (a bit more if it
+   recognises the guide) and shows the progress.
+
+</Legend>
+
+The first time you analyze a guide, the window offers to download the
+**speech recognition** (about 57 MB, only once). With it, announcements in
+**any voice** are understood, male or female, in Spanish or English. Without
+it, only guides recorded with the same voice the app uses are recognised.
+
+:::caution[Don't run it mid-show]
+The analysis uses a fair amount of CPU for a few seconds. Do it while
+preparing the session, not while you play.
+:::
+
+## Reviewing the proposal
+
+When it finishes, the window shows what it found, part by part. Each part has
+its **Apply** box: untick what you don't want.
+
+![The proposal: tempo and meter, key and markers](/guide/desktop-en/song-analysis-review-1.png)
+
+**Tempo and meter.** The tempo and time signature the song has and the ones it
+suggests, and a table with each tempo and time signature marker, which you can
+edit. Click a position to jump there and hear it. If the click plays eighth
+notes and the tempo came out double (or half), the **×2** and **÷2** buttons
+fix it. An orange warning tells you when to check it, for example when the
+click does not accent beat 1.
+
+**Key.** The song's key and, if it modulates, each **key change** with its
+moment. You can change any of them before applying. The changes then show as
+a notch on the song's band: see [Key changes](/docs/tasks/songs/#key-changes).
+
+**Section markers.** One row for each announcement the guide makes, with what
+it understood in quotes:
+
+![The guide's announcements and each one's section](/guide/desktop-en/song-analysis-review-3.png)
+
+- **▶** plays the announcement so you can hear it.
+- **Section** is the marker that gets placed (Intro, Verse, Chorus…) and
+  **Cue** an extra hint, like *Drums In*. Announcements repeated with the same
+  recording are grouped: choose once what it is and it applies to every time
+  it is said.
+- **The guide announces**: how many bars before the section the guide speaks.
+  The usual is **1 bar before**; change it if your markers come out shifted.
+- If the song already had markers, the proposal **replaces** them; untick the
+  box to keep yours.
+
+Press **Apply** to write it into the song, or **Back** to change the tracks
+and try again. What you apply is undone with <kbd>Ctrl</kbd>+<kbd>Z</kbd>.
+
+## Tips
+
+- **Check the tempo before the markers.** If the sections land mid-bar or
+  shifted, the tempo almost always came out double or half: fix it with ×2 /
+  ÷2 before applying.
+- **It works with warp and with the song transposed.** The audio is analyzed
+  as recorded, and the markers land in their musical place.
+- **Go over the proposal once.** The analysis gets most multitracks right, but
+  a guide with a lot of background noise or a live click that follows the band
+  can throw it off. That is what the review is for.

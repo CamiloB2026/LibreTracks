@@ -19,7 +19,8 @@ time signature already set at its start.
 :::note[What if I want the music to go faster?]
 Changing the BPM doesn't speed up the audio. That is what **warp** is for:
 with the song's warp on, the audio stretches to follow the timeline's tempo
-without changing pitch. See [Pitch, warp and the T button](/docs/pitch-and-warp/).
+without changing pitch. The quick way is the **Song tempo** in the *Warp &
+tempo* button: see [Speeding up or slowing down a song](#speeding-up-or-slowing-down-a-song).
 :::
 
 ## Changing the tempo of a section
@@ -56,6 +57,33 @@ session, you change the starting tempo instead of creating a marker.
 Right-click the marker: **Change BPM** or **Delete Marker** (the section goes
 back to the previous tempo). On mobile, the action bar › **…** › **Tempo**
 creates the change at the cursor position.
+
+## Ramping the tempo up or down
+
+Some songs don't change tempo at once, they **speed up or slow down** over a
+few bars (an ending that winds down, a bridge that pushes). For that, a BPM
+marker can be a **ramp**:
+
+1. Put a BPM marker where the change starts and another where it ends, with
+   the tempo it reaches.
+2. Right-click the first one › **Ramp to the next marker**.
+
+![A tempo marker's menu with the ramp](/guide/desktop-en/menu-tempo-marker.png)
+
+From that marker the tempo changes gradually and reaches the next one's right
+on it. The marker is drawn sloped in the ruler, and the grid, the metronome,
+the voice guide's count and bar jumps follow the ramp. To remove it, choose
+**Ramp to the next marker** again in the same menu.
+
+## Speeding up or slowing down a song
+
+![Warp & tempo of the selected song](/guide/desktop-en/toolbar-warp-panel.png)
+
+Select the song and open **Warp & tempo** in the toolbar. In **Song tempo**,
+<kbd>−</kbd> and <kbd>+</kbd> (or typing the BPM) change the song's speed
+**without changing its pitch**: warp turns on by itself if needed.
+**Original** puts it back as recorded. If the song has several tempo markers
+or ramps, they all change in the same proportion, so nothing drifts.
 
 ## Changing time signature
 

@@ -110,6 +110,10 @@ Los controles **M**, **S** y volumen de la carpeta afectan a todas sus pistas.
 - **Renombrar canción** (<kbd>F2</kbd>).
 - **Nota de la canción**: su tonalidad. Se muestra junto al nombre y se
   transpone con ella.
+- **Cambio de nota en el cursor ▸**: la canción cambia de nota desde donde está
+  el cursor (el último coro un tono arriba, por ejemplo). Ver
+  [Cambios de nota](/es/docs/tasks/songs/#cambios-de-nota).
+- **Arreglo**: abre el editor de [arreglos](/es/docs/arrangements/).
 - **Partir canción en el cursor** (<kbd>Mayús</kbd>+<kbd>S</kbd>): la divide en
   dos canciones en la posición del cursor.
 - **Cambiar BPM original**: el tempo al que se grabó el audio, que usa el
@@ -117,8 +121,14 @@ Los controles **M**, **S** y volumen de la carpeta afectan a todas sus pistas.
 - **Fades de la canción ▸**: fundido de entrada y de salida de la canción, en
   segundos. También se ajustan arrastrando las esquinas de la canción en la
   regla. Ver [Fade de entrada y de salida](/es/docs/tasks/songs/#fade-de-entrada-y-de-salida).
+- **Conteo de la voz guía ▸**: cómo cuenta la entrada la voz guía en esta
+  canción, si quieres que sea distinto del ajuste general. Ver
+  [Voz guía](/es/docs/voice-guide/#encenderla-y-ajustarla).
 - **Exportar canción**: la guarda como `.ltpkg` para llevarla a otra sesión.
 - **Renderizar audio…**: exporta su mezcla a WAV, entera o pista por pista.
+- **Analizar canción (tempo, nota y secciones)…**: lee el click, la nota y la
+  voz guía y te propone el tempo, la nota y las marcas. Ver
+  [Analizar canción](/es/docs/song-analysis/).
 - **Borrar canción** (<kbd>Supr</kbd>).
 
 ### Sobre una marca
@@ -132,6 +142,38 @@ Los controles **M**, **S** y volumen de la carpeta afectan a todas sus pistas.
 - **Tipo de marca…**: Intro, Verso, Coro… o un aviso como *Entra batería*. El
   tipo da el color y lo que dice la voz guía.
 - **Borrar**.
+
+### Sobre una marca de tempo
+
+![Menú de una marca de tempo](/guide/desktop/menu-tempo-marker.png)
+
+Las marcas de tempo (la bandera con el BPM, en la parte baja de la regla)
+tienen su propio menú:
+
+- **Cambiar BPM**: el tempo desde esa marca.
+- **Rampa hasta la siguiente marca**: en vez de saltar de golpe, el tempo sube
+  o baja poco a poco hasta el de la marca siguiente, y llega justo ahí. La
+  marca se dibuja inclinada en la regla, y el metrónomo y la voz guía siguen la
+  rampa. Hace falta otra marca de BPM después. Ver
+  [Tempo y compás](/es/docs/tasks/tempo/#subir-o-bajar-el-tempo-poco-a-poco).
+- **Borrar marca**.
+
+### Varias marcas a la vez
+
+![Tres marcas seleccionadas en la regla](/guide/desktop/ruler-marker-selection.png)
+
+<kbd>Ctrl</kbd>+clic sobre una marca la añade o la quita de la selección sin
+programar el salto, y <kbd>Mayús</kbd>+clic selecciona todas las marcas entre
+la última pulsada y esta (secciones, avisos, tempo y compás). Con varias
+seleccionadas:
+
+- Arrastra cualquiera de ellas para mover el grupo entero.
+- <kbd>Supr</kbd> las borra y <kbd>Ctrl</kbd>+<kbd>D</kbd> las duplica detrás
+  del grupo, en compases enteros.
+- El clic derecho abre el menú del grupo.
+
+En el móvil, con **Seleccionar por área** activo, toca las marcas o arrastra
+el dedo por la regla para sumarlas.
 
 Las marcas también se arrastran por la regla para moverlas.
 

@@ -292,6 +292,49 @@ async function toolbarPanelShot(id: string, name: string) {
   await closeToolbarGroup(id);
 }
 
+/** Opens a topbar popover by its arrow and captures it, a screenful at a time. */
+async function popoverShots(splitId: string, name: string) {
+  // Voice guide and pads hide their settings while off: switch them on
+  // for the capture and back off afterwards.
+  const toggle = await $(`${tour(splitId)} > button:nth-of-type(1)`);
+  const wasOn = ((await toggle.getAttribute("class")) ?? "").includes("is-active");
+  if (!wasOn && splitId !== "topbar-metronome") {
+    await toggle.click();
+    await browser.pause(1200);
+  }
+  await (await $(`${tour(splitId)} > button:nth-of-type(2)`)).click();
+  await browser.pause(800);
+  const pages = await runInPage(() => {
+    const panel = document.querySelector(".lt-pads-popover") as HTMLElement | null;
+    if (!panel) return 0;
+    const scroller =
+      (Array.from(panel.querySelectorAll<HTMLElement>("*")).find((el) => el.scrollHeight > el.clientHeight + 8 &&
+        getComputedStyle(el).overflowY !== "visible") ?? panel);
+    scroller.setAttribute("data-guide", "pop-scroller");
+    scroller.scrollTop = 0;
+    const overflow = scroller.scrollHeight - scroller.clientHeight;
+    return overflow <= 8 ? 1 : Math.min(4, 1 + Math.ceil(overflow / (scroller.clientHeight - 60)));
+  });
+  if (!pages) throw new Error(`${name}: popover did not open`);
+  for (let page = 0; page < pages; page++) {
+    await runInPage((p: number) => {
+      const sc = document.querySelector('[data-guide="pop-scroller"]') as HTMLElement | null;
+      if (sc) sc.scrollTop = p * (sc.clientHeight - 60);
+    }, page);
+    await browser.pause(300);
+    await annotatedShot(`${name}${pages > 1 ? `-${page + 1}` : ""}`, [{ selector: ".lt-pads-popover", pad: 2 }], {
+      style: "spotlight",
+      crop: { marks: 24 },
+    });
+  }
+  await browser.keys(["Escape"]);
+  await browser.pause(400);
+  if (!wasOn && splitId !== "topbar-metronome") {
+    await toggle.click();
+    await browser.pause(600);
+  }
+}
+
 describe("user guide screenshots", function () {
   before(async function () {
     if (process.env.LT_GUIDESHOTS !== "1") {
@@ -1121,49 +1164,6 @@ describe("user guide screenshots", function () {
     await ensureSession();
     await AppPage.resetShell();
 
-    /** Opens a topbar popover by its arrow and captures it, a screenful at a time. */
-    const popoverShots = async (splitId: string, name: string) => {
-      // Voice guide and pads hide their settings while off: switch them on
-      // for the capture and back off afterwards.
-      const toggle = await $(`${tour(splitId)} > button:nth-of-type(1)`);
-      const wasOn = ((await toggle.getAttribute("class")) ?? "").includes("is-active");
-      if (!wasOn && splitId !== "topbar-metronome") {
-        await toggle.click();
-        await browser.pause(1200);
-      }
-      await (await $(`${tour(splitId)} > button:nth-of-type(2)`)).click();
-      await browser.pause(800);
-      const pages = await runInPage(() => {
-        const panel = document.querySelector(".lt-pads-popover") as HTMLElement | null;
-        if (!panel) return 0;
-        const scroller =
-          (Array.from(panel.querySelectorAll<HTMLElement>("*")).find((el) => el.scrollHeight > el.clientHeight + 8 &&
-            getComputedStyle(el).overflowY !== "visible") ?? panel);
-        scroller.setAttribute("data-guide", "pop-scroller");
-        scroller.scrollTop = 0;
-        const overflow = scroller.scrollHeight - scroller.clientHeight;
-        return overflow <= 8 ? 1 : Math.min(4, 1 + Math.ceil(overflow / (scroller.clientHeight - 60)));
-      });
-      if (!pages) throw new Error(`${name}: popover did not open`);
-      for (let page = 0; page < pages; page++) {
-        await runInPage((p: number) => {
-          const sc = document.querySelector('[data-guide="pop-scroller"]') as HTMLElement | null;
-          if (sc) sc.scrollTop = p * (sc.clientHeight - 60);
-        }, page);
-        await browser.pause(300);
-        await annotatedShot(`${name}${pages > 1 ? `-${page + 1}` : ""}`, [{ selector: ".lt-pads-popover", pad: 2 }], {
-          style: "spotlight",
-          crop: { marks: 24 },
-        });
-      }
-      await browser.keys(["Escape"]);
-      await browser.pause(400);
-      if (!wasOn && splitId !== "topbar-metronome") {
-        await toggle.click();
-        await browser.pause(600);
-      }
-    };
-
     await popoverShots("topbar-metronome", "metronome-popover");
     await popoverShots("topbar-voice-guide", "voice-guide-popover");
     await popoverShots("topbar-pads", "pads-popover");
@@ -1884,6 +1884,287 @@ describe("user guide screenshots", function () {
       ],
       { crop: { selector: ".lt-live-settings", margin: 12 } },
     );
+    await (await $(viewBtn(1))).click();
+    await browser.pause(1200);
+  });
+
+  it("novedades 1.15: lyrics, song analysis, key changes, tempo and markers", async () => {
+    await ensureSession();
+    // Opening the session can put the stored language back: pin it again.
+    if (UI_LANG === "en") {
+      const lang = await runInPage(() => document.documentElement.lang || navigator.language);
+      const shown = await runInPage(() => document.body.innerText.includes("SALTO DE MARCA"));
+      console.log(`[guideshots] language check: html=${lang} spanishShown=${shown}`);
+      if (shown) {
+        await useAppLocale("en");
+        await AppPage.waitUntilBooted();
+        await ensureSession();
+      }
+    }
+    await AppPage.resetShell();
+    const invoke = (cmd: string, args: Record<string, unknown> = {}) =>
+      browser.executeAsync(
+        (c: string, a: Record<string, unknown>, done: (v: unknown) => void) => {
+          const w = window as unknown as {
+            __TAURI_INTERNALS__: { invoke: (c: string, a: unknown) => Promise<unknown> };
+          };
+          w.__TAURI_INTERNALS__.invoke(c, a).then(done, (e) => done({ __error: String(e) }));
+        },
+        cmd,
+        args,
+      );
+    const viewBtn = (n: number) => `${tour("view-mode-switcher")} button:nth-of-type(${n})`;
+    const regions = [...((await AppPage.songView())?.regions ?? [])].sort((a, b) => a.startSeconds - b.startSeconds);
+    // The 1.15 shots session (TestMultiplesAnalisis) has lyrics, a key change
+    // and analysed markers on «Eres Todopoderoso».
+    const song = regions.find((r) => /todopoderoso/i.test(r.name)) ?? regions[1];
+    if (!song) throw new Error("no song to show");
+    const length = song.endSeconds - song.startSeconds;
+    const zoom = 1400 / (length * 18);
+    await setTimelineView({ zoomLevel: zoom, cameraX: Math.max(0, song.startSeconds * zoom * 18 - 160) });
+    await invoke("seek_transport", { positionSeconds: song.startSeconds + Math.min(60, length / 3) });
+    await browser.pause(800);
+    // The song band: the hotspot with most of its width on the page.
+    const tagged = await runInPage(() => {
+      document.querySelectorAll('[data-guide="song115"]').forEach((el) => el.removeAttribute("data-guide"));
+      const el = Array.from(document.querySelectorAll(".lt-region-hotspot"))
+        .map((e) => {
+          const r = e.getBoundingClientRect();
+          return { e, seen: r.height > 0 ? Math.min(r.right, window.innerWidth) - Math.max(r.left, 0) : 0 };
+        })
+        .filter(({ seen }) => seen > 0)
+        .sort((a, b) => b.seen - a.seen)[0];
+      el?.e.setAttribute("data-guide", "song115");
+      return Boolean(el);
+    });
+    if (!tagged) throw new Error("no song band");
+    const band = '[data-guide="song115"]';
+    const bandBox = await rectOf(band);
+    if (!bandBox) throw new Error("no song band box");
+    const vp115 = await viewport();
+    const cropLeft = Math.max(0, bandBox.x - 20);
+    const cropTop = Math.max(0, bandBox.y - 14);
+    const rulerCrop = {
+      x: cropLeft,
+      y: cropTop,
+      w: Math.min(bandBox.x + bandBox.w + 20, vp115.w) - cropLeft,
+      h: Math.min(170, vp115.h - cropTop),
+    };
+    /** data-guide=<name> on the nth match that is on the page and clickable. */
+    const tagOnScreen = async (selector: string, name: string, nth = 0) => {
+      const ok = await runInPage(
+        (sel: string, tagName: string, index: number) => {
+          document.querySelectorAll(`[data-guide="${tagName}"]`).forEach((el) => el.removeAttribute("data-guide"));
+          const el = Array.from(document.querySelectorAll(sel)).filter((e) => {
+            const r = e.getBoundingClientRect();
+            if (!(r.width > 0 && r.height > 0 && r.left >= 40 && r.right <= window.innerWidth - 40)) return false;
+            // Not under something else (the track header column covers the ruler's start).
+            const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+            return top === e || e.contains(top);
+          })[index];
+          el?.setAttribute("data-guide", tagName);
+          return Boolean(el);
+        },
+        selector,
+        name,
+        nth,
+      );
+      return ok ? `[data-guide="${name}"]` : null;
+    };
+    const centre = async (selector: string) => {
+      const r = await rectOf(selector);
+      if (!r) throw new Error(`${selector} not visible`);
+      return { x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) };
+    };
+
+    // Key change: the notch on the song band.
+    if (await rectOf(".lt-key-change-hotspot")) {
+      await annotatedShot(
+        "key-change-notch",
+        [{ selector: ".lt-key-change-hotspot", n: 1, pad: 4, badge: "below" }],
+        { crop: rulerCrop },
+      );
+    } else {
+      console.log("[guideshots] SKIPPED key-change-notch: the song has no key change");
+    }
+
+    // Song menu (analysis, key change at the cursor, count-in per song).
+    await rightClick(band, { fx: 0.25 });
+    await menuShot("menu-song", band);
+
+    // BPM marker menu, with the ramp.
+    const tempo = await tagOnScreen(".lt-tempo-hotspot:not(.lt-time-signature-hotspot)", "tempo115");
+    if (tempo) {
+      await rightClick(tempo);
+      await menuShot("menu-tempo-marker", tempo);
+    }
+
+    // Several ruler markers selected with Ctrl+click.
+    // Three section markers well apart, in ruler order (the DOM order is not).
+    const spread = await runInPage(() => {
+      const els = Array.from(document.querySelectorAll(".lt-marker-hotspot"))
+        .map((e) => ({ e, r: e.getBoundingClientRect() }))
+        .filter(({ r }) => r.width > 0 && r.height > 0 && r.left >= 40 && r.right <= window.innerWidth - 40)
+        .sort((a, b) => a.r.left - b.r.left);
+      const picked: Element[] = [];
+      let lastX = -Infinity;
+      for (const { e, r } of els) {
+        if (r.left - lastX < 150) continue;
+        picked.push(e);
+        lastX = r.left;
+      }
+      ["m115a", "m115b", "m115c"].forEach((name, i) => {
+        document.querySelectorAll(`[data-guide="${name}"]`).forEach((el) => el.removeAttribute("data-guide"));
+        picked[i + 1]?.setAttribute("data-guide", name);
+      });
+      return picked.length;
+    });
+    const m1 = spread > 3 ? '[data-guide="m115a"]' : null;
+    const m2 = spread > 3 ? '[data-guide="m115b"]' : null;
+    const m3 = spread > 3 ? '[data-guide="m115c"]' : null;
+    if (!m1 || !m2 || !m3) throw new Error("not enough ruler markers on the page");
+    const [p1, p2, p3] = [await centre(m1), await centre(m2), await centre(m3)];
+    const press = (p: { x: number; y: number }) => [
+      { type: "pointerMove", duration: 0, x: p.x, y: p.y, origin: "viewport" },
+      { type: "pointerDown", button: 0 },
+      { type: "pointerUp", button: 0 },
+      { type: "pause", duration: 300 },
+    ];
+    const idle = (n: number) => Array.from({ length: n }, () => ({ type: "pause", duration: 0 }));
+    // One plain click, then two with Ctrl held: the key source holds Ctrl
+    // across the pointer ticks of the same action.
+    await browser.performActions([
+      { type: "key", id: "kb115", actions: [...idle(4), { type: "keyDown", value: "\uE009" }, ...idle(8), { type: "keyUp", value: "\uE009" }] },
+      {
+        type: "pointer",
+        id: "mouse115",
+        parameters: { pointerType: "mouse" },
+        actions: [...press(p1), { type: "pause", duration: 0 }, ...press(p2), ...press(p3), { type: "pause", duration: 0 }],
+      },
+    ]);
+    await browser.releaseActions();
+    await browser.pause(500);
+    const selectedCount = await runInPage(() => document.querySelectorAll(".lt-marker-hotspot.is-selected").length);
+    console.log(`[guideshots] ruler markers selected: ${selectedCount} (clicked at ${JSON.stringify([p1, p2, p3])})`);
+    await annotatedShot(
+      "ruler-marker-selection",
+      [
+        { selector: m1, n: 1, pad: 3, badge: "above" },
+        { selector: m2, n: 2, pad: 3, badge: "above" },
+        { selector: m3, n: 3, pad: 3, badge: "above" },
+      ],
+      { crop: rulerCrop },
+    );
+    await browser.keys(["Escape"]);
+    await browser.pause(300);
+
+    // Song tempo in the Warp popover.
+    await (await $(band)).click();
+    await browser.pause(600);
+    await toolbarPanelShot("toolbar-warp", "toolbar-warp-panel");
+
+    // Count style in the voice guide window.
+    await popoverShots("topbar-voice-guide", "voice-guide-popover");
+
+    // Analyze song: setup, then the review.
+    await rightClick(band, { fx: 0.25 });
+    await (await $(await tagByText(".lt-context-menu button", L("Analizar canción"), "menu-analyze"))).click();
+    await browser.pause(1200);
+    const modal = ".lt-song-analysis-modal";
+    if (!(await rectOf(modal))) throw new Error("song analysis did not open");
+    // The speech model (guide recognition) downloads once; fetch it first.
+    if (await rectOf(".lt-song-analysis-callout .lt-song-analysis-button")) {
+      await (await $(".lt-song-analysis-callout .lt-song-analysis-button")).click();
+      for (let i = 0; i < 300 && (await rectOf(".lt-song-analysis-callout")); i++) await browser.pause(1000);
+    }
+    await annotatedShot(
+      "song-analysis-setup",
+      [
+        { selector: `${modal} .lt-settings-field select`, nth: 0, n: 1, pad: 3 },
+        { selector: `${modal} .lt-render-section`, n: 2, pad: 3 },
+        { selector: `${modal} .lt-settings-field select`, nth: 1, n: 3, pad: 3 },
+        { selector: `${modal} .lt-export-modal-actions .is-primary`, n: 4, pad: 3 },
+      ],
+      { crop: { selector: modal, margin: 12 } },
+    );
+    await (await $(`${modal} .lt-export-modal-actions .is-primary`)).click();
+    let reviewed = false;
+    for (let i = 0; i < 400 && !reviewed; i++) {
+      await browser.pause(1000);
+      reviewed = Boolean(await rectOf(`${modal} .lt-song-analysis-part`));
+    }
+    if (reviewed) {
+      await browser.pause(800);
+      const pages = await runInPage(() => {
+        const body = document.querySelector(".lt-song-analysis-modal .lt-settings-modal-body") as HTMLElement | null;
+        if (!body) return 1;
+        body.setAttribute("data-guide", "analysis-body");
+        body.scrollTop = 0;
+        const overflow = body.scrollHeight - body.clientHeight;
+        return overflow <= 8 ? 1 : Math.min(3, 1 + Math.ceil(overflow / (body.clientHeight - 60)));
+      });
+      for (let page = 0; page < pages; page++) {
+        await runInPage((p: number) => {
+          const body = document.querySelector('[data-guide="analysis-body"]') as HTMLElement | null;
+          if (body) body.scrollTop = p * (body.clientHeight - 60);
+        }, page);
+        await browser.pause(400);
+        await shot(`song-analysis-review${pages > 1 ? `-${page + 1}` : ""}`, { selector: modal, margin: 12 });
+      }
+    } else {
+      console.log("[guideshots] SKIPPED song-analysis-review: the analysis did not finish");
+    }
+    // Close without applying: the backdrop, outside the dialog.
+    for (let i = 0; i < 3 && (await rectOf(modal)); i++) {
+      await browser
+        .action("pointer", { id: "guide-mouse", parameters: { pointerType: "mouse" } })
+        .move({ x: 24, y: 300 })
+        .down({ button: 0 })
+        .up({ button: 0 })
+        .perform();
+      await browser.pause(700);
+    }
+
+    // Lyrics in the Live View, a verse into the song.
+    await invoke("seek_transport", { positionSeconds: song.startSeconds + Math.min(75, length / 3) });
+    await (await $(viewBtn(3))).click();
+    await browser.pause(2500);
+    if (!(await rectOf(".lt-live-chart"))) {
+      await (await $(".lt-live-chart-toggle")).click();
+      await browser.pause(1200);
+    }
+    await annotatedShot(
+      "live-lyrics",
+      [
+        { selector: ".lt-live-chart-toggle", n: 1, pad: 3 },
+        { selector: ".lt-live-chart-tools", n: 2, pad: 3 },
+        { selector: ".lt-live-chart-scroller", n: 3, pad: 4 },
+      ],
+      { crop: { marks: 40 } },
+    );
+    await (await $(`.lt-live-chart button[aria-label="${L("Editar letra y sincronía")}"]`)).click();
+    await browser.pause(1200);
+    if (await rectOf(".lt-chart-editor")) {
+      await shot("lyrics-editor", { selector: ".lt-chart-editor", margin: 12 });
+      await browser.keys(["Escape"]);
+      await browser.pause(500);
+      if (await rectOf(".lt-chart-editor")) {
+        await (await $(await tagByExactText(".lt-chart-editor button", L("Cancelar"), "chart-cancel"))).click();
+        await browser.pause(500);
+      }
+    }
+    // A song without lyrics shows how to add them.
+    const bare = regions.find((r) => r.id !== song.id);
+    if (bare) {
+      await invoke("seek_transport", { positionSeconds: bare.startSeconds + 20 });
+      // Long enough for the «selections cleared» toast to go away.
+      await browser.pause(5000);
+      if (await rectOf(".lt-live-chart-empty")) {
+        await annotatedShot("live-lyrics-empty", [{ selector: ".lt-live-chart-empty-actions", n: 1, pad: 4 }], {
+          crop: { selector: ".lt-live-chart", margin: 12 },
+        });
+      }
+    }
     await (await $(viewBtn(1))).click();
     await browser.pause(1200);
   });

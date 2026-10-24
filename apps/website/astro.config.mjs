@@ -167,6 +167,7 @@ export default defineConfig({
             { slug: "docs/tasks/songs" },
             { slug: "docs/arrangements" },
             { slug: "docs/tasks/markers" },
+            { slug: "docs/song-analysis" },
             { slug: "docs/tasks/clips-tracks" },
             { slug: "docs/tasks/tempo" },
             { slug: "docs/pitch-and-warp" },

@@ -1,0 +1,99 @@
+---
+title: Analizar canción
+description: "Cómo LibreTracks lee el tempo y el compás del click, la nota de la canción y sus modulaciones, y coloca las marcas de sección escuchando la voz guía, con una propuesta que revisas antes de aplicarla."
+---
+
+import Legend from "../../../../components/guide/Legend.astro";
+
+Preparar una canción a mano lleva su rato: poner el tempo, comprobar el compás,
+buscar la nota y escuchar la guía para poner cada marca. **Analizar canción**
+lo hace por ti a partir de los propios audios del multitrack:
+
+- el **tempo y el compás**, leídos de la pista de **click**;
+- la **nota** de la canción, y sus **cambios de nota** si modula, a partir de
+  las pistas con armonía;
+- las **marcas de sección** (Intro, Verso, Coro…), escuchando lo que dice la
+  **voz guía**.
+
+No cambia nada sin preguntar: te enseña una propuesta, la revisas y eliges qué
+aplicar. Y se puede deshacer.
+
+## Abrirlo
+
+Clic derecho sobre la canción (mantén pulsado en el móvil) ›
+**Analizar canción (tempo, nota y secciones)…**. Funciona en el ordenador, en
+Android y en iOS.
+
+![La ventana de Analizar canción antes de empezar](/guide/desktop/song-analysis-setup.png)
+
+<Legend>
+
+1. **Pista de click**: de dónde sale el tempo. LibreTracks elige la pista por
+   su nombre; cámbiala si no es el click. Si la canción no tiene click, elige
+   **Sin click: estimarlo de la música**, o **No analizar el tempo**.
+2. **Analizar la nota**: las pistas que se escuchan para sacar la nota. Ya
+   vienen quitados el click, la guía y la percusión, que la emborronan.
+3. **Pista de guía**: la voz que anuncia las secciones. **No analizar las
+   guías** deja las marcas como están.
+4. **Analizar**: empieza. Tarda unos segundos por canción (algo más si
+   reconoce la guía) y enseña el progreso.
+
+</Legend>
+
+La primera vez que analizas una guía, la ventana ofrece descargar el
+**reconocimiento de voz** (unos 57 MB, una sola vez). Con él se entienden los
+anuncios de **cualquier voz**, de hombre o de mujer, en español o en inglés.
+Sin él solo se reconocen las guías grabadas con la misma voz que usa la app.
+
+:::caution[No lo lances en pleno directo]
+El análisis usa bastante procesador durante unos segundos. Hazlo al preparar
+la sesión, no mientras tocas.
+:::
+
+## Revisar la propuesta
+
+Cuando termina, la ventana enseña lo que ha encontrado, por partes. Cada parte
+tiene su casilla **Aplicar**: desmarca lo que no quieras.
+
+![La propuesta: tempo y compás, nota y marcas](/guide/desktop/song-analysis-review-1.png)
+
+**Tempo y compás.** El tempo y el compás que tiene la canción y los que
+propone, y una tabla con cada marca de tempo y de compás, que puedes editar.
+Pulsa una posición para saltar ahí y escucharlo. Si el click va en corcheas y
+el tempo ha salido al doble (o a la mitad), los botones **×2** y **÷2** lo
+corrigen. Un aviso naranja te dice cuándo conviene comprobarlo, por ejemplo si
+el click no acentúa el primer tiempo.
+
+**Nota.** La nota de la canción y, si modula, cada **cambio de nota** con su
+instante. Puedes cambiar cualquiera antes de aplicar. Los cambios aparecen
+luego como una muesca en la banda de la canción: ver
+[Cambios de nota](/es/docs/tasks/songs/#cambios-de-nota).
+
+**Marcas de sección.** Una fila por cada anuncio que dice la guía, con lo que
+ha entendido entre comillas:
+
+![Los anuncios de la guía y la sección de cada uno](/guide/desktop/song-analysis-review-3.png)
+
+- **▶** reproduce el anuncio para que lo oigas.
+- **Sección** es la marca que se pone (Intro, Verso, Coro…) y **Aviso** una
+  indicación extra, como *Entra batería*. Los anuncios que se repiten con la
+  misma grabación salen agrupados: elige una vez qué es y vale para todas sus
+  apariciones.
+- **La guía avisa**: cuántos compases antes de la sección habla la guía. Lo
+  habitual es **1 compás antes**; cámbialo si las marcas te salen desplazadas.
+- Si la canción ya tenía marcas, la propuesta las **sustituye**; desmarca la
+  casilla para conservar las tuyas.
+
+Pulsa **Aplicar** para escribirlo en la canción, o **Atrás** para cambiar las
+pistas y repetir. Lo aplicado se deshace con <kbd>Ctrl</kbd>+<kbd>Z</kbd>.
+
+## Consejos
+
+- **Comprueba el tempo antes que las marcas.** Si las secciones caen a medio
+  compás o desplazadas, casi siempre es que el tempo salió al doble o a la
+  mitad: corrígelo con ×2 / ÷2 antes de aplicar.
+- **Funciona con warp y con la canción transpuesta.** Se analiza el audio tal
+  como se grabó, y las marcas se colocan en su sitio musical.
+- **Repasa la propuesta una vez.** El análisis acierta en la mayoría de
+  multitracks, pero una guía con mucho ruido de fondo o un click en directo
+  que sigue a la banda pueden despistarlo. Para eso está la revisión.

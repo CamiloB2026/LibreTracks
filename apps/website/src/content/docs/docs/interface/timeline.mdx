@@ -105,6 +105,10 @@ The folder's **M**, **S** and volume controls affect all of its tracks.
 
 - **Rename Song** (<kbd>F2</kbd>).
 - **Song key**: its key. It shows next to the name and is transposed with it.
+- **Key change at cursor ▸**: the song changes key from where the cursor is
+  (the last chorus a step up, for example). See
+  [Key changes](/docs/tasks/songs/#key-changes).
+- **Arrangement**: opens the [arrangement](/docs/arrangements/) editor.
 - **Split song at cursor** (<kbd>Shift</kbd>+<kbd>S</kbd>): splits it into two
   songs at the cursor position.
 - **Change Original BPM**: the tempo the audio was recorded at, used by
@@ -112,8 +116,14 @@ The folder's **M**, **S** and volume controls affect all of its tracks.
 - **Song Fades ▸**: the song's fade in and fade out, in seconds. You can also
   set them by dragging the corners of the song in the ruler. See
   [Fade in and fade out](/docs/tasks/songs/#fade-in-and-fade-out).
+- **Voice Guide Count-in ▸**: how the voice guide counts this song in, if you
+  want it different from the global setting. See
+  [Voice guide](/docs/voice-guide/#turning-it-on-and-setting-it-up).
 - **Export Song**: saves it as an `.ltpkg` to take to another session.
 - **Render audio…**: exports its mix to WAV, whole or track by track.
+- **Analyze song (tempo, key and sections)…**: reads the click, the key and
+  the voice guide and suggests the tempo, the key and the markers. See
+  [Analyze song](/docs/song-analysis/).
 - **Delete Song** (<kbd>Del</kbd>).
 
 ### On a marker
@@ -127,6 +137,38 @@ The folder's **M**, **S** and volume controls affect all of its tracks.
 - **Marker type...**: Intro, Verse, Chorus… or a cue like *Drums In*. The type
   sets the colour and what the voice guide says.
 - **Delete**.
+
+### On a tempo marker
+
+![A tempo marker's menu](/guide/desktop-en/menu-tempo-marker.png)
+
+Tempo markers (the flag with the BPM, in the lower part of the ruler) have
+their own menu:
+
+- **Change BPM**: the tempo from that marker on.
+- **Ramp to the next marker**: instead of jumping at once, the tempo rises or
+  falls gradually to the next marker's and reaches it right there. The marker
+  is drawn sloped in the ruler, and the metronome and the voice guide follow
+  the ramp. It needs another BPM marker after it. See
+  [Tempo and time signature](/docs/tasks/tempo/#ramping-the-tempo-up-or-down).
+- **Delete Marker**.
+
+### Several markers at once
+
+![Three markers selected in the ruler](/guide/desktop-en/ruler-marker-selection.png)
+
+<kbd>Ctrl</kbd>+click on a marker adds it to or removes it from the selection
+without scheduling the jump, and <kbd>Shift</kbd>+click selects every marker
+between the last one clicked and this one (sections, cues, tempo and time
+signature). With several selected:
+
+- Drag any of them to move the whole group.
+- <kbd>Del</kbd> deletes them and <kbd>Ctrl</kbd>+<kbd>D</kbd> duplicates them
+  after the group, in whole bars.
+- Right-click opens the group's menu.
+
+On mobile, with **Select by area** on, tap the markers or drag your finger
+along the ruler to add them.
 
 Markers can also be dragged along the ruler to move them.
 

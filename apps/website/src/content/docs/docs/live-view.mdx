@@ -64,6 +64,63 @@ To end the playing song with a fade, use **Fade out and stop** in the
 transport bar at the top. See
 [Fade out and stop](/docs/interface/main-screen/#fade-out-and-stop).
 
+## Lyrics and chords
+
+The Live View can show the **lyrics with their chords** next to the markers,
+so the singer and the band can follow them without paper or another app. The
+lyrics **follow the song**: they highlight the line playing and move between
+sections with the markers (also with a jump or a Vamp).
+
+![Lyrics and chords in the Live View](/guide/desktop-en/live-lyrics.png)
+
+<Legend>
+
+1. **Lyrics**: shows or hides the lyrics. The app remembers your choice.
+2. **Tools**: smaller or bigger text, show or hide the chords, record the line
+   times, edit the lyrics, show only the lyrics full width, and close.
+3. **The lyrics**: each section with its name, the line playing highlighted,
+   and the chords above the syllable they fall on.
+
+</Legend>
+
+### Adding a song's lyrics
+
+If the song has no lyrics, the panel offers two ways:
+
+![A song without lyrics](/guide/desktop-en/live-lyrics-empty.png)
+
+- **Import file…**: a chord **PDF**, a **ChordPro** file (`.cho`, `.pro`) or a
+  text with the chords above the lyrics. LibreTracks turns it into text: the
+  PDF is not saved in the session, only the lyrics. A scanned PDF (an image,
+  with no text) can't be converted; in that case, paste the lyrics by hand.
+- **Type or paste**: opens the editor empty.
+
+### Editing the lyrics and the sync
+
+The edit button opens the lyrics in ChordPro format and their link with the
+markers:
+
+![The lyrics and chords editor](/guide/desktop-en/lyrics-editor.png)
+
+- **Text (ChordPro)**: each section starts with `{section: Name}` and chords
+  go in brackets right before the syllable: `[Am]lyrics`. The time on the left
+  of each line, `[m:ss.d]`, says when it starts; change it, or delete it so
+  the lines spread across the section on their own.
+- **Which section plays at each marker**: links each of the song's markers to
+  a section of the lyrics. **Link automatically** does it by the names; a
+  marker with no lyrics (a guitar solo) is left on **— No lyrics —**.
+- **Remove lyrics** deletes them from the song.
+
+To set the times by ear, press the **record line times** button, play the song
+and press **Next line** as each one starts. When you finish they are saved as
+custom times.
+
+Chords **transpose with the song** and are spelled in the key playing in each
+part: if the last chorus [changes key](/docs/tasks/songs/#key-changes), its
+chords come out in the new key. The lyrics can also be shown on the
+[Remote](/docs/remote-control/#designing-your-tabs), with the
+**Lyrics & chords** widget.
+
 ## On Phone And Tablet
 
 Live View adapts to the screen: on desktop and tablet the markers spread across three columns with the setlist beside them, and on a phone they fall back to two columns with the setlist along the bottom, always within reach.

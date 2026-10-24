@@ -19,8 +19,8 @@ su compás ya puestos en su inicio.
 :::note[¿Y si quiero que la música vaya más rápida?]
 Cambiar el BPM no acelera el audio. Para eso está el **warp**: con el warp de la
 canción encendido, el audio se estira para seguir el tempo de la línea de
-tiempo sin cambiar de tono. Ver
-[Cambio de tono, warp y el botón T](/es/docs/pitch-and-warp/).
+tiempo sin cambiar de tono. La forma rápida es el **Tempo de la canción** del
+botón *Warp y tempo*: ver [Acelerar o frenar una canción](#acelerar-o-frenar-una-canción).
 :::
 
 ## Cambiar el tempo de un tramo
@@ -55,6 +55,35 @@ de partida en vez de crear una marca.
 Clic derecho en la marca: **Cambiar BPM** o **Borrar marca** (el tramo vuelve
 al tempo anterior). En el móvil, la barra de acciones › **…** › **Tempo** crea
 el cambio en la posición del cursor.
+
+## Subir o bajar el tempo poco a poco
+
+Hay canciones que no cambian de tempo de golpe, sino que **aceleran o frenan**
+durante unos compases (un final que se va parando, un puente que acelera).
+Para eso, una marca de BPM puede ser una **rampa**:
+
+1. Pon una marca de BPM donde empieza el cambio y otra donde termina, con el
+   tempo al que llega.
+2. Clic derecho en la primera › **Rampa hasta la siguiente marca**.
+
+![Menú de una marca de tempo con la rampa](/guide/desktop/menu-tempo-marker.png)
+
+Desde esa marca el tempo va cambiando poco a poco y llega al de la siguiente
+justo en ella. La marca se dibuja inclinada en la regla, y la rejilla, el
+metrónomo, la cuenta de la voz guía y los saltos por compases siguen la rampa.
+Para quitarla, vuelve a elegir **Rampa hasta la siguiente marca** en el mismo
+menú.
+
+## Acelerar o frenar una canción
+
+![Warp y tempo de la canción seleccionada](/guide/desktop/toolbar-warp-panel.png)
+
+Selecciona la canción y abre **Warp y tempo** en la barra de herramientas. En
+**Tempo de la canción**, <kbd>−</kbd> y <kbd>+</kbd> (o escribir el BPM) cambian
+la velocidad de la canción **sin cambiar el tono**: el warp se enciende solo si
+hacía falta. **Original** la deja como se grabó. Si la canción tiene varias
+marcas de tempo o rampas, todas cambian en la misma proporción, así que no se
+descuadran.
 
 ## Cambiar de compás
 
