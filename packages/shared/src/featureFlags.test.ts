@@ -9,15 +9,15 @@ describe("feature flags", () => {
     expect(FEATURE_FLAGS.lyrics).toBe(true);
   });
 
-  it("network sessions ship in 1.15.0", () => {
-    expect(FEATURE_FLAGS.networkSessions).toBe(true);
+  it("network sessions stay hidden until 1.16.0", () => {
+    expect(FEATURE_FLAGS.networkSessions).toBe(false);
   });
 
-  it("song analysis stays hidden until 1.16.0", () => {
+  it("song analysis ships in 1.15.0", () => {
     expect(FEATURE_FLAGS.songAnalysis).toBe(true);
   });
 
   it("song templates stay hidden until 1.16.0", () => {
-    expect(FEATURE_FLAGS.songTemplates).toBe(true);
+    expect(FEATURE_FLAGS.songTemplates).toBe(false);
   });
 });
