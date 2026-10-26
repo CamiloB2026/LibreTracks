@@ -25,7 +25,9 @@ import { MidiDeviceStatusBadge } from "../MidiDeviceStatusBadge";
 import { NetworkSessionBadge } from "../../network/NetworkSessionBadge";
 import { requestAppClose } from "../../appClose/appCloseService";
 import { FadeStopButton } from "./FadeStopButton";
+import { CompactTopbarActions } from "../compact/CompactTopbarActions";
 import { openLevelSongs } from "../levelSongs/levelSongsStore";
+import type { ViewMode } from "../uiStore";
 
 type TimelineTopbarProps = {
   openTopMenu: "file" | null;
@@ -93,6 +95,21 @@ type TimelineTopbarProps = {
   onTimeSignatureCommit: () => void;
   midiLearnMode: string | null;
   onMidiLearnTarget: (controlKey: string) => void;
+  /** Compact view: keep the same transport cluster but hide the FILE row and
+   * render the compact-only action cluster. DAW/Live leave this undefined. */
+  compactMode?: boolean;
+  compactTotalDurationLabel?: string;
+  compactEditorOpen?: boolean;
+  onCompactToggleEditor?: () => void;
+  onCompactRestart?: () => void;
+  onCompactImportAudio?: () => void;
+  onCompactCreateLibraryFolder?: () => void;
+  onCompactImportSongPackage?: () => void;
+  onCompactExportSong?: () => void;
+  canCompactExportSong?: boolean;
+  onCompactOpenSettings?: () => void;
+  viewMode?: ViewMode;
+  onViewModeChange?: (mode: ViewMode) => void;
 };
 
 export function TimelineTopbar({
@@ -155,6 +172,19 @@ export function TimelineTopbar({
   onTimeSignatureCommit,
   midiLearnMode,
   onMidiLearnTarget,
+  compactMode = false,
+  compactTotalDurationLabel = "00:00.000",
+  compactEditorOpen = false,
+  onCompactToggleEditor,
+  onCompactRestart,
+  onCompactImportAudio,
+  onCompactCreateLibraryFolder,
+  onCompactImportSongPackage,
+  onCompactExportSong,
+  canCompactExportSong = false,
+  onCompactOpenSettings,
+  viewMode,
+  onViewModeChange,
 }: TimelineTopbarProps) {
   const { t } = useTranslation();
   // Narrow selectors: the topbar only needs the base tempo and whether a
@@ -168,6 +198,18 @@ export function TimelineTopbar({
   const isPlaying = playbackState === "playing";
   const isPaused = playbackState === "paused";
   const learnModeActive = midiLearnMode !== null;
+  const isCompact = compactMode === true;
+  const canRenderCompactActions =
+    isCompact &&
+    Boolean(
+      onCompactToggleEditor &&
+        onCompactRestart &&
+        onCompactImportAudio &&
+        onCompactCreateLibraryFolder &&
+        onCompactImportSongPackage &&
+        onCompactExportSong &&
+        onCompactOpenSettings,
+    );
   const canOpenFileMenu = canPersistProject;
   // Recents live in localStorage; re-read on every FILE-menu open so sessions
   // opened during this run show up without a reload.
@@ -188,8 +230,11 @@ export function TimelineTopbar({
 
   return (
     <header
-      className={isProjectEmpty ? "lt-topbar is-project-empty" : "lt-topbar"}
+      className={`lt-topbar${isProjectEmpty ? " is-project-empty" : ""}${
+        isCompact ? " is-compact" : ""
+      }`}
     >
+      {isCompact ? null : (
       <div className="lt-topbar-menu-row">
         <div className="lt-brand">
           <span className="lt-brand-title">LIBRETRACKS</span>
@@ -483,6 +528,7 @@ export function TimelineTopbar({
         {isMobileApp ? <VideoOutputBadge /> : null}
         <ResourceMeter />
       </div>
+      )}
 
       <div className="lt-topbar-main-row">
         <div className="lt-transport">
@@ -557,27 +603,29 @@ export function TimelineTopbar({
 
           {/* Deshacer y rehacer, aparte del transporte. Sin teclado eran
               inalcanzables, y pegados a "reproducir" un dedo torpe deshace
-              cuando queria sonar. */}
-          <div className="lt-topbar-history">
-            <button
-              type="button"
-              aria-label={t("timelineTopbar.undo", { defaultValue: "Deshacer" })}
-              title={t("timelineTopbar.undo", { defaultValue: "Deshacer" })}
-              disabled={isProjectEmpty}
-              onClick={() => runShortcutAction("edit.undo")}
-            >
-              <span className="material-symbols-outlined">undo</span>
-            </button>
-            <button
-              type="button"
-              aria-label={t("timelineTopbar.redo", { defaultValue: "Rehacer" })}
-              title={t("timelineTopbar.redo", { defaultValue: "Rehacer" })}
-              disabled={isProjectEmpty}
-              onClick={() => runShortcutAction("edit.redo")}
-            >
-              <span className="material-symbols-outlined">redo</span>
-            </button>
-          </div>
+              cuando queria sonar. En compacto viven dentro del menú Editar. */}
+          {isCompact ? null : (
+            <div className="lt-topbar-history">
+              <button
+                type="button"
+                aria-label={t("timelineTopbar.undo", { defaultValue: "Deshacer" })}
+                title={t("timelineTopbar.undo", { defaultValue: "Deshacer" })}
+                disabled={isProjectEmpty}
+                onClick={() => runShortcutAction("edit.undo")}
+              >
+                <span className="material-symbols-outlined">undo</span>
+              </button>
+              <button
+                type="button"
+                aria-label={t("timelineTopbar.redo", { defaultValue: "Rehacer" })}
+                title={t("timelineTopbar.redo", { defaultValue: "Rehacer" })}
+                disabled={isProjectEmpty}
+                onClick={() => runShortcutAction("edit.redo")}
+              >
+                <span className="material-symbols-outlined">redo</span>
+              </button>
+            </div>
+          )}
 
           <div className="lt-transport-buttons" data-lt-tour={TOUR_TARGETS.topbarTransport}>
             <button
@@ -796,15 +844,44 @@ export function TimelineTopbar({
             </button>
           </div>
 
+          {canRenderCompactActions ? (
+            <CompactTopbarActions
+              isProjectEmpty={isProjectEmpty}
+              editorOpen={compactEditorOpen}
+              onToggleEditor={onCompactToggleEditor!}
+              onRestart={onCompactRestart!}
+              onImportAudio={onCompactImportAudio!}
+              onCreateLibraryFolder={onCompactCreateLibraryFolder!}
+              onImportSong={onImportSong}
+              onImportSongPackage={onCompactImportSongPackage!}
+              onExportSong={onCompactExportSong!}
+              canExportSong={canCompactExportSong}
+              onNewProject={onCreateSong}
+              onOpenProject={onOpenProject}
+              onSaveProject={onSaveProject}
+              onSaveProjectAs={onSaveProjectAs}
+              canPersistProject={canPersistProject}
+              onOpenSettings={onCompactOpenSettings!}
+              onUndo={() => runShortcutAction("edit.undo")}
+              onRedo={() => runShortcutAction("edit.redo")}
+              viewMode={viewMode}
+              onViewModeChange={onViewModeChange}
+            />
+          ) : null}
+
           <div className="lt-transport-readout">
-            <div className="lt-readout-block">
-              <span>{t("timelineTopbar.tempoReadout")}</span>
-              <strong ref={transportReadoutTempoRef}>{`${(Number.isFinite(displayedBpm) ? displayedBpm : fallbackBpm).toFixed(2)} BPM`}</strong>
-            </div>
-            <div className="lt-readout-block">
-              <span>{t("timelineTopbar.timeSignatureLabel")}</span>
-              <strong>{displayedTimeSignature}</strong>
-            </div>
+            {isCompact ? null : (
+              <div className="lt-readout-block">
+                <span>{t("timelineTopbar.tempoReadout")}</span>
+                <strong ref={transportReadoutTempoRef}>{`${(Number.isFinite(displayedBpm) ? displayedBpm : fallbackBpm).toFixed(2)} BPM`}</strong>
+              </div>
+            )}
+            {isCompact ? null : (
+              <div className="lt-readout-block">
+                <span>{t("timelineTopbar.timeSignatureLabel")}</span>
+                <strong>{displayedTimeSignature}</strong>
+              </div>
+            )}
             <div className="lt-readout-block">
               <span>{t("timelineTopbar.barReadout")}</span>
               <strong ref={transportReadoutBarRef}>{musicalPositionLabel}</strong>
@@ -813,6 +890,12 @@ export function TimelineTopbar({
               <span>{t("timelineTopbar.timecodeReadout")}</span>
               <strong ref={transportReadoutValueRef}>{readoutPositionSecondsLabel}</strong>
             </div>
+            {isCompact ? (
+              <div className="lt-readout-block is-compact-total">
+                <span>{t("compactTopbar.total", { defaultValue: "Total" })}</span>
+                <strong>{compactTotalDurationLabel}</strong>
+              </div>
+            ) : null}
             <span className={`transport-pill is-${playbackState}`}>{playbackStateLabel}</span>
           </div>
           <div className="lt-device-status-slot">

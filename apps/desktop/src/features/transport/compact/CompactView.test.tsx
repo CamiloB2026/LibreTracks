@@ -3,6 +3,7 @@ import type { ComponentProps } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CompactView } from "./CompactView";
+import { compactWaveformSecondsAt } from "./CompactWaveform";
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -112,6 +113,14 @@ function touchPointer(type: "pointerdown" | "pointerup", pointerId: number) {
   });
   return event;
 }
+
+describe("compactWaveformSecondsAt", () => {
+  it("clamps the context-menu time to the real content duration", () => {
+    expect(compactWaveformSecondsAt(750, 0, 1000, 60, 30)).toBe(30);
+    expect(compactWaveformSecondsAt(500, 0, 1000, 60, 30)).toBe(30);
+    expect(compactWaveformSecondsAt(100, -10, 1000, 60, 30)).toBe(0);
+  });
+});
 
 describe("CompactView touch context menu", () => {
   afterEach(() => vi.useRealTimers());

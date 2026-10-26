@@ -13323,3 +13323,225 @@ body.lt-song-reordering .lt-compact-column-resize-slot {
 .lt-mobile .lt-device-status-action {
   min-height: 32px;
 }
+
+/* ---- Compact overview waveform ------------------------------------------ */
+.lt-compact-waveform-panel {
+  flex: 0 0 auto;
+  padding: 0;
+  background: #070a0b;
+  border-bottom: 1px solid #162022;
+}
+
+.lt-compact-waveform-visual {
+  position: relative;
+  height: 7.5rem;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: #070a0b;
+}
+
+.lt-compact-waveform-visual canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+}
+
+.lt-compact-waveform-playhead {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--lt-compact-playhead-x, 16px) - 1px);
+  width: 2px;
+  pointer-events: none;
+  background: #22d3ee;
+  box-shadow: 0 0 8px rgb(34 211 238 / 0.65);
+}
+
+.lt-compact-waveform-playhead::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 10px;
+  height: 6px;
+  border-radius: 0 0 2px 2px;
+  background: #22d3ee;
+  box-shadow: 0 0 8px rgb(34 211 238 / 0.65);
+}
+
+@media (max-width: 760px), (max-height: 720px) {
+  .lt-compact-waveform-visual {
+    height: 5.5rem;
+  }
+}
+
+/* ---- Compact top bar ---------------------------------------------------- */
+.lt-topbar.is-compact {
+  padding: 0.35rem 0.55rem;
+  gap: 0;
+}
+
+.lt-topbar.is-compact .lt-topbar-main-row {
+  padding: 0.25rem;
+  gap: 0.45rem;
+}
+
+.lt-topbar.is-compact .lt-transport {
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.lt-topbar.is-compact .lt-button-label {
+  display: none;
+}
+
+.lt-topbar.is-compact .lt-tap-tempo-button {
+  min-width: 2rem;
+  padding: 0 0.35rem;
+}
+
+.lt-topbar.is-compact .lt-tap-tempo-button > span:not(.material-symbols-outlined) {
+  display: none;
+}
+
+.lt-topbar.is-compact .lt-bpm-control {
+  height: 2.35rem;
+  padding: 0 0.4rem;
+}
+
+.lt-topbar.is-compact .lt-bpm-control input {
+  width: 4.6rem;
+  height: 1.75rem;
+  font-size: 0.95rem;
+}
+
+.lt-topbar.is-compact .lt-transport-buttons {
+  padding: 0.2rem 0.3rem;
+}
+
+.lt-topbar.is-compact .lt-transport-buttons button {
+  width: 2rem;
+  height: 2rem;
+}
+
+.lt-topbar.is-compact .lt-transport-buttons button.is-play {
+  width: 2.55rem;
+  height: 2.25rem;
+}
+
+.lt-topbar.is-compact .lt-transport-buttons button.is-toggle {
+  min-width: 2rem;
+}
+
+.lt-topbar.is-compact .lt-transport-readout {
+  padding: 0.15rem 0.25rem;
+}
+
+.lt-topbar.is-compact .lt-readout-block {
+  padding-inline: 0.35rem;
+}
+
+.lt-topbar.is-compact .lt-readout-block > span {
+  font-size: 0.5rem;
+}
+
+.lt-topbar.is-compact .lt-readout-block > strong {
+  font-size: 0.72rem;
+}
+
+.lt-topbar.is-compact .lt-readout-block.is-compact-total > strong {
+  color: #57f1db;
+}
+
+.lt-topbar.is-compact .lt-device-status-slot {
+  margin-left: 0;
+}
+
+.lt-compact-topbar-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.lt-compact-topbar-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.28rem;
+  height: 2.25rem;
+  padding: 0 0.55rem;
+  border: 1px solid #303234;
+  border-radius: 4px;
+  background: #202122;
+  color: #c2c8c6;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035);
+  font: 700 10px/1 "Space Grotesk", sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.lt-compact-topbar-action:hover:not(:disabled) {
+  background: #303334;
+  color: #57f1db;
+}
+
+.lt-compact-topbar-action.is-active:not(:disabled) {
+  border-color: rgb(87 241 219 / 0.4);
+  background: rgb(87 241 219 / 0.14);
+  color: #57f1db;
+}
+
+.lt-compact-topbar-action:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+}
+
+.lt-compact-topbar-action .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.lt-compact-topbar-menu {
+  position: relative;
+}
+
+.lt-compact-topbar-menu-caret {
+  margin-left: 0.1rem;
+  font-size: 15px !important;
+}
+
+.lt-compact-topbar-menu-dropdown {
+  right: 0;
+  left: auto;
+  min-width: 16rem;
+}
+
+.lt-compact-topbar-menu-dropdown button {
+  grid-template-columns: 1fr auto;
+}
+
+.lt-topbar.is-compact .lt-view-mode-switcher {
+  margin-left: 0.15rem;
+}
+
+@media (max-width: 1550px) {
+  .lt-topbar.is-compact .lt-compact-topbar-action-label,
+  .lt-topbar.is-compact .lt-compact-topbar-menu-caret {
+    display: none;
+  }
+
+  .lt-topbar.is-compact .lt-compact-topbar-action {
+    width: 2.25rem;
+    padding: 0;
+  }
+
+  .lt-topbar.is-compact .lt-device-status-slot {
+    display: none;
+  }
+}

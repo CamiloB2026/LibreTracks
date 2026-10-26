@@ -9,6 +9,7 @@ import {
   type CSSProperties,
   type DragEvent as ReactDragEvent,
   type MouseEvent as ReactMouseEvent,
+  type MutableRefObject,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
@@ -25,6 +26,7 @@ import {
   CompactMixer,
   type CompactMixerHandlers,
 } from "./CompactMixer";
+import { CompactWaveform } from "./CompactWaveform";
 import { CompactSongHeader } from "./CompactSongHeader";
 import { columnDensityClass, useColumnResize } from "./useColumnResize";
 import {
@@ -40,12 +42,16 @@ import {
   COMPACT_COLUMN_MAX_WIDTH_REM,
   COMPACT_COLUMN_MIN_WIDTH_REM,
 } from "@libretracks/shared/models";
+import type { TimelineRegion } from "@libretracks/shared/timelineMath";
 import {
   createEmptySong,
   regionEffectiveKey,
+  type ClipSummary,
+  type SectionMarkerSummary,
   type SongRegionSummary,
   type TrackSummary,
   type TransportSnapshot,
+  type WaveformSummaryDto,
 } from "../desktopApi";
 
 export type CompactClipEntry = {
@@ -86,6 +92,23 @@ export function computeActiveSongTrackIds(
 
 type CompactViewProps = {
   regions: SongRegionSummary[];
+  /** Flat clip list and waveform cache used by the compact overview. */
+  clips?: ClipSummary[];
+  waveformCache?: Record<string, WaveformSummaryDto>;
+  durationSeconds?: number;
+  positionSecondsRef?: MutableRefObject<number>;
+  sectionMarkers?: SectionMarkerSummary[];
+  bpm?: number;
+  timeSignature?: string;
+  /** Shared project tempo/time-signature regions (the same list the DAW grid
+   * uses). Compact re-anchors them to each song's start. */
+  tempoRegions?: TimelineRegion[];
+  pendingMarkerId?: string | null;
+  onMarkerAction?: (marker: SectionMarkerSummary) => void;
+  onTimelineContextMenu?: (
+    event: ReactMouseEvent<HTMLCanvasElement>,
+    positionSeconds: number,
+  ) => void;
   tracks: TrackSummary[];
   /** Id of the song region the playhead is currently inside, or null when
    * it sits between songs. The parent resolves this (in syncLivePosition)
@@ -259,6 +282,17 @@ type CompactViewProps = {
  */
 function CompactViewComponent({
   regions,
+  clips = [],
+  waveformCache = {},
+  durationSeconds = 1,
+  positionSecondsRef,
+  sectionMarkers = [],
+  bpm,
+  timeSignature,
+  tempoRegions = [],
+  pendingMarkerId = null,
+  onMarkerAction,
+  onTimelineContextMenu,
   tracks,
   activeRegionId,
   pendingRegionId,
@@ -296,6 +330,14 @@ function CompactViewComponent({
 }: CompactViewProps) {
   const { t } = useTranslation();
   const isPackageDragOver = dragPreview?.isPackage === true;
+  // The waveform reports the clicked tag by id; hand the parent the marker.
+  const handleWaveformMarkerAction = useMemo(() => {
+    if (!onMarkerAction) return undefined;
+    return (markerId: string) => {
+      const marker = sectionMarkers.find((item) => item.id === markerId);
+      if (marker) onMarkerAction(marker);
+    };
+  }, [onMarkerAction, sectionMarkers]);
 
   // Which column is mid-resize, if any. Lifted here only so the view root can
   // carry `is-resizing-column` (which pins the col-resize cursor and blocks
@@ -401,6 +443,24 @@ function CompactViewComponent({
         resizingRegionId ? " is-resizing-column" : ""
       }`}
     >
+      {mixerTakesFullHeight || !positionSecondsRef ? null : (
+        <CompactWaveform
+          clips={clips}
+          regions={regions}
+          waveformCache={waveformCache}
+          durationSeconds={durationSeconds}
+          positionSecondsRef={positionSecondsRef}
+          activeRegionId={activeRegionId}
+          sectionMarkers={sectionMarkers}
+          bpm={bpm}
+          timeSignature={timeSignature}
+          tempoRegions={tempoRegions}
+          pendingMarkerId={pendingMarkerId}
+          onMarkerAction={handleWaveformMarkerAction}
+          onTimelineContextMenu={onTimelineContextMenu}
+        />
+      )}
+
       {/* Top zone: songs + master + clip stacks. Horizontal scroll when
           the project has more songs than fit on screen. Accepts OS drag
           of a .ltpkg file anywhere over the strip — the drop appends a

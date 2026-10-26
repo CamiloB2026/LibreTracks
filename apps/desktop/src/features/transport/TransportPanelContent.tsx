@@ -197,6 +197,10 @@ import {
 import { settlePerfCommits } from "./perf/perfMetrics";
 import { useRenderCounter } from "./perf/useRenderCounter";
 import { CompactView } from "./compact/CompactView";
+import {
+  compactSongDurationSeconds,
+  isTimelineToolbarVisible,
+} from "./compact/compactViewRules";
 import { LivePerformanceView } from "./live/LivePerformanceView";
 import { BusyOverlay } from "./shell/BusyOverlay";
 import { MissingMidiWarningModal } from "./shell/MissingMidiWarningModal";
@@ -1004,6 +1008,9 @@ export function TransportPanelContent() {
     NativeDropCandidateDebug[]
   >([]);
   const [selectedRegionId, setSelectedRegionId] = useState<string | null>(null);
+  // Compact view: purely visual toggle. The waveform is always visible; the
+  // "Herramientas" button shows or hides the shared utility toolbar.
+  const [compactEditorOpen, setCompactEditorOpen] = useState(false);
   // When set, the export-mode chooser (Light / Full) is shown for this song.
   const [exportSongTarget, setExportSongTarget] =
     useState<ExportSongTarget | null>(null);
@@ -5226,6 +5233,9 @@ export function TransportPanelContent() {
     song?.durationSeconds ?? 0,
     timelineContentEndSeconds,
   );
+  // Compact readout/waveform use the real content end, not the DAW workspace
+  // tail (which always adds an hour).
+  const compactContentDurationSeconds = compactSongDurationSeconds(song);
   const fitAllZoomLevel = timelineContentEndSeconds
     ? clamp(
         timelineFitViewportWidth /
@@ -7024,6 +7034,32 @@ export function TransportPanelContent() {
           }}
           midiLearnMode={midiLearnMode}
           onMidiLearnTarget={handleMidiLearnTarget}
+          compactMode={viewMode === "compact"}
+          compactTotalDurationLabel={formatClock(compactContentDurationSeconds)}
+          compactEditorOpen={compactEditorOpen}
+          onCompactToggleEditor={() =>
+            setCompactEditorOpen((current) => !current)
+          }
+          onCompactRestart={() =>
+            void runAction(async () => {
+              await performSeek(0);
+              setStatus(t("transport.status.movedToStart"));
+            })
+          }
+          onCompactImportAudio={() => void handleImportLibraryFromDialog()}
+          onCompactCreateLibraryFolder={() =>
+            void handleCreateLibraryFolder()
+          }
+          onCompactImportSongPackage={handleCompactImportSongPackageFromDialog}
+          onCompactExportSong={() => {
+            if (selectedRegionId) {
+              handleCompactExportSong(selectedRegionId);
+            }
+          }}
+          canCompactExportSong={Boolean(selectedRegionId)}
+          onCompactOpenSettings={handleSettingsButtonClick}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
         />
 
         <MetronomePopover
@@ -7387,7 +7423,7 @@ export function TransportPanelContent() {
                     mix={multiTrackMix}
                     audioRoutingOptions={audioRoutingOptions}
                   />
-                  {viewMode !== "live" ? (
+                  {isTimelineToolbarVisible(viewMode, compactEditorOpen) ? (
                   <TimelineToolbar
                     snapEnabled={snapEnabled}
                     subdivisionPerBeat={timelineGrid.subdivisionPerBeat}
@@ -7969,6 +8005,27 @@ export function TransportPanelContent() {
                   {viewMode === "compact" && song ? (
                     <CompactView
                       regions={song.regions}
+                      clips={song.clips}
+                      waveformCache={waveformCache}
+                      durationSeconds={compactContentDurationSeconds}
+                      positionSecondsRef={displayPositionSecondsRef}
+                      sectionMarkers={song.sectionMarkers}
+                      bpm={songBaseBpm}
+                      timeSignature={songBaseTimeSignature}
+                      tempoRegions={songTempoRegions}
+                      pendingMarkerId={pendingMarkerJump?.targetMarkerId ?? null}
+                      onMarkerAction={(marker) =>
+                        void runAction(() => handleMarkerPrimaryAction(marker))
+                      }
+                      onTimelineContextMenu={(event, positionSeconds) =>
+                        openMenu(
+                          event,
+                          t("transport.shell.contextTimelineTitle", {
+                            time: formatClock(positionSeconds),
+                          }),
+                          rulerContextMenu(positionSeconds, null),
+                        )
+                      }
                       tracks={song.tracks}
                       activeRegionId={activeSongRegionId || null}
                       pendingRegionId={pendingMarkerJump?.targetMarkerId ?? null}

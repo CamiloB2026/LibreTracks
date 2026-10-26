@@ -520,6 +520,20 @@ export type SketchRect = {
    * ruta; el resto ya va por tiles.
    */
   maxBuckets?: number;
+  /**
+   * Color opcional de la envolvente. El DAW no lo pasa y conserva el relleno
+   * oscuro de siempre; la vista compacta lo usa para dibujar la misma onda en
+   * claro sobre los fondos de sección.
+   */
+  fillStyle?: string;
+  /** Color opcional de la línea central entre canales estéreo. */
+  centerLineStyle?: string;
+  /**
+   * Una sola onda aunque el audio sea estéreo: la envolvente es el máximo y
+   * el mínimo de ambos canales. El DAW no lo pasa y conserva sus dos carriles;
+   * la vista compacta lo usa para una lectura más limpia en vivo.
+   */
+  mergeChannels?: boolean;
 };
 
 type DetailWindowEntry = {
@@ -652,19 +666,40 @@ export function drawWaveformSketch(
   }
 
   context.save();
-  context.fillStyle = "rgba(20, 20, 20, 0.55)";
+  const fillStyle = rect.fillStyle ?? "rgba(20, 20, 20, 0.55)";
+  const centerLineStyle =
+    rect.centerLineStyle ?? "rgba(20, 20, 20, 0.18)";
+  context.fillStyle = fillStyle;
   const hasRightChannel =
     lod.minPeaksRight.length === lod.minPeaks.length &&
     lod.maxPeaksRight.length === lod.maxPeaks.length;
-  if (hasRightChannel) {
-    context.fillStyle = "rgba(20, 20, 20, 0.18)";
+  if (hasRightChannel && rect.mergeChannels) {
+    const maxPeaks = lod.maxPeaks.map((peak, index) =>
+      Math.max(peak, lod.maxPeaksRight[index]),
+    );
+    const minPeaks = lod.minPeaks.map((peak, index) =>
+      Math.min(peak, lod.minPeaksRight[index]),
+    );
+    drawSketchChannel(
+      context,
+      minPeaks,
+      maxPeaks,
+      from,
+      to,
+      rect,
+      buckets,
+      rect.top + rect.height * 0.5,
+      rect.height * 0.42,
+    );
+  } else if (hasRightChannel) {
+    context.fillStyle = centerLineStyle;
     context.fillRect(
       rect.left,
       Math.round(rect.top + rect.height * 0.5),
       rect.width,
       1,
     );
-    context.fillStyle = "rgba(20, 20, 20, 0.55)";
+    context.fillStyle = fillStyle;
     drawSketchChannel(
       context,
       lod.minPeaks,
